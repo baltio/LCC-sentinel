@@ -1,0 +1,324 @@
+Deck,MVZ,Room_Name,Zone_Code,Type,Danger_Level
+DKDB,1,Aft Ballast Tank — Port,112,technical,low
+DKDB,1,Aft Ballast Tank — Stbd,113,technical,low
+DKDB,1,Aft Peak Tank,111,technical,low
+DKDB,2,Double Bottom — Ballast Tank FWD PORT,DKDB-T-011,technical,low
+DKDB,2,Double Bottom — Ballast Tank FWD STBD,DKDB-T-012,technical,low
+DKDB,2,Double Bottom — Heated Water Tank,DKDB-T-010,technical,medium
+DKDB,2,Mid Fuel Oil Tank — Port,121,technical,high
+DKDB,2,Mid Fuel Oil Tank — Stbd,122,technical,high
+DKDB,3,Ballast Tank — Mid,125,technical,low
+DKDB,3,Double Bottom — Fresh Water Tank PORT,DKDB-T-008,technical,low
+DKDB,3,Double Bottom — Fresh Water Tank STBD,DKDB-T-009,technical,low
+DKDB,3,Double Bottom — Fuel Oil Tank MFO 2,DKDB-T-007,technical,high
+DKDB,3,Freshwater Tank — Mid Port,123,technical,low
+DKDB,3,Freshwater Tank — Mid Stbd,124,technical,low
+DKDB,4,Double Bottom — Ballast Tank MID PORT,DKDB-T-004,technical,low
+DKDB,4,Double Bottom — Ballast Tank MID STBD,DKDB-T-005,technical,low
+DKDB,4,Double Bottom — Fuel Oil Tank MFO 1,DKDB-T-006,technical,high
+DKDB,4,Forward Fuel Oil Tank — Port,131,technical,high
+DKDB,4,Forward Fuel Oil Tank — Stbd,132,technical,high
+DKDB,5,Double Bottom — Ballast Tank AFT PORT,DKDB-T-001,technical,low
+DKDB,5,Double Bottom — Ballast Tank AFT STBD,DKDB-T-002,technical,low
+DKDB,5,Double Bottom — Fuel Oil Tank AFT,DKDB-T-003,technical,high
+DKDB,5,Double Bottom — Void Space FWD,DKDB-T-013,technical,low
+DKDB,5,Forward Peak Tank,135,technical,low
+DK01,1,Aft Engine Room — Azipod/Thruster Bay,212,machinery,high
+DK01,1,Chain Locker,DK01-T-004,technical,low
+DK01,1,Fuel Oil Tank — Aft Port,114,technical,high
+DK01,1,Fuel Oil Tank — Aft Stbd,115,technical,high
+DK01,1,Incinerator Room,231,machinery,high
+DK01,1,Port Stern Tube / Shaft Seals,221,machinery,high
+DK01,1,Propulsion — Bow Thruster Room,DK01-M-008,machinery,high
+DK01,1,Rope Store / Bosun's Locker,DK01-S-003,storage,medium
+DK01,1,Stbd Stern Tube / Shaft Seals,223,machinery,high
+DK01,1,Thruster Room FWD PORT,DK01-M-013,machinery,high
+DK01,1,Thruster Room FWD STBD,DK01-M-014,machinery,high
+DK01,2,Engine Room — Provision Stores,DK01-S-002,storage,low
+DK01,2,Fuel Oil Daily Service Tank — Port,233,machinery,high
+DK01,2,Fuel Oil Daily Service Tank — Stbd,234,machinery,high
+DK01,2,Fuel Oil Purifier Room,224,machinery,high
+DK01,2,Lubricating Oil Treatment Room,225,machinery,high
+DK01,2,Main Engine Room — Central,214,machinery,high
+DK01,2,Main Engine Room — Section Aft,213,machinery,high
+DK01,3,Air Conditioning Plant Room,243,technical,medium
+DK01,3,Air Conditioning Plant Room — Stbd,245,technical,medium
+DK01,3,Engine Room — Main Switchboard Room PORT,DK01-E-001,technical,high
+DK01,3,Engine Room — Main Switchboard Room STBD,DK01-E-002,technical,high
+DK01,3,Engine Room — Sewage Treatment Plant,DK01-T-002,technical,medium
+DK01,3,Engine Room — Workshop,DK01-T-003,technical,medium
+DK01,3,Main Engine Room — Fwd Section,215,machinery,high
+DK01,4,Double Bottom — Fuel Oil Tank MFO 1,DKDB-T-006,technical,high
+DK01,4,Engine Room — Generator Room No.3,DK01-M-004,machinery,high
+DK01,4,Engine Room — Generator Room No.4,DK01-M-005,machinery,high
+DK01,4,Engine Room — Lube Oil Store,DK01-S-001,storage,high
+DK01,4,Engine Room — Main Machinery Space,DK01-M-001,machinery,high
+DK01,4,Engine Room — Purifier Room,DK01-M-009,machinery,high
+DK01,4,Gas Bottle Store,DK01-S-004,storage,high
+DK01,5,Bow Thruster Room — Port,114,machinery,high
+DK01,5,Bow Thruster Room — Stbd,115,machinery,high
+DK01,5,Engine Room — CO2 Room,DK01-T-001,technical,high
+DK01,5,Engine Room — Generator Room No.1,DK01-M-002,machinery,high
+DK01,5,Engine Room — Generator Room No.2,DK01-M-003,machinery,high
+DK01,5,Engine Room — Incinerator Room,DK01-M-012,machinery,high
+DK01,5,Engine Room — Void Space PORT,DK01-T-005,technical,low
+DK01,5,Engine Room — Void Space STBD,DK01-T-006,technical,low
+DK01,5,Forepeak / Chain Locker,111,technical,low
+DK01,5,Forepeak Store / Bosun,124,storage,low
+DK01,5,Propulsion — Thruster Room AFT PORT,DK01-M-006,machinery,high
+DK01,5,Propulsion — Thruster Room AFT STBD,DK01-M-007,machinery,high
+DK01,5,Staircase AFT DK01,DK01-T-007,technical,low
+DK02,1,Aft Mooring / Technical Space — DK02,365,technical,medium
+DK02,1,Crew Accommodation — Cabin C05 PORT,DK02-A-005,accommodation,medium
+DK02,1,Crew Accommodation — Cabin C06 STBD,DK02-A-006,accommodation,medium
+DK02,1,Crew Accommodation — Cabin C07,DK02-A-007,accommodation,medium
+DK02,1,Crew Accommodation — Cabin C08,DK02-A-008,accommodation,medium
+DK02,1,HVAC — Air Handling Unit Room FWD,DK02-T-007,technical,medium
+DK02,2,Crew Accommodation — Cabin C01 PORT,DK02-A-001,accommodation,medium
+DK02,2,Crew Accommodation — Cabin C02 STBD,DK02-A-002,accommodation,medium
+DK02,2,Crew Accommodation — Cabin C03 PORT,DK02-A-003,accommodation,medium
+DK02,2,Crew Accommodation — Cabin C04 STBD,DK02-A-004,accommodation,medium
+DK02,2,Crew Mess,DK02-P-001,public,medium
+DK02,2,Crew Office,DK02-T-005,technical,low
+DK02,2,Fuel Oil Transfer / Day Tanks,233,machinery,high
+DK02,2,Medical Centre,DK02-M-001,medical,medium
+DK02,2,Service Alleyway PORT DK02,DK02-T-001,technical,low
+DK02,2,Service Alleyway STBD DK02,DK02-T-002,technical,low
+DK02,2,Shaft Tunnel — Port,221,machinery,high
+DK02,2,Shaft Tunnel — Starboard,225,machinery,high
+DK02,2,Spare Parts Store,423,storage,medium
+DK02,2,Workshop — Electrical,421,technical,high
+DK02,2,Workshop — Mechanical,422,technical,high
+DK02,3,Air Conditioning Plant Room,243,technical,medium
+DK02,3,Crew Galley,DK02-G-001,galley,high
+DK02,3,Electrical — UPS Room,DK02-E-003,technical,high
+DK02,3,Freshwater Generator Room,245,machinery,medium
+DK02,3,Laundry / Linen Store,253,service,medium
+DK02,3,Laundry Room,DK02-T-003,technical,medium
+DK02,3,Medical Centre — Sick Bay,334,medical,medium
+DK02,3,Medical Store / Pharmacy,335,medical,medium
+DK02,3,Pool Technical Room,DK02-T-004,technical,medium
+DK02,3,Sewage Treatment Plant,243,technical,medium
+DK02,3,Water Maker Room,DK02-T-009,technical,medium
+DK02,4,Electrical Switchboard Room — Fwd Port,314,technical,high
+DK02,4,Electrical Switchboard Room — Fwd Stbd,315,technical,high
+DK02,4,Electrical — Emergency Generator Room,DK02-E-002,technical,high
+DK02,4,Fire Control Station — FCS,DK02-E-001,technical,high
+DK02,4,Provision Store — Beverage Store,DK02-S-004,storage,medium
+DK02,4,Provision Store — Cold,324,storage,low
+DK02,4,Provision Store — Cold Room +4°C,DK02-S-002,storage,medium
+DK02,4,Provision Store — Dry,325,storage,low
+DK02,4,Provision Store — Dry Goods,DK02-S-001,storage,medium
+DK02,4,Provision Store — Freezer -18°C,DK02-S-003,storage,medium
+DK02,5,Dive Equipment Room,DK02-S-007,storage,medium
+DK02,5,Explosive / Ammunition Store,DK02-S-006,storage,high
+DK02,5,Forepeak — DK02,111,storage,low
+DK02,5,Forward Freshwater Tank — DK02,115,technical,low
+DK02,5,Forward Store / Rope Locker — DK02,124,storage,low
+DK02,5,HVAC — Air Handling Unit Room AFT,DK02-T-006,technical,medium
+DK02,5,Hydraulic Power Unit Room,DK02-M-001,machinery,high
+DK02,5,Paint Store,DK02-S-005,storage,high
+DK02,5,Staircase AFT DK02,DK02-T-008,technical,low
+DK03,1,Aft Crew Cabins — DK03,431,accommodation,low
+DK03,1,Crew Cabin C13 PORT,DK03-A-005,accommodation,medium
+DK03,1,Crew Cabin C14 STBD,DK03-A-006,accommodation,medium
+DK03,1,Electrical — Substation DK03 FWD,DK03-E-003,technical,high
+DK03,2,Auxiliary Engine Room — DK03,313,machinery,high
+DK03,2,CO2 Fire Suppression Room — DK03,375,technical,high
+DK03,2,Crew Cabin C09 PORT,DK03-A-001,accommodation,medium
+DK03,2,Crew Cabin C10 STBD,DK03-A-002,accommodation,medium
+DK03,2,Crew Cabin C11 PORT,DK03-A-003,accommodation,medium
+DK03,2,Crew Cabin C12 STBD,DK03-A-004,accommodation,medium
+DK03,2,Crew Mess / Dining — DK03,432,galley,high
+DK03,2,Emergency Generator Room,323,machinery,high
+DK03,2,IT / Server Room,DK03-E-001,technical,high
+DK03,2,Print Station / Staff Office,DK03-T-003,technical,low
+DK03,2,Service Alleyway PORT DK03,DK03-T-001,technical,low
+DK03,2,Service Alleyway STBD DK03,DK03-T-002,technical,low
+DK03,3,Crew Cabins Mid — DK03,433,accommodation,low
+DK03,3,Main Galley — Cold Kitchen / Pastry,DK03-G-003,galley,medium
+DK03,3,Main Galley — Dishwasher Room,DK03-G-004,galley,medium
+DK03,3,Main Galley — Hot Kitchen,DK03-G-002,galley,high
+DK03,3,Main Galley — Preparation Room,DK03-G-001,galley,high
+DK03,3,Midship Stairway / Lift Trunk — DK03,633,stairway,medium
+DK03,4,Crew Cabins / Officers — DK03 Fwd,434,accommodation,low
+DK03,4,Crew Mess DK03,DK03-P-001,public,medium
+DK03,4,Expedition Team Office,DK03-T-007,technical,low
+DK03,4,Hotel Store — Main,DK03-S-001,storage,medium
+DK03,4,SPA — Technical Room,DK03-T-004,technical,medium
+DK03,4,Workshop — Joinery / Carpentry,DK03-T-008,technical,high
+DK03,5,Electrical — Battery Room,DK03-E-005,technical,high
+DK03,5,Electrical — Substation DK03 AFT,DK03-E-002,technical,high
+DK03,5,Electrical — Switchboard Room DK03 AFT,DK03-E-004,technical,high
+DK03,5,Forepeak / Forward Store — DK03,111,storage,low
+DK03,5,Forward Stairway Trunk Port — DK03,674,stairway,medium
+DK03,5,Forward Stairway Trunk Stbd — DK03,675,stairway,medium
+DK03,5,Forward Technical / Bow Thruster — DK03,435,machinery,high
+DK03,5,Garbage Room,DK03-T-005,technical,medium
+DK03,5,Rescue Boat Station,DK03-T-009,technical,low
+DK03,5,Staircase AFT DK03,DK03-T-006,technical,low
+DK04,1,Aft Icebreaking / Technical Zone — DK04,745,technical,high
+DK04,1,Aft Technical / Tenders Garage,441,storage,medium
+DK04,1,Passenger Cabin 103 — Minor Suite PORT,DK04-A-003,accommodation,medium
+DK04,1,Passenger Cabin 104 — Minor Suite STBD,DK04-A-004,accommodation,medium
+DK04,1,Passenger Cabin 105 — Minor Suite PORT,DK04-A-005,accommodation,medium
+DK04,1,Passenger Cabin 106 — Minor Suite STBD,DK04-A-006,accommodation,medium
+DK04,1,Passenger Cabin 107 — Minor Suite PORT,DK04-A-007,accommodation,medium
+DK04,1,Passenger Cabin 108 — Minor Suite STBD,DK04-A-008,accommodation,medium
+DK04,1,Passenger Cabin 109 — Minor Suite PORT,DK04-A-009,accommodation,medium
+DK04,1,Passenger Cabin 110 — Minor Suite STBD,DK04-A-010,accommodation,medium
+DK04,1,Passenger Cabin 111 — Cadet Suite,DK04-A-011,accommodation,medium
+DK04,1,Staircase FWD DK04 — Emergency Exit,DK04-T-003,technical,low
+DK04,2,Boutique / Gift Shop,DK04-P-007,public,low
+DK04,2,Forward Stairway Trunk Port — DK04,674,stairway,medium
+DK04,2,Forward Stairway Trunk Stbd — DK04,675,stairway,medium
+DK04,2,Library / Reading Room,DK04-P-008,public,low
+DK04,2,Main Restaurant — Fwd Extension,DK04-P-002,public,medium
+DK04,2,Passenger Cabin 101 — Minor Suite PORT,DK04-A-001,accommodation,medium
+DK04,2,Passenger Cabin 102 — Minor Suite STBD,DK04-A-002,accommodation,medium
+DK04,2,Passenger Cabin 112 — Minor Suite PORT,DK04-A-012,accommodation,medium
+DK04,2,Passenger Cabin 113 — Minor Suite STBD,DK04-A-013,accommodation,medium
+DK04,2,Service Alleyway PORT DK04,DK04-T-001,technical,low
+DK04,2,Service Alleyway STBD DK04,DK04-T-002,technical,low
+DK04,2,Spa & Wellness Centre — DK04,442,public,low
+DK04,3,Electrical — Substation DK04,DK04-E-001,technical,high
+DK04,3,Grand Salon / Lounge,DK04-P-003,public,medium
+DK04,3,HVAC — Main AHU Plenum,DK04-T-004,technical,medium
+DK04,3,Main Lounge / Social Area — DK04,443,public,medium
+DK04,3,Main Restaurant — Aft,DK04-P-001,public,medium
+DK04,3,Midship Stairway / Lift Trunk — DK04,633,stairway,medium
+DK04,3,Reception Lobby,DK04-P-005,public,low
+DK04,3,Theatre / Auditorium — DK04,444,public,medium
+DK04,3,Wine Cellar / Sommelier Station,DK04-S-001,storage,medium
+DK04,4,Grand Salon / Lounge,DK04-P-003,public,medium
+DK04,4,Pantry DK04 AFT PORT,DK04-G-001,galley,medium
+DK04,4,Pantry DK04 AFT STBD,DK04-G-002,galley,medium
+DK04,4,Wellness Lounge / Cigar Bar,DK04-P-009,public,medium
+DK04,5,Forward Expedition Prep Area — DK04,445,technical,medium
+DK04,5,Theatre / Amphitheatre,DK04-P-004,public,medium
+DK05,1,Aft Lounge / Bar — DK05,452,public,medium
+DK05,1,Aft Stairway — DK05,651,stairway,medium
+DK05,1,Aft Tender Platform / Technical,451,technical,medium
+DK05,2,Main Restaurant — DK05,453,galley,high
+DK05,2,Pantry DK05,DK05-G-001,galley,medium
+DK05,2,Passenger Cabin 201 — Minor Suite PORT,DK05-A-001,accommodation,medium
+DK05,2,Passenger Cabin 202 — Minor Suite STBD,DK05-A-002,accommodation,medium
+DK05,2,Passenger Cabin 203 — Minor Suite PORT,DK05-A-003,accommodation,medium
+DK05,2,Passenger Cabin 204 — Minor Suite STBD,DK05-A-004,accommodation,medium
+DK05,2,Passenger Cabin 205 — Junior Terrace Suite PORT,DK05-A-005,accommodation,medium
+DK05,2,Passenger Cabin 206 — Junior Terrace Suite STBD,DK05-A-006,accommodation,medium
+DK05,2,Passenger Cabin 207 — Junior Terrace Suite PORT,DK05-A-007,accommodation,medium
+DK05,2,Passenger Cabin 208 — Junior Terrace Suite STBD,DK05-A-008,accommodation,medium
+DK05,2,Service Alleyway PORT DK05,DK05-T-001,technical,low
+DK05,3,Gym / Fitness Room,DK05-P-005,public,low
+DK05,3,Midship Stairway / Lift Trunk — DK05,633,stairway,medium
+DK05,3,Passenger Cabin 213 — Minor Suite PORT,DK05-A-013,accommodation,medium
+DK05,3,Passenger Cabin 214 — Minor Suite STBD,DK05-A-014,accommodation,medium
+DK05,3,Reception / Atrium — DK05,454,public,medium
+DK05,3,SPA — Hammam / Steam Room,DK05-P-003,public,medium
+DK05,3,SPA — Main Spa Area,DK05-P-001,public,medium
+DK05,3,SPA — Sauna Room,DK05-P-002,public,medium
+DK05,3,SPA — Treatment Rooms,DK05-P-004,public,low
+DK05,4,Forward Stairway Trunk Port — DK05,674,stairway,medium
+DK05,4,Forward Stairway Trunk Stbd — DK05,675,stairway,medium
+DK05,4,Swimming Pool — Indoor Pool,DK05-P-006,public,medium
+DK05,5,Forepeak / Polar Equipment Storage — DK05,751,storage,low
+DK05,5,Forward Lounge / Observation — DK05,455,public,low
+DK05,5,Outdoor Lounge / Bar DK05,DK05-P-007,public,medium
+DK06,1,Aft Cabins — DK06 Zone Aft,461,accommodation,low
+DK06,1,Aft Stairway — DK06,651,stairway,medium
+DK06,1,Lift / Elevator Shaft FWD,DK06-T-005,technical,medium
+DK06,2,Aft-Mid Cabins — DK06,462,accommodation,low
+DK06,2,Horizontal Circulation DK06 — Corridor,DK06-T-002,technical,low
+DK06,2,Passenger Cabin 309 — Duplex 23 PORT,DK06-A-009,accommodation,medium
+DK06,2,Passenger Cabin 310 — Junior Terrace Suite STBD,DK06-A-010,accommodation,medium
+DK06,2,Passenger Cabin 311 — Minor Suite PORT,DK06-A-011,accommodation,medium
+DK06,2,Passenger Cabin 312 — Minor Suite STBD,DK06-A-012,accommodation,medium
+DK06,2,Passenger Cabin 313 — Minor Suite PORT,DK06-A-013,accommodation,medium
+DK06,2,Passenger Cabin 314 — Minor Suite STBD,DK06-A-014,accommodation,medium
+DK06,3,Deck Office DK06,DK06-T-001,technical,low
+DK06,3,Lift / Elevator Shaft DK06,DK06-T-003,technical,medium
+DK06,3,Main Restaurant DK06,DK06-P-001,public,medium
+DK06,3,Midship Cabins — DK06,463,accommodation,low
+DK06,3,Midship Stairway / Lift Trunk — DK06,633,stairway,medium
+DK06,3,Pantry / Service Station DK06,DK06-G-001,galley,medium
+DK06,3,Passenger Cabin 303 — Junior Terrace Suite PORT,DK06-A-003,accommodation,medium
+DK06,3,Passenger Cabin 304 — Junior Terrace Suite STBD,DK06-A-004,accommodation,medium
+DK06,3,Passenger Cabin 305 — Junior Terrace Suite PORT,DK06-A-005,accommodation,medium
+DK06,3,Passenger Cabin 306 — Junior Terrace Suite STBD,DK06-A-006,accommodation,medium
+DK06,3,Passenger Cabin 307 — Duplex 19 PORT,DK06-A-007,accommodation,medium
+DK06,3,Passenger Cabin 308 — Duplex 21 STBD,DK06-A-008,accommodation,medium
+DK06,4,Forward Cabins — DK06,464,accommodation,low
+DK06,4,Forward Stairway Trunk Port — DK06,674,stairway,medium
+DK06,4,Forward Stairway Trunk Stbd — DK06,675,stairway,medium
+DK06,4,Passenger Cabin 301 — Major Suite PORT AFT,DK06-A-001,accommodation,medium
+DK06,4,Passenger Cabin 302 — Major Suite STBD AFT,DK06-A-002,accommodation,medium
+DK06,5,Outdoor Bar / Grill AFT DK06,DK06-G-002,galley,medium
+DK06,5,Staircase AFT DK06,DK06-T-004,technical,low
+DK06,5,VIP Suites — DK06 Forward,465,accommodation,low
+DK07,1,Aft Cabins — DK07 Zone Aft,472,accommodation,low
+DK07,1,Passenger Cabin 415 — Minor Suite PORT,DK07-A-015,accommodation,medium
+DK07,1,Passenger Cabin 416 — Minor Suite STBD,DK07-A-016,accommodation,medium
+DK07,2,Passenger Cabin 409 — Guest Bedroom PORT,DK07-A-009,accommodation,medium
+DK07,2,Passenger Cabin 410 — Guest Bedroom STBD,DK07-A-010,accommodation,medium
+DK07,2,Passenger Cabin 411 — Guest Bedroom PORT,DK07-A-011,accommodation,medium
+DK07,2,Passenger Cabin 412 — Guest Bedroom STBD,DK07-A-012,accommodation,medium
+DK07,2,Passenger Cabin 413 — Minor Suite PORT,DK07-A-013,accommodation,medium
+DK07,2,Passenger Cabin 414 — Minor Suite STBD,DK07-A-014,accommodation,medium
+DK07,2,Suite Corridor DK07,DK07-T-001,technical,low
+DK07,3,Midship Cabins — DK07 Central,473,accommodation,low
+DK07,3,Midship Stairway / Lift Trunk — DK07,633,stairway,medium
+DK07,3,Pantry DK07,DK07-G-001,galley,medium
+DK07,3,Passenger Cabin 403 — Junior Suite PORT,DK07-A-003,accommodation,medium
+DK07,3,Passenger Cabin 404 — Junior Suite STBD,DK07-A-004,accommodation,medium
+DK07,3,Passenger Cabin 405 — Terrace Suite PORT,DK07-A-005,accommodation,medium
+DK07,3,Passenger Cabin 406 — Terrace Suite STBD,DK07-A-006,accommodation,medium
+DK07,3,Passenger Cabin 407 — Terrace Suite PORT,DK07-A-007,accommodation,medium
+DK07,3,Passenger Cabin 408 — Terrace Suite STBD,DK07-A-008,accommodation,medium
+DK07,3,Staircase / Lift Landing DK07,DK07-T-002,technical,low
+DK07,4,Forward Cabins — DK07 Fwd,474,accommodation,low
+DK07,4,Forward Stairway Trunk Port — DK07,674,stairway,medium
+DK07,4,Forward Stairway Trunk Stbd — DK07,675,stairway,medium
+DK07,5,Owner's Suite / VIP — DK07 Fwd,475,accommodation,low
+DK07,5,Passenger Cabin 401 — Master Stateroom PORT AFT,DK07-A-001,accommodation,medium
+DK07,5,Passenger Cabin 402 — Master Stateroom STBD AFT,DK07-A-002,accommodation,medium
+DK07,5,Passenger Cabin 501 — Owner's Suite AFT,DK08-A-004,accommodation,medium
+DK08,1,Aft Pool Deck,483,public,low
+DK08,1,Aft Technical Space — DK08,683,technical,medium
+DK08,1,Captain's Cabin / Day Room,DK08-A-001,accommodation,medium
+DK08,1,Helipad / Aft Open Deck,482,outdoor,low
+DK08,1,Navigation Bridge — Chart Room,DK08-B-002,bridge,medium
+DK08,1,Navigation Bridge — Radio Room,DK08-B-003,bridge,medium
+DK08,1,Navigation Bridge — Wheelhouse,DK08-B-001,bridge,high
+DK08,1,Navigation Equipment Room,DK08-B-004,bridge,high
+DK08,1,Officers' Cabin C-OFF-03 PORT,DK08-A-005,accommodation,medium
+DK08,1,Officers' Cabin C-OFF-04 STBD,DK08-A-006,accommodation,medium
+DK08,1,Open Deck FWD DK08 — Forecastle Deck,DK08-P-004,public,low
+DK08,2,Generator Room / Technical — DK08,684,technical,high
+DK08,2,Officers' Cabin C-OFF-01 PORT,DK08-A-002,accommodation,medium
+DK08,2,Officers' Cabin C-OFF-02 STBD,DK08-A-003,accommodation,medium
+DK08,2,Officers' Mess / Wardroom,DK08-P-001,public,medium
+DK08,3,Central Upper Deck — Outdoor Lounge,484,public,low
+DK08,3,Deck Equipment — Sail Control Room,DK08-T-001,technical,medium
+DK08,3,Electrical — Substation DK08,DK08-E-001,technical,high
+DK08,3,Midship Stairway / Lift Trunk — DK08,633,stairway,medium
+DK08,3,Open Deck CENTRAL DK08 — Pool Deck,DK08-P-003,public,low
+DK08,4,Forward Stairway Trunk Port — DK08,674,stairway,medium
+DK08,4,Forward Stairway Trunk Stbd — DK08,675,stairway,medium
+DK08,5,Forward Upper Deck — Observation,485,public,low
+DK08,5,Open Deck AFT DK08 — Aft Terrace,DK08-P-002,public,low
+DK09,1,Open Deck FWD DK09 — Bowsprit Deck,DK09-P-003,public,low
+DK09,3,Mast Equipment — Main Mast MFB1,DK09-T-001,technical,medium
+DK09,3,Mast Equipment — Mast MFB2,DK09-T-002,technical,medium
+DK09,3,Open Deck CENTRAL DK09 — Observation,DK09-P-002,public,low
+DK09,4,Lifeboat Station PORT,DK09-T-006,technical,medium
+DK09,4,Lifeboat Station STBD,DK09-T-007,technical,medium
+DK09,5,Bridge Deck — Chart Room,494,bridge,medium
+DK09,5,Bridge Deck — Mast/Navigation Equipment,495,technical,low
+DK09,5,Bridge Deck — Navigation Bridge,493,bridge,medium
+DK09,5,Crane / Davit Equipment Room PORT,DK09-T-004,technical,medium
+DK09,5,Crane / Davit Equipment Room STBD,DK09-T-005,technical,medium
+DK09,5,Crow's Nest / Forward Observation,695,public,low
+DK09,5,Navigation Light Mast — AFT Mast Base,DK09-T-008,technical,medium
+DK09,5,Open Deck AFT DK09 — Sun Deck,DK09-P-001,public,low
+DK09,5,Tender Garage — AFT,DK09-T-003,technical,medium
