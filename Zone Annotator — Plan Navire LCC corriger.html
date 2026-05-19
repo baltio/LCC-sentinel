@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<!-- saved from url=(0075)file:///D:/LOIC/Logiciel%20LCC%202.0/LCC%20sentinel%202/ZONE_ANNOTATOR.html -->
+<html lang="fr"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Zone Annotator — Plan Navire LCC</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',sans-serif; background:#0d1117; color:#e0e0e0; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+#toolbar {
+  background:#16213e; padding:7px 14px; display:flex; align-items:center;
+  gap:10px; border-bottom:2px solid #0f3460; flex-wrap:wrap;
+}
+.tool-sep { width:1px; height:28px; background:#1e3a60; flex-shrink:0; margin:0 2px; }
+label { font-size:11px; color:#7a9abf; white-space:nowrap; }
+select, input[type="text"] {
+  background:#0d1b2a; border:1px solid #2a4070; color:#e0e0e0;
+  padding:4px 7px; border-radius:4px; font-size:12px;
+}
+button {
+  padding:5px 11px; border:none; border-radius:4px; cursor:pointer;
+  font-size:12px; font-weight:600; transition:background 0.15s; white-space:nowrap;
+}
+.btn-p { background:#1a4a80; color:#fff; } .btn-p:hover { background:#2060aa; }
+.btn-s { background:#1a6840; color:#fff; } .btn-s:hover { background:#229955; }
+.btn-d { background:#7a1a1a; color:#fff; } .btn-d:hover { background:#aa2222; }
+.btn-w { background:#7a5a10; color:#fff; } .btn-w:hover { background:#a07a18; }
+.btn-i { background:#1a5a7a; color:#fff; } .btn-i:hover { background:#2277a0; }
+.btn-active { outline:2px solid #4a90ff; outline-offset:1px; }
+
+#info-bar {
+  background:#0f2030; padding:4px 14px; font-size:11px; color:#5a8ab0;
+  border-bottom:1px solid #0f3460; display:flex; gap:20px;
+}
+.key { background:#192a40; padding:1px 5px; border-radius:3px; font-family:monospace; font-size:10px; color:#7ab0ff; }
+
+#main { display:flex; flex:1; overflow:hidden; }
+
+#canvas-container { flex:1; position:relative; overflow:hidden; background:#080e14; }
+#canvas { position:absolute; top:0; left:0; }
+
+#sidebar {
+  width:270px; background:#16213e;
+  border-left:2px solid #0f3460; display:flex; flex-direction:column; overflow:hidden;
+}
+#sidebar-head {
+  padding:9px 14px; background:#0f3460; font-size:12px; font-weight:700;
+  text-transform:uppercase; letter-spacing:1px; display:flex; align-items:center; justify-content:space-between;
+}
+.badge { background:#1a4a8a; color:#7ab0ff; padding:2px 8px; border-radius:10px; font-size:11px; }
+#zone-list { flex:1; overflow-y:auto; padding:6px; }
+.zone-item {
+  padding:7px 9px; margin-bottom:3px; border-radius:4px; cursor:pointer;
+  border:1px solid transparent; transition:all 0.12s; display:flex; align-items:center; gap:7px;
+}
+.zone-item:hover { background:#1a2a4a; border-color:#2a406a; }
+.zone-item.sel { background:#1a3a6a; border-color:#4a80d0; }
+.zdot { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+.ztext { flex:1; min-width:0; }
+.zname { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.zmeta { font-size:10px; color:#5a7a9a; }
+.zdel { opacity:0; color:#cc4444; font-size:13px; font-weight:bold; flex-shrink:0; cursor:pointer; }
+.zone-item:hover .zdel { opacity:1; }
+
+#sidebar-filter { padding:7px 8px; border-top:1px solid #0f3460; }
+#sidebar-filter select { width:100%; font-size:11px; }
+
+#status { background:#080e14; padding:3px 14px; font-size:11px; color:#4a6a8a; border-top:1px solid #0f3460; display:flex; gap:16px; }
+
+/* Modal */
+#modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:200; justify-content:center; align-items:center; }
+#modal.open { display:flex; }
+#mbox { background:#16213e; border:1px solid #0f3460; border-radius:8px; padding:22px; width:370px; max-width:94vw; }
+#mbox h4 { margin-bottom:15px; color:#4a90e2; font-size:14px; }
+.mrow { margin-bottom:11px; }
+.mrow label { display:block; font-size:11px; margin-bottom:3px; color:#7a9abf; }
+.mrow input, .mrow select { width:100%; padding:6px 9px; font-size:13px; }
+.mbtns { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+
+/* Export hint modal */
+#hint-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:300; justify-content:center; align-items:center; }
+#hint-modal.open { display:flex; }
+#hbox { background:#16213e; border:1px solid #0f3460; border-radius:8px; padding:22px; width:520px; max-width:94vw; }
+#hbox h4 { color:#4a90e2; margin-bottom:14px; }
+#hbox p { font-size:12px; color:#8ab0d0; line-height:1.7; margin-bottom:10px; }
+#hbox code { background:#0d1b2a; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:11px; color:#7ab0ff; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span style="font-weight:700;color:#4a90e2;font-size:14px;white-space:nowrap">🗺 ZONE ANNOTATOR</span>
+  <div class="tool-sep"></div>
+
+  <label>Image</label>
+  <button class="btn-p" onclick="document.getElementById(&#39;fi&#39;).click()">📂 Charger plan</button>
+  <input type="file" id="fi" accept="image/*" style="display:none" onchange="loadImg(event)">
+  <button class="btn-i" onclick="document.getElementById(&#39;hint-modal&#39;).classList.add(&#39;open&#39;)">💡 Obtenir les images</button>
+
+  <div class="tool-sep"></div>
+  <label>Pont</label>
+  <select id="deck-sel">
+    <option value="DKDB">DKDB</option><option value="DK01">DK01</option>
+    <option value="DK02">DK02</option><option value="DK03">DK03</option>
+    <option value="DK04" selected="">DK04</option><option value="DK05">DK05</option>
+    <option value="DK06">DK06</option><option value="DK07">DK07</option>
+    <option value="DK08">DK08</option><option value="DK09">DK09</option>
+    <option value="DK10">DK10</option><option value="DK11">DK11</option>
+  </select>
+  <label>MVZ</label>
+  <select id="mvz-sel">
+    <option value="1">MVZ 1</option><option value="2">MVZ 2</option>
+    <option value="3" selected="">MVZ 3</option><option value="4">MVZ 4</option>
+  </select>
+
+  <div class="tool-sep"></div>
+  <label>Mode</label>
+  <button id="btn-draw" class="btn-p" onclick="setMode(&#39;draw&#39;)">✏️ Dessiner</button>
+  <button id="btn-sel" class="btn-i btn-active" onclick="setMode(&#39;select&#39;)">👆 Sélectionner</button>
+
+  <div class="tool-sep"></div>
+  <button class="btn-w" onclick="undoPoint()" title="Z">↩ Undo</button>
+  <button class="btn-d" onclick="cancelPoly()" title="ESC">✕ Annuler zone</button>
+
+  <div class="tool-sep"></div>
+  <button class="btn-s" onclick="exportJSON()">💾 Exporter JSON</button>
+  <button class="btn-s" onclick="exportOESpaces()">⚡ Export OE_SPACES</button>
+  <button class="btn-i" onclick="document.getElementById(&#39;ii&#39;).click()">📥 Importer</button>
+  <input type="file" id="ii" accept=".json" style="display:none" onchange="importJSON(event)">
+
+  <div class="tool-sep"></div>
+  <button class="btn-d" onclick="clearDeck()" title="Effacer le pont sélectionné">🗑 Effacer pont</button>
+  <button class="btn-p" onclick="fitImg()" title="F">⊞ Fit</button>
+</div>
+
+<div id="info-bar">
+  <span><span class="key">Clic</span> Ajouter sommet</span>
+  <span><span class="key">1er point</span> Fermer polygone</span>
+  <span><span class="key">ESC</span> Annuler</span>
+  <span><span class="key">Z</span> Undo sommet</span>
+  <span><span class="key">Scroll</span> Zoom</span>
+  <span><span class="key">Clic droit + drag</span> Pan</span>
+  <span><span class="key">F</span> Fit</span>
+  <span><span class="key">Del</span> Supprimer zone</span>
+  <span><span class="key">Dbl-clic</span> Éditer nom</span>
+  <span><span class="key">MVZ</span> 1 = Avant, 4 = Arrière</span>
+</div>
+
+<div id="main">
+  <div id="canvas-container">
+    <canvas id="canvas" width="1475" height="711" style="cursor: default;"></canvas>
+  </div>
+  <div id="sidebar">
+    <div id="sidebar-head">Zones <span class="badge" id="zcnt">625</span></div>
+    <div id="zone-list"><div class="zone-item" onclick="selListItem(&#39;z65&#39;)" ondblclick="editZone(&#39;z65&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Sonar trunk">Sonar trunk</div>
+        <div class="zmeta">DKDB · MVZ2 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z65&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z66&#39;)" ondblclick="editZone(&#39;z66&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Scientific equipment room">Scientific equipment room</div>
+        <div class="zmeta">DKDB · MVZ2 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z66&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z67&#39;)" ondblclick="editZone(&#39;z67&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Fresh Water Production room">Fresh Water Production room</div>
+        <div class="zmeta">DKDB · MVZ2 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z67&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z68&#39;)" ondblclick="editZone(&#39;z68&#39;)">
+      <div class="zdot" style="background:#d44a4a"></div>
+      <div class="ztext">
+        <div class="zname" title="Engine room A">Engine room A</div>
+        <div class="zmeta">DKDB · MVZ2 · machinery</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z68&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z69&#39;)" ondblclick="editZone(&#39;z69&#39;)">
+      <div class="zdot" style="background:#d44a4a"></div>
+      <div class="ztext">
+        <div class="zname" title="Engine room B">Engine room B</div>
+        <div class="zmeta">DKDB · MVZ3 · machinery</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z69&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z70&#39;)" ondblclick="editZone(&#39;z70&#39;)">
+      <div class="zdot" style="background:#d44a4a"></div>
+      <div class="ztext">
+        <div class="zname" title="Separator room  2">Separator room  2</div>
+        <div class="zmeta">DKDB · MVZ3 · machinery</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z70&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z71&#39;)" ondblclick="editZone(&#39;z71&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Fin stab PS">Fin stab PS</div>
+        <div class="zmeta">DKDB · MVZ3 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z71&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z72&#39;)" ondblclick="editZone(&#39;z72&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Fin stab Stab">Fin stab Stab</div>
+        <div class="zmeta">DKDB · MVZ3 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z72&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z74&#39;)" ondblclick="editZone(&#39;z74&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Tech space 2">Tech space 2</div>
+        <div class="zmeta">DKDB · MVZ3 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z74&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z75&#39;)" ondblclick="editZone(&#39;z75&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Fin stab room 2">Fin stab room 2</div>
+        <div class="zmeta">DKDB · MVZ3 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z75&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z76&#39;)" ondblclick="editZone(&#39;z76&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Fin stab room 1">Fin stab room 1</div>
+        <div class="zmeta">DKDB · MVZ3 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z76&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z77&#39;)" ondblclick="editZone(&#39;z77&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Tech space 1">Tech space 1</div>
+        <div class="zmeta">DKDB · MVZ3 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z77&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z73&#39;)" ondblclick="editZone(&#39;z73&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Tech space 4">Tech space 4</div>
+        <div class="zmeta">DKDB · MVZ4 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z73&#39;,event)">✕</span>
+    </div><div class="zone-item" onclick="selListItem(&#39;z78&#39;)" ondblclick="editZone(&#39;z78&#39;)">
+      <div class="zdot" style="background:#9a4ad4"></div>
+      <div class="ztext">
+        <div class="zname" title="Tech space 3">Tech space 3</div>
+        <div class="zmeta">DKDB · MVZ4 · technical</div>
+      </div>
+      <span class="zdel" onclick="delById(&#39;z78&#39;,event)">✕</span>
+    </div></div>
+    <div id="sidebar-filter">
+      <select id="flt" onchange="renderList()">
+        <option value="">Tous les ponts</option>
+        <option value="DKDB">DKDB</option><option value="DK01">DK01</option>
+        <option value="DK02">DK02</option><option value="DK03">DK03</option>
+        <option value="DK04">DK04</option><option value="DK05">DK05</option>
+        <option value="DK06">DK06</option><option value="DK07">DK07</option>
+        <option value="DK08">DK08</option><option value="DK09">DK09</option>
+        <option value="DK10">DK10</option><option value="DK11">DK11</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div id="status">
+  <span id="s-mode">Mode: Sélection</span>
+  <span id="s-pts">Sommets: 0</span>
+  <span id="s-xy">x:1220 y:15372</span>
+  <span id="s-hint">Zone "Converter room 1" ajoutée — continuez à dessiner</span>
+</div>
+
+<!-- Zone modal -->
+<div id="modal" class="">
+  <div id="mbox">
+    <h4>🏷 Définir la zone</h4>
+    <div class="mrow"><label>Nom du local *</label><input id="m-name" type="text" placeholder="ex: Main Galley — Hot Kitchen"></div>
+    <div class="mrow"><label>Pont</label>
+      <select id="m-deck">
+        <option value="DKDB">DKDB</option><option value="DK01">DK01</option>
+        <option value="DK02">DK02</option><option value="DK03">DK03</option>
+        <option value="DK04">DK04</option><option value="DK05">DK05</option>
+        <option value="DK06">DK06</option><option value="DK07">DK07</option>
+        <option value="DK08">DK08</option><option value="DK09">DK09</option>
+        <option value="DK10">DK10</option><option value="DK11">DK11</option>
+      </select>
+    </div>
+    <div class="mrow"><label>MVZ</label>
+      <select id="m-mvz">
+        <option value="1">1 — Avant (FWD)</option><option value="2">2</option>
+        <option value="3">3 — Centre</option><option value="4">4 — Arriere (AFT)</option>
+      </select>
+    </div>
+    <div class="mrow"><label>Type</label>
+      <select id="m-type">
+        <option value="accommodation">Accommodation</option>
+        <option value="public">Public / Passager</option>
+        <option value="galley">Galley / Cuisine</option>
+        <option value="machinery">Machinery / Moteurs</option>
+        <option value="technical">Technical / Technique</option>
+        <option value="storage">Storage / Stockage</option>
+        <option value="medical">Medical</option>
+        <option value="stairway">Stairway / Ascenseur</option>
+        <option value="bridge">Bridge / Navigation</option>
+        <option value="outdoor">Outdoor Deck</option>
+        <option value="service">Service</option>
+      </select>
+    </div>
+    <div class="mrow"><label>Niveau danger</label>
+      <select id="m-danger">
+        <option value="low">Low — Faible</option>
+        <option value="medium" selected="">Medium — Moyen</option>
+        <option value="high">High — Élevé</option>
+      </select>
+    </div>
+    <div class="mrow"><label>Code zone (auto si vide)</label><input id="m-zone" type="text" placeholder="ex: DK03-G-002"></div>
+    <div class="mbtns">
+      <button class="btn-d" onclick="cancelModal()">Annuler</button>
+      <button class="btn-s" onclick="confirmZone()">✓ Valider</button>
+    </div>
+  </div>
+</div>
+
+<!-- How-to get images modal -->
+<div id="hint-modal">
+  <div id="hbox">
+    <h4>💡 Comment obtenir les images de plans de ponts</h4>
+    <p><strong>Les images sont déjà dans LCC sentinel 3.html</strong> (variable <code>window.OE_PLANS</code>), encodées en base64.</p>
+    <p><strong>Méthode 1 — Console navigateur :</strong><br>
+    Ouvrez LCC sentinel 3.html dans Chrome → F12 → Console, puis :<br>
+    <code>const a=document.createElement('a'); a.href=window.OE_PLANS['GA-DK04-05']; a.download='DK04-05.jpg'; a.click()</code><br>
+    Clés disponibles : <code>GA-DK08-09 / GA-DK06-07 / GA-DK04-05 / GA-DK02-03 / GA-DK01-under</code></p>
+    <p><strong>Méthode 2 — Capture d'écran :</strong><br>
+    Dans LCC Sentinel, naviguez vers Plans → prenez une capture de chaque plan de pont.<br>
+    Outil recommandé : Snipping Tool (Win+Shift+S), puis sauvegardez en PNG.</p>
+    <p><strong>Méthode 3 — Depuis le PFD papier :</strong><br>
+    Scannez ou photographiez chaque pont du Plan de Feu et Délimitation (PFD), puis chargez-les ici un par un.</p>
+    <p><strong>Workflow recommandé :</strong><br>
+    1. Exportez <strong>un pont à la fois</strong> → 2. Chargez dans cet outil → 3. Dessinez les zones → 4. Exportez JSON → 5. Passez au pont suivant (Import JSON pour fusionner)</p>
+    <div class="mbtns"><button class="btn-p" onclick="document.getElementById(&#39;hint-modal&#39;).classList.remove(&#39;open&#39;)">Fermer</button></div>
+  </div>
+</div>
+
+<script>
+const COLORS = {
+  accommodation:'#4a7fd4', public:'#d4a44a', galley:'#d47a4a',
+  machinery:'#d44a4a', technical:'#9a4ad4', storage:'#4a9a4a',
+  medical:'#4ad4a4', stairway:'#888', bridge:'#4ad4d4',
+  outdoor:'#6aaa6a', service:'#aa9a4a'
+};
+
+const S = {
+  img:null, iw:0, ih:0,
+  zones:[], cur:[], sel:null, pending:null, editId:null,
+  mode:'draw', mousePos:null,
+  scale:1, ox:0, oy:0,
+  panning:false, panStart:{x:0,y:0}, panOrig:{x:0,y:0},
+  nextId:1
+};
+
+const cv = document.getElementById('canvas');
+const cx = cv.getContext('2d');
+const ct = document.getElementById('canvas-container');
+
+/* ── INIT ── */
+function init(){
+  resize(); window.addEventListener('resize', resize);
+  cv.addEventListener('click', onClick);
+  cv.addEventListener('dblclick', onDblClick);
+  cv.addEventListener('mousemove', onMove);
+  cv.addEventListener('mousedown', onDown);
+  cv.addEventListener('mouseup', onUp);
+  cv.addEventListener('wheel', onWheel, {passive:false});
+  cv.addEventListener('contextmenu', e=>e.preventDefault());
+  document.addEventListener('keydown', onKey);
+  document.getElementById('m-name').addEventListener('keydown', e=>{ if(e.key==='Enter') confirmZone(); });
+  render(); renderList();
+}
+
+function resize(){
+  const r = ct.getBoundingClientRect();
+  cv.width=r.width; cv.height=r.height; render();
+}
+
+/* ── IMAGE ── */
+function loadImg(ev){
+  const f=ev.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{ S.img=img; S.iw=img.width; S.ih=img.height; fitImg(); render(); st('hint','Image chargée — cliquez pour tracer des zones'); };
+    img.src=e.target.result;
+  };
+  rd.readAsDataURL(f);
+}
+
+function fitImg(){
+  if(!S.img) return;
+  const sc=Math.min(cv.width/S.iw, cv.height/S.ih)*0.95;
+  S.scale=sc; S.ox=(cv.width-S.iw*sc)/2; S.oy=(cv.height-S.ih*sc)/2;
+}
+
+/* ── COORD ── */
+function c2i(cx,cy){ return {x:(cx-S.ox)/S.scale, y:(cy-S.oy)/S.scale}; }
+function i2c(ix,iy){ return {x:ix*S.scale+S.ox, y:iy*S.scale+S.oy}; }
+
+/* ── RENDER ── */
+function render(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  if(!S.img){ drawPlaceholder(); return; }
+  cx.save(); cx.translate(S.ox,S.oy); cx.scale(S.scale,S.scale);
+  cx.drawImage(S.img,0,0); cx.restore();
+  const flt=document.getElementById('flt').value;
+  S.zones.forEach(z=>{ if(!flt||z.deck===flt) drawZone(z, z.id===S.sel); });
+  if(S.cur.length>0) drawCurrent();
+}
+
+function drawZone(z, sel){
+  if(!z.pts||z.pts.length<2) return;
+  const col=COLORS[z.type]||'#888';
+  cx.beginPath();
+  const f=i2c(z.pts[0][0],z.pts[0][1]); cx.moveTo(f.x,f.y);
+  for(let i=1;i<z.pts.length;i++){ const p=i2c(z.pts[i][0],z.pts[i][1]); cx.lineTo(p.x,p.y); }
+  cx.closePath();
+  cx.fillStyle=hexA(col, sel?.45:.22); cx.fill();
+  cx.strokeStyle=sel?'#fff':col; cx.lineWidth=sel?2.5:1.5;
+  cx.setLineDash(sel?[6,3]:[]); cx.stroke(); cx.setLineDash([]);
+  // label
+  const cen=centroid(z.pts); const cp=i2c(cen.x,cen.y);
+  const fs=Math.max(8, Math.min(13, 11*S.scale));
+  cx.font=`bold ${fs}px Segoe UI`; cx.textAlign='center'; cx.textBaseline='middle';
+  const tw=cx.measureText(z.name).width;
+  cx.fillStyle='rgba(8,14,20,.8)'; cx.fillRect(cp.x-tw/2-3,cp.y-fs/2-2,tw+6,fs+4);
+  cx.fillStyle=sel?'#fff':col; cx.fillText(z.name,cp.x,cp.y);
+}
+
+function drawCurrent(){
+  const pts=S.cur.map(p=>i2c(p.x,p.y));
+  cx.beginPath(); cx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++) cx.lineTo(pts[i].x,pts[i].y);
+  cx.strokeStyle='#00ffaa'; cx.lineWidth=2; cx.setLineDash([5,3]); cx.stroke(); cx.setLineDash([]);
+  if(S.mousePos&&pts.length>0){
+    cx.beginPath(); cx.moveTo(pts[pts.length-1].x,pts[pts.length-1].y);
+    cx.lineTo(S.mousePos.x,S.mousePos.y); cx.strokeStyle='rgba(0,255,170,.35)';
+    cx.lineWidth=1; cx.setLineDash([3,4]); cx.stroke(); cx.setLineDash([]);
+  }
+  pts.forEach((p,i)=>{
+    cx.beginPath(); cx.arc(p.x,p.y,i===0?8:4,0,Math.PI*2);
+    cx.fillStyle=i===0?'#ff6600':'#00ffaa'; cx.fill();
+    cx.strokeStyle='#fff'; cx.lineWidth=1.5; cx.stroke();
+  });
+  st('pts',`Sommets: ${S.cur.length} — Cliquez sur le 1er point (●) pour fermer`);
+}
+
+function drawPlaceholder(){
+  cx.fillStyle='#0d1520'; cx.fillRect(0,0,cv.width,cv.height);
+  cx.font='bold 17px Segoe UI'; cx.fillStyle='#2a4a6a';
+  cx.textAlign='center'; cx.textBaseline='middle';
+  cx.fillText('📂  Chargez une image de plan de pont (JPG / PNG)', cv.width/2, cv.height/2-18);
+  cx.font='12px Segoe UI'; cx.fillStyle='#1a3a5a';
+  cx.fillText('Cliquez sur "Charger plan" ou utilisez "💡 Obtenir les images" pour extraire les plans de OE_PLANS', cv.width/2, cv.height/2+16);
+}
+
+/* ── EVENTS ── */
+function onClick(e){
+  if(S.panning) return;
+  const r=cv.getBoundingClientRect(), ccx=e.clientX-r.left, ccy=e.clientY-r.top;
+  if(S.mode==='select'){ selectAt(c2i(ccx,ccy)); return; }
+  if(!S.img) return;
+  const ip=c2i(ccx,ccy);
+  // check close to first point
+  if(S.cur.length>=3){
+    const fp=i2c(S.cur[0].x,S.cur[0].y);
+    if(Math.hypot(ccx-fp.x,ccy-fp.y)<13){ closePolygon(); return; }
+  }
+  S.cur.push(ip); render();
+}
+
+function onDblClick(e){
+  if(S.mode==='select'){
+    const r=cv.getBoundingClientRect();
+    const ip=c2i(e.clientX-r.left, e.clientY-r.top);
+    const z=S.zones.slice().reverse().find(z=>inPoly(ip.x,ip.y,z.pts));
+    if(z) editZone(z.id);
+  }
+}
+
+function onMove(e){
+  const r=cv.getBoundingClientRect(), ccx=e.clientX-r.left, ccy=e.clientY-r.top;
+  S.mousePos={x:ccx,y:ccy};
+  const ip=c2i(ccx,ccy); st('xy',`x:${Math.round(ip.x)} y:${Math.round(ip.y)}`);
+  if(S.panning){ S.ox=S.panOrig.x+(ccx-S.panStart.x); S.oy=S.panOrig.y+(ccy-S.panStart.y); }
+  if(S.cur.length>0||S.panning) render();
+  // cursor near first point
+  if(S.mode==='draw'&&S.cur.length>=3){
+    const fp=i2c(S.cur[0].x,S.cur[0].y);
+    cv.style.cursor=Math.hypot(ccx-fp.x,ccy-fp.y)<13?'pointer':'crosshair';
+  }
+}
+
+function onDown(e){
+  if(e.button===2||e.button===1){
+    e.preventDefault(); S.panning=true;
+    const r=cv.getBoundingClientRect();
+    S.panStart={x:e.clientX-r.left,y:e.clientY-r.top};
+    S.panOrig={x:S.ox,y:S.oy}; cv.style.cursor='grabbing';
+  }
+}
+function onUp(e){ if(S.panning){ S.panning=false; cv.style.cursor=S.mode==='draw'?'crosshair':'default'; } }
+
+function onWheel(e){
+  e.preventDefault();
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  const d=e.deltaY>0?0.85:1.18;
+  const ns=Math.max(0.05, Math.min(40, S.scale*d));
+  S.ox=mx-(mx-S.ox)*(ns/S.scale); S.oy=my-(my-S.oy)*(ns/S.scale); S.scale=ns; render();
+}
+
+function onKey(e){
+  if(document.getElementById('modal').classList.contains('open')) return;
+  if(document.getElementById('hint-modal').classList.contains('open')){ if(e.key==='Escape') document.getElementById('hint-modal').classList.remove('open'); return; }
+  if(e.key==='Escape') cancelPoly();
+  else if((e.key==='z'||e.key==='Z')&&!e.ctrlKey) undoPoint();
+  else if(e.key==='Delete'||e.key==='Backspace'){ if(S.sel) delSel(); }
+  else if(e.key==='f'||e.key==='F'){ fitImg(); render(); }
+}
+
+/* ── POLYGON OPS ── */
+function closePolygon(){
+  if(S.cur.length<3){ alert('Minimum 3 sommets requis.'); return; }
+  S.pending=[...S.cur]; S.cur=[];
+  prefillModal(); render();
+  document.getElementById('modal').classList.add('open');
+  setTimeout(()=>document.getElementById('m-name').focus(),80);
+}
+
+function prefillModal(){
+  document.getElementById('m-deck').value=document.getElementById('deck-sel').value;
+  document.getElementById('m-mvz').value=document.getElementById('mvz-sel').value;
+  document.getElementById('m-name').value='';
+  document.getElementById('m-zone').value='';
+}
+
+function confirmZone(){
+  const name=document.getElementById('m-name').value.trim();
+  if(!name){ document.getElementById('m-name').style.borderColor='#cc4444'; document.getElementById('m-name').focus(); return; }
+  document.getElementById('m-name').style.borderColor='';
+  const deck=document.getElementById('m-deck').value;
+  const mvz=parseInt(document.getElementById('m-mvz').value);
+  const type=document.getElementById('m-type').value;
+  const danger=document.getElementById('m-danger').value;
+  let zone=document.getElementById('m-zone').value.trim();
+  if(!zone) zone=autoCode(deck,type);
+
+  if(S.editId){
+    const z=S.zones.find(z=>z.id===S.editId);
+    if(z){ z.name=name; z.deck=deck; z.mvz=mvz; z.type=type; z.danger=danger; z.zone=zone; }
+    S.editId=null;
+  } else {
+    S.zones.push({ id:'z'+(S.nextId++), name, deck, mvz, type, danger, zone,
+      pts: S.pending.map(p=>[Math.round(p.x),Math.round(p.y)]) });
+    S.pending=null;
+  }
+  closeModal(); render(); renderList();
+  st('hint',`Zone "${name}" ajoutée — continuez à dessiner`);
+}
+
+function cancelModal(){ S.editId=null; S.pending=null; closeModal(); render(); }
+function closeModal(){ document.getElementById('modal').classList.remove('open'); }
+function cancelPoly(){ S.cur=[]; S.pending=null; render(); st('pts','Sommets: 0'); }
+function undoPoint(){ if(S.cur.length>0){ S.cur.pop(); render(); } }
+
+function selectAt(ip){
+  const z=S.zones.slice().reverse().find(z=>inPoly(ip.x,ip.y,z.pts));
+  S.sel=z?z.id:null; render(); renderList();
+}
+
+function delSel(){
+  if(!S.sel) return;
+  if(!confirm('Supprimer cette zone ?')) return;
+  S.zones=S.zones.filter(z=>z.id!==S.sel); S.sel=null; render(); renderList();
+}
+
+function editZone(id){
+  const z=S.zones.find(z=>z.id===id); if(!z) return;
+  S.editId=id;
+  document.getElementById('m-name').value=z.name||'';
+  document.getElementById('m-deck').value=z.deck||'DK04';
+  document.getElementById('m-mvz').value=z.mvz||'3';
+  document.getElementById('m-type').value=z.type||'technical';
+  document.getElementById('m-danger').value=z.danger||'medium';
+  document.getElementById('m-zone').value=z.zone||'';
+  document.getElementById('modal').classList.add('open');
+  setTimeout(()=>document.getElementById('m-name').focus(),80);
+}
+
+function clearDeck(){
+  const d=document.getElementById('deck-sel').value;
+  const n=S.zones.filter(z=>z.deck===d).length;
+  if(!n){ alert('Aucune zone sur ce pont.'); return; }
+  if(!confirm(`Supprimer les ${n} zones de ${d} ?`)) return;
+  S.zones=S.zones.filter(z=>z.deck!==d); render(); renderList();
+}
+
+/* ── LIST ── */
+function renderList(){
+  const flt=document.getElementById('flt').value;
+  const zones=flt?S.zones.filter(z=>z.deck===flt):S.zones;
+  document.getElementById('zcnt').textContent=S.zones.length;
+  const list=document.getElementById('zone-list');
+  if(!zones.length){ list.innerHTML='<div style="padding:14px;color:#3a5a7a;font-size:11px;text-align:center">Aucune zone définie</div>'; return; }
+  const sorted=[...zones].sort((a,b)=>a.deck<b.deck?-1:a.deck>b.deck?1:(a.mvz||0)-(b.mvz||0));
+  list.innerHTML=sorted.map(z=>{
+    const col=COLORS[z.type]||'#888';
+    const sel=z.id===S.sel;
+    return `<div class="zone-item${sel?' sel':''}" onclick="selListItem('${z.id}')" ondblclick="editZone('${z.id}')">
+      <div class="zdot" style="background:${col}"></div>
+      <div class="ztext">
+        <div class="zname" title="${esc(z.name)}">${esc(z.name)}</div>
+        <div class="zmeta">${z.deck} · MVZ${z.mvz} · ${z.type}</div>
+      </div>
+      <span class="zdel" onclick="delById('${z.id}',event)">✕</span>
+    </div>`;
+  }).join('');
+}
+
+function selListItem(id){
+  S.sel=id; render(); renderList();
+  const z=S.zones.find(z=>z.id===id); if(!z) return;
+  const cen=centroid(z.pts); S.ox=cv.width/2-cen.x*S.scale; S.oy=cv.height/2-cen.y*S.scale; render();
+}
+
+function delById(id,e){
+  e.stopPropagation();
+  S.zones=S.zones.filter(z=>z.id!==id); if(S.sel===id) S.sel=null; render(); renderList();
+}
+
+/* ── EXPORT / IMPORT ── */
+function exportJSON(){
+  if(!S.zones.length){ alert('Aucune zone.'); return; }
+  const data={ vessel:'LE COMMANDANT CHARCOT', exportDate:new Date().toISOString(),
+    imageWidth:S.iw, imageHeight:S.ih, totalZones:S.zones.length, zones:S.zones };
+  dl(JSON.stringify(data,null,2), `zones_${today()}.json`, 'application/json');
+  st('hint',`${S.zones.length} zones exportées (format annotator)`);
+}
+
+function exportOESpaces(){
+  if(!S.zones.length){ alert('Aucune zone.'); return; }
+  // Export in OE_SPACES compatible format for direct use in LCC Sentinel
+  const oeSpaces=S.zones.map(z=>({
+    id: z.zone||autoCode(z.deck,z.type),
+    name: z.name,
+    deck: z.deck,
+    mvz: z.mvz,
+    type: z.type,
+    danger: z.danger,
+    zone: z.zone||autoCode(z.deck,z.type),
+    // polygon points for interactive plan (bonus field)
+    poly: z.pts
+  }));
+  const out=`// LE COMMANDANT CHARCOT — Zones annotées manuellement\n// Généré le ${new Date().toLocaleString('fr-FR')}\n// ${S.zones.length} zones — copier-coller dans window.OE_SPACES=[...] dans LCC sentinel 3.html\n\n`
+    +JSON.stringify(oeSpaces,null,2);
+  dl(out, `OE_SPACES_annotated_${today()}.json`, 'application/json');
+  st('hint',`Export OE_SPACES: ${S.zones.length} zones prêtes pour LCC Sentinel`);
+}
+
+function importJSON(ev){
+  const f=ev.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=e=>{
+    try{
+      const d=JSON.parse(e.target.result);
+      const arr=d.zones||d; // support both wrapped and raw array
+      if(!Array.isArray(arr)) throw new Error('Format non reconnu');
+      // Normalize: support both {pts} and {points} fields
+      const imported=arr.map(z=>({ ...z, pts: z.pts||(z.points&&z.points.map(p=>Array.isArray(p)?p:[p.x,p.y]))||[] }));
+      if(S.zones.length>0){
+        if(confirm(`${imported.length} zones à importer.\nOK = Fusionner\nAnnuler = Remplacer`)){
+          S.zones=[...S.zones,...imported];
+        } else { S.zones=imported; }
+      } else { S.zones=imported; }
+      S.nextId=S.zones.reduce((m,z)=>{ const n=parseInt((z.id||'').replace(/\D/g,''))||0; return Math.max(m,n); },0)+1;
+      render(); renderList(); st('hint',`${imported.length} zones importées`);
+    } catch(err){ alert('Erreur import: '+err.message); }
+    ev.target.value='';
+  };
+  rd.readAsText(f);
+}
+
+/* ── MODE ── */
+function setMode(m){
+  S.mode=m;
+  document.getElementById('btn-draw').className='btn-p'+(m==='draw'?' btn-active':'');
+  document.getElementById('btn-sel').className='btn-i'+(m==='select'?' btn-active':'');
+  cv.style.cursor=m==='draw'?'crosshair':'default';
+  st('mode','Mode: '+(m==='draw'?'Dessin':'Sélection'));
+  if(m==='select'&&S.cur.length>0) cancelPoly();
+}
+
+/* ── UTILS ── */
+function centroid(pts){
+  let sx=0,sy=0; pts.forEach(p=>{ sx+=p[0]; sy+=p[1]; });
+  return{x:sx/pts.length,y:sy/pts.length};
+}
+function inPoly(x,y,pts){
+  let inside=false,n=pts.length;
+  for(let i=0,j=n-1;i<n;j=i++){
+    const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];
+    if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+function hexA(hex,a){ const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return `rgba(${r},${g},${b},${a})`; }
+function autoCode(deck,type){ const tc={accommodation:'A',public:'P',galley:'G',machinery:'M',technical:'T',storage:'S',medical:'MD',stairway:'ST',bridge:'B',outdoor:'OD',service:'SV'}; const c=tc[type]||'X'; const n=S.zones.filter(z=>z.deck===deck).length+1; return `${deck}-${c}-${String(n).padStart(3,'0')}`; }
+function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function st(f,t){ const el=document.getElementById('s-'+f); if(el) el.textContent=t; }
+function today(){ return new Date().toISOString().slice(0,10); }
+function dl(text,name,mime){ const b=new Blob([text],{type:mime}),u=URL.createObjectURL(b),a=document.createElement('a'); a.href=u; a.download=name; a.click(); URL.revokeObjectURL(u); }
+
+init();
+</script>
+
+
+</body></html>

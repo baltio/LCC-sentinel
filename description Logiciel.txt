@@ -1,0 +1,197 @@
+# CHARCOT SENTINEL User Tutorial (English)
+
+## 1. What the software does
+CHARCOT SENTINEL is an onboard emergency coordination system for incident management on LE COMMANDANT CHARCOT.  
+It centralizes:
+- Incident activation and tracking
+- Team coordination
+- Muster and accountability
+- Abandon ship preparation
+- Shared logs, reports, and internal messaging
+- Deck plans and location support
+
+It is designed for fast decision-making under pressure, with one operational picture shared across Bridge, OSC, ECR, and support stations.
+
+---
+
+## 2. Core operating logic
+The system follows a clear operational flow:
+
+1. Detect and classify the emergency (Fire, Flooding, Pollution, Medical, Muster, Abandon).
+2. Activate the incident from Home (hold-to-activate to reduce accidental triggers).
+3. Navigate to the dedicated incident page.
+4. Enter situation data (location, severity, hazards, casualties, barriers/doors, etc.).
+5. Track team status and checklist progress.
+6. Update accountability (passengers/crew present, missing, embarked, etc.).
+7. Keep communication and logs synchronized across stations.
+8. Generate/save reports and maintain timeline traceability.
+
+Every key action is intended to be time-stamped and visible for command continuity.
+
+---
+
+## 3. Main interface overview
+### Sidebar navigation
+The left sidebar gives access to all operational pages:
+- Home
+- Fire
+- Flood
+- Pollution
+- Medical
+- Muster
+- Abandon
+- OSC
+- Plans
+- Lists
+- Messages
+- Log
+- Report
+- Settings
+
+### Home page
+Home is your tactical launchpad:
+- Emergency cards for each incident type
+- Hold-to-activate behavior (safer than single click)
+- Quick status visibility (standby vs active alarms)
+
+---
+
+## 4. How to use each key module
+
+## Fire (Code Bravo)
+Use this page for tactical fire control:
+- Fire location and OSC meeting point
+- Staircase and locker availability
+- Evacuation zone selector by deck and MVZ
+- Fire doors and watertight doors closure tracking
+- Ventilation stop/high pressure status
+- DCP/NOVEC activation tracking
+- Casualties + link to Medical
+- Fire teams and protection teams management
+- Checklist and report save
+
+Best practice: Fill location and boundaries first, then containment barriers, then team deployment.
+
+## Flooding (Code Delta)
+Use for ingress and stability management:
+- Source and location of flooding
+- Severity and water level
+- Hull integrity state
+- List and trim inputs
+- Bilge pumps status
+- Team checklist
+- Compartment map with severity levels by deck
+
+Best practice: Update compartment map continuously as water spread evolves.
+
+## Pollution (Code Papa)
+Use for environmental incident response:
+- Pollution type and source
+- Onboard location and sea position
+- Estimated volume and severity
+- Wind/current and drift estimates
+- Response/checklist follow-up
+
+Best practice: Keep environmental data updated for external reporting accuracy.
+
+## Medical (Code Mike)
+Use for casualty and medical response tracking:
+- Patient status and location
+- Medical team actions
+- Escalation and support requests
+
+Best practice: Keep patient movement and condition updates short, structured, and frequent.
+
+## Muster
+Use for accountability during general alarm:
+- Expected vs accounted passengers/crew
+- Missing counts in real time
+- Flowchart-driven sequence
+- Abandon signal timer integration
+
+Best practice: Prioritize reliable count quality over speed; avoid duplicate counting.
+
+## Abandon Ship
+Use when evacuation to craft is required:
+- Phase progression
+- On board vs embarked vs missing
+- Craft readiness and launch progression
+- Accounting panel and announcement/timer support
+
+Best practice: Keep craft assignment and embarked totals synchronized after each wave.
+
+## OSC
+On-Scene Commander operational page:
+- OSC identity and tactical position
+- Incident type context
+- Bridge communication presets
+- Dedicated Fire and Protection team panels
+
+Best practice: Use OSC page as tactical command node, not as passive dashboard.
+
+## Plans
+Deck-by-deck visual navigation:
+- Select deck and plan type (GA / Fire control)
+- Zoom, pan, rotate for tactical orientation
+
+Best practice: Use standardized location naming when reporting from plans.
+
+## Lists
+Crew/passenger reference and accountability support.
+
+## Messages
+Internal communication channel:
+- Quick predefined messages
+- Broadcast chat
+- Message history
+
+Best practice: Use short, action-oriented messages with location first.
+
+## Log and Report
+- Log captures operational timeline
+- Report page compiles structured incident output
+
+Best practice: Ensure major decisions and status transitions are logged promptly.
+
+## Settings / Network
+- Enable network sync
+- Configure server IP, port, token
+- Reconnect/disconnect controls
+- Profile and station management
+
+Best practice: Verify network connectivity before drills or incidents.
+
+---
+
+## 5. Recommended workflow during a real event
+1. Activate incident from Home.
+2. Open the related emergency page immediately.
+3. Enter initial location, severity, and immediate hazards.
+4. Lock down barriers (doors/ventilation) as required.
+5. Assign and track teams.
+6. Maintain muster/accountability in parallel.
+7. Keep OSC, Messages, and Log updated continuously.
+8. Save report snapshots at key milestones.
+
+---
+
+## 6. Good operational habits
+- One operator updates one module at a time to reduce conflicts.
+- Use consistent wording for locations and zones.
+- Update statuses in real time, not in bulk later.
+- Treat the Log as a legal/operational timeline.
+- Perform short refresh cycles (for example every 2 to 5 minutes during escalation).
+
+---
+
+## 7. Quick training drill script (15 minutes)
+1. Activate Fire scenario from Home.
+2. Enter fire location and evacuation zone.
+3. Mark fire/watertight doors and ventilation status.
+4. Assign fire teams and update checklist.
+5. Add 1 casualty and pass to Medical.
+6. Start Muster and enter partial accounting.
+7. Escalate to Abandon and assign craft progression.
+8. Review Log and generate final report snapshot.
+
+---
