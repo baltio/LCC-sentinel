@@ -6,7 +6,9 @@
    localStorage by the app itself (STATE.cachedRoster).
    ============================================================ */
 
-const CACHE_NAME = 'lcc-mustering-v1';
+// Bumped by SAVE_VERSION.ps1 on every release, in step with Sentinel 3's own sw.js — see its
+// comment for why this byte-diff is what makes an update visible to the browser at all.
+const CACHE_NAME = 'lcc-mustering-v2.0.35';
 
 const PRECACHE_URLS = [
   './LCC Sentinel Mustering.html',

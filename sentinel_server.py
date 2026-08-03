@@ -30,10 +30,19 @@ import json
 import logging
 import socket
 import ssl
+import sys
 import threading
 from datetime import datetime, timezone
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+
+# stdout/stderr default to the Windows console codepage (cp1252 on a French
+# install) as soon as they're redirected to a file/pipe instead of a real
+# console — which can't encode the box-drawing/arrow characters used in the
+# startup banner below and crashes the whole server before it starts serving.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
 
 try:
     import websockets
