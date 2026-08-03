@@ -4585,6 +4585,20 @@ body {
 .header-profile { cursor: pointer; transition: var(--transition-fast); }
 .header-profile:hover { opacity: 0.8; }
 
+/* QR code print sheet — see NetworkModule.printQrCodes(). Hidden on screen; @media print flips it
+   to visible and hides everything else, so printing produces just the QR sheet, not the whole app. */
+.qr-print-sheet { display: none; }
+@media print {
+  /* #login-overlay and the emergency-session-restore modal are siblings of #app, not inside it, so
+     hiding #app alone doesn't catch whichever of those happens to be open. Rather than chase down
+     and list every current and future top-level overlay, paint over all of them at once: fixed,
+     full-viewport, opaque, and on top — what's underneath stops mattering. */
+  .qr-print-sheet {
+    display: block; position: fixed; inset: 0; z-index: 999999; overflow: auto;
+    background: #fff; color: #000; padding: 24px;
+  }
+}
+
   </style>
 </head>
 <body>
@@ -6851,7 +6865,8 @@ body {
     <div class="card" id="net-settings-section">
       <div class="sec-hdr" style="display:flex;align-items:center;gap:10px">
         RESEAU - SYNCHRONISATION MULTI-POSTES
-        <div id="net-settings-status" style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <button class="btn btn-outline" style="margin-left:auto;font-size:10px;padding:5px 10px" onclick="NetworkModule.printQrCodes()">🖨️ Imprimer les QR codes</button>
+        <div id="net-settings-status" style="display:flex;align-items:center;gap:6px">
           <div class="network-dot" style="background:var(--status-warn)"></div>
           <span style="font-size:10px;color:var(--oe-cream-dim)">Standalone</span>
         </div>
@@ -7160,6 +7175,10 @@ body {
 </div>
   </div>
 </div><!-- /app -->
+<!-- Populated by NetworkModule.printQrCodes() — invisible on screen (.qr-print-sheet is display:none
+     by default), shown ONLY inside @media print (see <style>), which also hides everything else, so
+     window.print() below produces a clean sheet instead of the whole app UI. -->
+<div id="qr-print-sheet" class="qr-print-sheet"></div>
 <!-- ── Login Modal — Sélection de profil ─────────────────────── -->
 <div id="login-overlay" class="login-overlay" style="display:none">
   <div class="login-modal">
@@ -23469,6 +23488,54 @@ const NetworkModule = {
       new QRCode(qr, { text: url, width: 148, height: 148, colorDark: '#0A1628', colorLight: '#FFFFFF', correctLevel: QRCode.CorrectLevel.M });
       qr.dataset.rendered = url;
     });
+  },
+
+  /* Builds a printable sheet with every currently-available QR code (local network access +
+     GitHub install links — whichever have a URL right now) and prints it via window.print(),
+     using the .qr-print-sheet / @media print rules in <style> to hide the app UI while printing.
+     Regenerates its own QR codes at a larger size instead of reusing the on-screen ones, since
+     those are sized for the settings panel, not for something meant to be posted on a wall. */
+  printQrCodes() {
+    const items = [
+      { label: 'ACCÈS TABLETTE — SENTINEL MUSTERING', url: this.getMusteringAccessUrl() },
+      { label: 'ACCÈS TABLETTE — CHARCOT SENTINEL 3', url: this.getSentinel3AccessUrl() },
+      { label: 'CERTIFICAT HTTPS — WEBSOCKET (à scanner en plus, 1 fois par tablette)', url: this.getWsCertUrl() },
+      { label: 'INSTALLATION — CHARCOT SENTINEL 3 (GitHub)', url: document.getElementById('net-github-s3-url')?.value || '' },
+      { label: 'INSTALLATION — SENTINEL MUSTERING (GitHub)', url: document.getElementById('net-github-must-url')?.value || '' },
+    ].filter(it => it.url);
+
+    if (!items.length) {
+      CharcotSentinel.showToast('Aucun QR code disponible — renseigner IP/port du serveur ci-dessus d\'abord', 'warning');
+      return;
+    }
+    if (typeof QRCode !== 'function') {
+      CharcotSentinel.showToast('Module QR local indisponible', 'warning');
+      return;
+    }
+
+    const sheet = document.getElementById('qr-print-sheet');
+    if (!sheet) return;
+    sheet.innerHTML = `
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:20px;font-weight:800">CHARCOT SENTINEL — ACCÈS RÉSEAU</div>
+        <div style="font-size:11px;color:#555;margin-top:4px">LE COMMANDANT CHARCOT — PONANT — imprimé le ${new Date().toLocaleString('fr-FR')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px">
+        ${items.map((it, i) => `
+          <div style="text-align:center;border:1px solid #999;border-radius:8px;padding:16px;break-inside:avoid">
+            <div style="font-size:13px;font-weight:700;margin-bottom:10px">${it.label}</div>
+            <div class="qr-print-code" id="qr-print-code-${i}" style="width:220px;height:220px;margin:0 auto"></div>
+            <div style="font-size:9px;font-family:monospace;margin-top:8px;word-break:break-all;color:#333">${it.url}</div>
+          </div>
+        `).join('')}
+      </div>`;
+    items.forEach((it, i) => {
+      new QRCode(document.getElementById(`qr-print-code-${i}`), {
+        text: it.url, width: 220, height: 220, colorDark: '#000000', colorLight: '#FFFFFF', correctLevel: QRCode.CorrectLevel.M,
+      });
+    });
+
+    setTimeout(() => window.print(), 200); // let the QR canvases finish rendering first
   },
 
   async copyWsCertUrl() {
