@@ -1,14 +1,14 @@
 {
-  "name": "CHARCOT SENTINEL — Emergency Management System",
-  "short_name": "LCC SENTINEL",
-  "description": "Système de gestion des urgences — LE COMMANDANT CHARCOT",
-  "start_url": "./LCC%20sentinel%203.html",
+  "name": "LCC Sentinel Mustering",
+  "short_name": "MUSTERING",
+  "description": "Crew/PAX headcount tablet companion to LCC Sentinel 3",
+  "start_url": "./LCC%20Sentinel%20Mustering.html",
   "scope": "./",
   "display": "fullscreen",
   "orientation": "landscape",
-  "background_color": "#0a1628",
-  "theme_color": "#0a1628",
-  "lang": "fr",
+  "background_color": "#06111F",
+  "theme_color": "#06111F",
+  "lang": "en",
   "categories": ["utilities"],
   "icons": [
     {

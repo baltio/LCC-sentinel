@@ -19,6 +19,17 @@ $MainFile    = Join-Path $PSScriptRoot "LCC sentinel 3.html"
 $SourceFile  = Join-Path $PSScriptRoot "Source\index.html"
 $VersionsDir = Join-Path $PSScriptRoot "versions"
 
+# Modules annexes archives a chaque sauvegarde (pas de version a incrementer
+# dedans, juste un instantane horodate aligne sur la version du module principal)
+$CompanionFiles = @(
+    @{ Path = "manifest.json";               Prefix = "manifest" },
+    @{ Path = "sw.js";                       Prefix = "sw" },
+    @{ Path = "sentinel_server.py";          Prefix = "sentinel_server" },
+    @{ Path = "LCC Sentinel Mustering.html"; Prefix = "LCC_Sentinel_Mustering" },
+    @{ Path = "manifest-mustering.json";     Prefix = "manifest-mustering" },
+    @{ Path = "sw-mustering.js";             Prefix = "sw-mustering" }
+)
+
 function OK   { param($t) Write-Host "  [OK] $t" -ForegroundColor Green  }
 function WARN { param($t) Write-Host "  [!]  $t" -ForegroundColor Yellow }
 function ERR  { param($t) Write-Host "  [X]  $t" -ForegroundColor Red    }
@@ -78,6 +89,20 @@ if (Test-Path $SourceFile) {
     OK "Archive source : versions\source_index_v${oldVer}_${timestamp}.html"
 }
 
+$archivedCompanions = @()
+foreach ($companion in $CompanionFiles) {
+    $companionPath = Join-Path $PSScriptRoot $companion.Path
+    if (Test-Path $companionPath) {
+        $ext = [System.IO.Path]::GetExtension($companion.Path)
+        $companionArchiveName = "$($companion.Prefix)_v${oldVer}_${timestamp}${ext}"
+        Copy-Item $companionPath (Join-Path $VersionsDir $companionArchiveName)
+        OK "Archive : versions\$companionArchiveName"
+        $archivedCompanions += $companion.Path
+    } else {
+        WARN "Module absent, non archive : $($companion.Path)"
+    }
+}
+
 HDR "  Mise a jour de la version..."
 
 $filesToUpdate = @($MainFile)
@@ -96,6 +121,7 @@ foreach ($file in $filesToUpdate) {
 $logFile  = Join-Path $VersionsDir "CHANGELOG.txt"
 $logEntry = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] v$oldVer -> v$newVer  ($Bump)"
 if ($Message) { $logEntry += "  -- $Message" }
+if ($archivedCompanions.Count -gt 0) { $logEntry += "  [modules: $($archivedCompanions -join ', ')]" }
 Add-Content $logFile $logEntry -Encoding UTF8
 OK "CHANGELOG.txt mis a jour"
 
@@ -104,5 +130,9 @@ Write-Host "==================================================" -ForegroundColor
 Write-Host "  v$oldVer -> v$newVer  ($Bump)" -ForegroundColor White
 if ($Message) { Write-Host "  Note : $Message" -ForegroundColor White }
 Write-Host "  Archive : versions\$archiveName" -ForegroundColor Gray
+if ($archivedCompanions.Count -gt 0) {
+    Write-Host "  Modules archives :" -ForegroundColor Gray
+    foreach ($c in $archivedCompanions) { Write-Host "    - $c" -ForegroundColor Gray }
+}
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host ""

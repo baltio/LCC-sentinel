@@ -32,6 +32,11 @@ echo    1. Ouvrez le dossier  versions\
 echo    2. Copiez le fichier souhaité dans le dossier racine
 echo    3. Renommez-le "LCC sentinel 3.html"
 echo.
+echo  Chaque sauvegarde archive aussi les modules annexes au même
+echo  horodatage (manifest.json, sw.js, sentinel_server.py, Mustering
+echo  + son manifest/sw) — cherchez le même "_vX.Y.Z_AAAA-MM-JJ_HHmm"
+echo  dans versions\ si vous devez aussi les restaurer.
+echo.
 echo  ATTENTION : la version actuelle sera écrasée.
 echo  Faites une sauvegarde avant si nécessaire (SAVE_VERSION.bat).
 echo.
