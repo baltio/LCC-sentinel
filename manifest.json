@@ -4,7 +4,7 @@
   "description": "Système de gestion des urgences — LE COMMANDANT CHARCOT",
   "start_url": "./LCC%20sentinel%203.html",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "landscape",
   "background_color": "#0a1628",
   "theme_color": "#0a1628",
