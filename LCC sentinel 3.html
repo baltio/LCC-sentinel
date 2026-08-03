@@ -3121,6 +3121,28 @@ select.missing-add {
 .tbtn.on-scene   { background:rgba(41,128,185,0.2); color:#5DADE2;              border-color:#2980B9; }
 .tbtn.on-missing { background:rgba(231,76,60,0.2);  color:var(--status-danger); border-color:var(--status-danger); }
 
+/* Polar > Village — icon-to-place sidebar. Its own class rather than reusing .tbtn: .tbtn's
+   font-size/padding/min-width are all !important (the app-wide font-scale mechanism), which would
+   have fought a deliberately bigger, more legible button here. No .active state existed for these
+   at all before (setIconMode() toggled the class in JS, but nothing ever rendered it), which was
+   as much the "can't tell what's selected" complaint as the small size was. */
+.v-icon-menu {
+  display:flex; flex-direction:column; gap:6px; flex-shrink:0; width:96px; overflow-y:auto;
+  padding:6px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid rgba(255,255,255,0.08);
+}
+.v-icon-btn {
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:100%; padding:10px 4px; border-radius:8px; border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.04); cursor:pointer; transition:all 0.12s; flex-shrink:0;
+}
+.v-icon-btn:hover { background:rgba(255,255,255,0.09); border-color:rgba(255,255,255,0.28); }
+.v-icon-btn .v-icon-glyph { font-size:28px; line-height:1; }
+.v-icon-btn .v-icon-label { font-size:10px; font-weight:700; letter-spacing:0.03em; color:var(--oe-cream-dim); }
+.v-icon-btn.active {
+  background:rgba(0,180,216,0.24); border-color:#00B4D8; box-shadow:0 0 0 2px rgba(0,180,216,0.35);
+}
+.v-icon-btn.active .v-icon-label { color:#fff; }
+
 /* Missing crew */
 .team-missing {
   display:flex; flex-wrap:wrap; align-items:center; gap:3px;
@@ -5231,20 +5253,27 @@ body {
       <button class="btn btn-ghost" style="min-height:36px;font-size:11px;padding:0 8px;flex-shrink:0" onclick="VillageModule.rotateShip(-15)" title="Rotate CCW">&#8634;</button>
       <button class="btn btn-ghost" style="min-height:36px;font-size:11px;padding:0 8px;flex-shrink:0" onclick="VillageModule.rotateShip(15)" title="Rotate CW">&#8635;</button>
       <div style="width:1px;background:rgba(255,255,255,0.15);height:26px;flex-shrink:0;margin:0 1px"></div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;max-width:320px">
-        <button class="tbtn" data-icon="wc"      style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('wc')" title="WC">WC</button>
-        <button class="tbtn" data-icon="cafe"    style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('cafe')" title="Tente café">☕</button>
-        <button class="tbtn" data-icon="wind"    style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('wind')" title="Vent">&#8593;</button>
-        <button class="tbtn" data-icon="heli"    style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('heli')" title="Hélicoptère">H</button>
-        <button class="tbtn" data-icon="food"    style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('food')" title="Food">🍴</button>
-        <button class="tbtn" data-icon="skidoo"  style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('skidoo')" title="Skidoo">🏁</button>
-        <button class="tbtn" data-icon="sherp"   style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('sherp')" title="Sherp">🚜</button>
-        <button class="tbtn" data-icon="fuel"    style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('fuel')" title="Gasoil">⛽</button>
-        <button class="tbtn" data-icon="zodiac"  style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('zodiac')" title="Zodiac 6m">🛶</button>
-        <button class="tbtn" data-icon="lifeboat" style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('lifeboat')" title="Lifeboat 15m">🛥</button>
-        <button class="tbtn" data-icon="rifle"   style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('rifle')" title="Fusil">🔫</button>
-        <button class="tbtn" data-icon="panel"   style="min-height:28px;font-size:10px;padding:2px 4px;flex-shrink:0" onclick="VillageModule.setIconMode('panel')" title="Panneau">⊡</button>
-      </div>
+      <button class="btn btn-ghost" id="village-windcurrent-btn" style="min-height:36px;font-size:11px;padding:0 10px;flex-shrink:0" onclick="VillageModule.toggleWindCurrentPanel()">&#127788; VENT/COURANT</button>
+    </div>
+    <!-- Wind/current overlay settings -->
+    <div id="village-windcurrent-opts" style="display:none;gap:8px;align-items:center;flex-shrink:0;margin-bottom:5px;flex-wrap:wrap;padding:6px 10px;background:rgba(255,255,255,0.06);border-radius:6px;border:1px solid rgba(255,255,255,0.1)">
+      <label class="checkbox-row" style="display:flex;align-items:center;gap:5px;cursor:pointer">
+        <input type="checkbox" id="village-wc-show" onchange="VillageModule.setShowWindCurrent(this.checked)">
+        <span style="font-size:10px;font-weight:700;color:var(--oe-cream-dim)">AFFICHER SUR LE PLAN</span>
+      </label>
+      <div style="width:1px;background:rgba(255,255,255,0.15);height:24px;flex-shrink:0"></div>
+      <span style="font-size:10px;font-weight:700;color:#7EC8E3;letter-spacing:0.05em">&#127788; VENT</span>
+      <label style="font-size:9px;color:var(--oe-cream-dim);display:flex;align-items:center;gap:3px">Direction (&deg;)
+        <input type="number" id="village-wind-dir" min="0" max="359" value="0" class="input" style="width:56px;padding:3px 5px;font-size:11px" oninput="VillageModule.setWindCurrent()"></label>
+      <label style="font-size:9px;color:var(--oe-cream-dim);display:flex;align-items:center;gap:3px">Vitesse (kt)
+        <input type="number" id="village-wind-speed" min="0" value="0" class="input" style="width:52px;padding:3px 5px;font-size:11px" oninput="VillageModule.setWindCurrent()"></label>
+      <div style="width:1px;background:rgba(255,255,255,0.15);height:24px;flex-shrink:0"></div>
+      <span style="font-size:10px;font-weight:700;color:#F39C12;letter-spacing:0.05em">&#127754; COURANT</span>
+      <label style="font-size:9px;color:var(--oe-cream-dim);display:flex;align-items:center;gap:3px">Direction (&deg;)
+        <input type="number" id="village-current-dir" min="0" max="359" value="0" class="input" style="width:56px;padding:3px 5px;font-size:11px" oninput="VillageModule.setWindCurrent()"></label>
+      <label style="font-size:9px;color:var(--oe-cream-dim);display:flex;align-items:center;gap:3px">Vitesse (kt)
+        <input type="number" id="village-current-speed" min="0" value="0" class="input" style="width:52px;padding:3px 5px;font-size:11px" oninput="VillageModule.setWindCurrent()"></label>
+      <span style="font-size:9px;color:var(--oe-cream-dim);margin-left:auto">Direction saisie telle quelle (convention du bord)</span>
     </div>
     <!-- Draw options (visible when a draw tool is active) -->
     <div id="village-draw-opts" style="display:none;gap:5px;align-items:center;flex-shrink:0;margin-bottom:5px;flex-wrap:wrap;padding:5px 8px;background:rgba(255,255,255,0.06);border-radius:6px;border:1px solid rgba(255,255,255,0.1)">
@@ -5264,7 +5293,22 @@ body {
       <button class="tbtn v-w-btn"        data-w="8"  style="min-height:28px;min-width:32px;font-size:21px;padding:0 6px;flex-shrink:0;font-weight:800" onclick="VillageModule.setDrawWidth(8)" title="Thick">&#8212;</button>
       <button class="tbtn v-w-btn"        data-w="16" style="min-height:28px;min-width:32px;font-size:28px;padding:0 6px;flex-shrink:0;font-weight:900;line-height:0.8" onclick="VillageModule.setDrawWidth(16)" title="X-Thick">&#8212;</button>
     </div>
-    <!-- Canvas -->
+    <!-- Icon-to-place sidebar + Canvas -->
+    <div style="display:flex;flex:1;min-height:0;gap:8px">
+      <div id="village-icon-menu" class="v-icon-menu">
+        <button class="v-icon-btn" data-icon="wc"       onclick="VillageModule.setIconMode('wc')"       title="WC"><span class="v-icon-glyph">🚻</span><span class="v-icon-label">WC</span></button>
+        <button class="v-icon-btn" data-icon="cafe"     onclick="VillageModule.setIconMode('cafe')"     title="Tente café"><span class="v-icon-glyph">☕</span><span class="v-icon-label">CAFÉ</span></button>
+        <button class="v-icon-btn" data-icon="wind"     onclick="VillageModule.setIconMode('wind')"     title="Vent"><span class="v-icon-glyph">&#8593;</span><span class="v-icon-label">VENT</span></button>
+        <button class="v-icon-btn" data-icon="heli"     onclick="VillageModule.setIconMode('heli')"     title="Hélicoptère"><span class="v-icon-glyph">🚁</span><span class="v-icon-label">HÉLI</span></button>
+        <button class="v-icon-btn" data-icon="food"     onclick="VillageModule.setIconMode('food')"     title="Food"><span class="v-icon-glyph">🍴</span><span class="v-icon-label">FOOD</span></button>
+        <button class="v-icon-btn" data-icon="skidoo"   onclick="VillageModule.setIconMode('skidoo')"   title="Skidoo"><span class="v-icon-glyph">🏁</span><span class="v-icon-label">SKIDOO</span></button>
+        <button class="v-icon-btn" data-icon="sherp"    onclick="VillageModule.setIconMode('sherp')"    title="Sherp"><span class="v-icon-glyph">🚜</span><span class="v-icon-label">SHERP</span></button>
+        <button class="v-icon-btn" data-icon="fuel"     onclick="VillageModule.setIconMode('fuel')"     title="Gasoil"><span class="v-icon-glyph">⛽</span><span class="v-icon-label">GASOIL</span></button>
+        <button class="v-icon-btn" data-icon="zodiac"   onclick="VillageModule.setIconMode('zodiac')"   title="Zodiac 6m"><span class="v-icon-glyph">🛶</span><span class="v-icon-label">ZODIAC</span></button>
+        <button class="v-icon-btn" data-icon="lifeboat" onclick="VillageModule.setIconMode('lifeboat')" title="Lifeboat 15m"><span class="v-icon-glyph">🛥</span><span class="v-icon-label">LIFEBOAT</span></button>
+        <button class="v-icon-btn" data-icon="rifle"    onclick="VillageModule.setIconMode('rifle')"    title="Fusil"><span class="v-icon-glyph">🔫</span><span class="v-icon-label">FUSIL</span></button>
+        <button class="v-icon-btn" data-icon="panel"    onclick="VillageModule.setIconMode('panel')"    title="Panneau"><span class="v-icon-glyph">🪧</span><span class="v-icon-label">PANNEAU</span></button>
+      </div>
     <div id="village-canvas-wrap" style="flex:1;min-height:0;position:relative;border-radius:8px;overflow:hidden;background:#c8def0">
       <canvas id="village-canvas" style="display:block;touch-action:none"></canvas>
       <!-- Village info popup -->
@@ -5300,6 +5344,7 @@ body {
           </div>
         </div>
       </div>
+    </div>
     </div>
     <!-- Legend -->
     <div style="display:flex;gap:14px;flex-shrink:0;margin-top:5px;font-size:10px;color:var(--oe-cream-dim);align-items:center;flex-wrap:wrap">
@@ -28095,6 +28140,15 @@ const VillageModule = {
   shipRotation: 0,
   _popupVillageId: null,
   _isApplyingRemote: false,
+  showWindCurrent: false,
+  windDir: 0, windSpeed: 0,
+  currentDir: 0, currentSpeed: 0,
+  // Same glyphs as the .v-icon-btn sidebar buttons — a placed icon should look like what was
+  // clicked to place it, not a separate hand-drawn vector redrawing of the same idea.
+  ICON_EMOJI: {
+    wc: '🚻', cafe: '☕', wind: '↑', heli: '🚁', food: '🍴',
+    skidoo: '🏁', sherp: '🚜', fuel: '⛽', zodiac: '🛶', lifeboat: '🛥', rifle: '🔫', panel: '🪧',
+  },
 
   _defaults() {
     const e = [{ id: 'ship', type: 'ship', x: 0, y: 0, label: 'LCC', rotation: 0 }];
@@ -28125,6 +28179,7 @@ const VillageModule = {
     this._load();
     this._bind();
     this._fit();
+    this._updateWindCurrentInputs();
     this.render();
   },
 
@@ -28142,6 +28197,9 @@ const VillageModule = {
       this.elements = d.elements && d.elements.length ? d.elements : this._defaults();
       this.drawings = Array.isArray(d.drawings) ? d.drawings.slice(-80) : [];
       this.shipRotation = d.shipRotation || 0;
+      this.showWindCurrent = !!d.showWindCurrent;
+      this.windDir = d.windDir || 0; this.windSpeed = d.windSpeed || 0;
+      this.currentDir = d.currentDir || 0; this.currentSpeed = d.currentSpeed || 0;
       // Ensure all villages have required properties
       this.elements.forEach(el => {
         if (el.type === 'village') {
@@ -28159,6 +28217,8 @@ const VillageModule = {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify({
         elements: this.elements, drawings: this.drawings.slice(-80), shipRotation: this.shipRotation,
+        showWindCurrent: this.showWindCurrent, windDir: this.windDir, windSpeed: this.windSpeed,
+        currentDir: this.currentDir, currentSpeed: this.currentSpeed,
       }));
     } catch(e) {}
   },
@@ -28369,6 +28429,7 @@ const VillageModule = {
 
     this._dScaleBar(ctx,W,H,s);
     this._dToolBadge(ctx,W,H);
+    this._dWindCurrent(ctx,W,H);
   },
 
   _rStroke(ctx, d, s, ox, oy) {
@@ -28428,170 +28489,19 @@ const VillageModule = {
         break;
       }
       case 'icon': {
+        // A placed icon used to be a separate hand-drawn vector redrawing of the same idea per
+        // type (12 cases, ~170 lines) — now it's literally the same glyph as the .v-icon-btn
+        // sidebar button that was clicked to place it, drawn as text instead of vector shapes.
         if (d.pts.length < 1) break;
         const [sx,sy] = toS(d.pts[0]);
         ctx.save();
         ctx.translate(sx, sy);
-        const sz = Math.max(12, 4.8*s);
-        ctx.lineWidth = Math.max(1, sz*0.09);
-        ctx.shadowColor = 'rgba(0,0,0,0.45)';
-        ctx.shadowBlur = Math.max(2, sz*0.2);
-        const drawSmallIcon = (type) => {
-          ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-          ctx.fillStyle = 'rgba(255,210,50,0.95)';
-          switch(type) {
-            case 'wc':
-              ctx.fillRect(-sz/2, -sz/2, sz, sz);
-              ctx.strokeRect(-sz/2, -sz/2, sz, sz);
-              ctx.fillStyle = 'white';
-              ctx.font = `bold ${Math.max(8, sz*0.42)}px sans-serif`;
-              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-              ctx.fillText('WC', 0, 0);
-              break;
-            case 'cafe':
-              ctx.fillStyle = '#f5f5f5';
-              ctx.beginPath();
-              ctx.moveTo(-sz*0.45, -sz*0.15);
-              ctx.lineTo(-sz*0.45, sz*0.28);
-              ctx.quadraticCurveTo(0, sz*0.45, sz*0.45, sz*0.28);
-              ctx.lineTo(sz*0.45, -sz*0.15);
-              ctx.closePath();
-              ctx.fill(); ctx.stroke();
-              ctx.beginPath();
-              ctx.arc(sz*0.48, sz*0.05, sz*0.18, -Math.PI/2, Math.PI/2);
-              ctx.stroke();
-              ctx.beginPath();
-              ctx.moveTo(-sz*0.2, -sz*0.25); ctx.lineTo(-sz*0.28, -sz*0.48);
-              ctx.moveTo(0, -sz*0.24); ctx.lineTo(-sz*0.06, -sz*0.5);
-              ctx.moveTo(sz*0.2, -sz*0.25); ctx.lineTo(sz*0.15, -sz*0.48);
-              ctx.stroke();
-              break;
-            case 'wind':
-              ctx.beginPath();
-              ctx.moveTo(0, -sz*0.55); ctx.lineTo(0, sz*0.52);
-              ctx.moveTo(-sz*0.3, sz*0.2); ctx.lineTo(0, sz*0.52);
-              ctx.lineTo(sz*0.3, sz*0.2);
-              ctx.moveTo(-sz*0.36, -sz*0.36); ctx.lineTo(0, -sz*0.55);
-              ctx.lineTo(sz*0.36, -sz*0.36);
-              ctx.stroke();
-              break;
-            case 'heli':
-              ctx.beginPath();
-              ctx.arc(0, 0, sz*0.6, 0, Math.PI*2);
-              ctx.stroke();
-              ctx.fillStyle = '#27AE60';
-              ctx.font = `bold ${Math.max(8, sz*0.6)}px sans-serif`;
-              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-              ctx.fillText('H', 0, 0);
-              ctx.beginPath();
-              ctx.moveTo(-sz*0.6, -sz*0.72); ctx.lineTo(sz*0.6, -sz*0.72);
-              ctx.moveTo(0, -sz*0.7); ctx.lineTo(0, -sz*0.95);
-              ctx.stroke();
-              break;
-            case 'food':
-              ctx.beginPath();
-              ctx.moveTo(-sz*0.28, -sz*0.5); ctx.lineTo(-sz*0.28, sz*0.5);
-              ctx.moveTo(-sz*0.4, -sz*0.45); ctx.lineTo(-sz*0.16, -sz*0.45);
-              ctx.moveTo(-sz*0.4, -sz*0.32); ctx.lineTo(-sz*0.16, -sz*0.32);
-              ctx.moveTo(-sz*0.4, -sz*0.19); ctx.lineTo(-sz*0.16, -sz*0.19);
-              ctx.moveTo(sz*0.1, -sz*0.5); ctx.lineTo(sz*0.34, -sz*0.14);
-              ctx.lineTo(sz*0.18, sz*0.5);
-              ctx.stroke();
-              break;
-            case 'skidoo':
-              ctx.fillStyle = '#f0f6ff';
-              ctx.beginPath();
-              ctx.ellipse(-sz*0.12, 0, sz*0.3, sz*0.2, 0, 0, Math.PI*2);
-              ctx.fill(); ctx.stroke();
-              ctx.fillStyle = '#E74C3C';
-              ctx.fillRect(-sz*0.15, -sz*0.18, sz*0.48, sz*0.36);
-              ctx.strokeRect(-sz*0.15, -sz*0.18, sz*0.48, sz*0.36);
-              ctx.beginPath();
-              ctx.moveTo(sz*0.2, -sz*0.1); ctx.lineTo(sz*0.44, -sz*0.34);
-              ctx.lineTo(sz*0.56, -sz*0.26);
-              ctx.moveTo(sz*0.22, sz*0.1); ctx.lineTo(sz*0.5, sz*0.36);
-              ctx.stroke();
-              ctx.beginPath();
-              ctx.moveTo(-sz*0.45, sz*0.34); ctx.quadraticCurveTo(0, sz*0.52, sz*0.5, sz*0.34);
-              ctx.stroke();
-              break;
-            case 'sherp':
-              ctx.fillStyle = '#D72626';
-              ctx.fillRect(-sz*0.34, -sz*0.22, sz*0.68, sz*0.44);
-              ctx.strokeRect(-sz*0.34, -sz*0.22, sz*0.68, sz*0.44);
-              ctx.fillStyle = '#f5f5f5';
-              ctx.fillRect(-sz*0.16, -sz*0.16, sz*0.32, sz*0.24);
-              ctx.strokeRect(-sz*0.16, -sz*0.16, sz*0.32, sz*0.24);
-              ctx.fillStyle = '#101820';
-              [[-0.44,-0.3],[0.44,-0.3],[-0.44,0.3],[0.44,0.3]].forEach(([cx,cy]) => {
-                ctx.beginPath();
-                ctx.arc(sz*cx, sz*cy, sz*0.16, 0, Math.PI*2);
-                ctx.fill();
-              });
-              break;
-            case 'fuel':
-              ctx.fillStyle = '#f5f5f5';
-              ctx.fillRect(-sz*0.33, -sz*0.5, sz*0.52, sz);
-              ctx.strokeRect(-sz*0.33, -sz*0.5, sz*0.52, sz);
-              ctx.fillStyle = '#E74C3C';
-              ctx.fillRect(-sz*0.24, -sz*0.25, sz*0.32, sz*0.32);
-              ctx.strokeRect(-sz*0.24, -sz*0.25, sz*0.32, sz*0.32);
-              ctx.beginPath();
-              ctx.moveTo(sz*0.2, -sz*0.42); ctx.lineTo(sz*0.44, -sz*0.22);
-              ctx.lineTo(sz*0.44, sz*0.18); ctx.lineTo(sz*0.24, sz*0.22);
-              ctx.stroke();
-              break;
-            case 'zodiac':
-              // Top view zodiac ~6m
-              ctx.beginPath();
-              ctx.ellipse(0, 0, sz*0.88, sz*0.34, 0, 0, Math.PI*2);
-              ctx.fillStyle = '#7f8c8d';
-              ctx.fill(); ctx.stroke();
-              ctx.beginPath();
-              ctx.ellipse(0, 0, sz*0.56, sz*0.18, 0, 0, Math.PI*2);
-              ctx.fillStyle = '#ecf0f1';
-              ctx.fill();
-              ctx.stroke();
-              ctx.fillStyle = '#101820';
-              ctx.font = `bold ${Math.max(7, sz*0.32)}px sans-serif`;
-              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-              ctx.fillText('6m', 0, 0);
-              break;
-            case 'lifeboat':
-              // Top view lifeboat ~15m
-              ctx.beginPath();
-              ctx.ellipse(0, 0, sz*1.35, sz*0.45, 0, 0, Math.PI*2);
-              ctx.fillStyle = '#F39C12';
-              ctx.fill(); ctx.stroke();
-              ctx.fillStyle = '#f8d27c';
-              ctx.beginPath();
-              ctx.ellipse(0, 0, sz*0.9, sz*0.22, 0, 0, Math.PI*2);
-              ctx.fill();
-              ctx.stroke();
-              ctx.fillStyle = '#101820';
-              ctx.font = `bold ${Math.max(7, sz*0.3)}px sans-serif`;
-              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-              ctx.fillText('15m', 0, 0);
-              break;
-            case 'rifle':
-              ctx.beginPath();
-              ctx.moveTo(-sz*0.55, -sz*0.08); ctx.lineTo(sz*0.45, -sz*0.08);
-              ctx.moveTo(-sz*0.18, -sz*0.08); ctx.lineTo(-sz*0.38, sz*0.24);
-              ctx.lineTo(-sz*0.24, sz*0.24);
-              ctx.moveTo(sz*0.2, -sz*0.08); ctx.lineTo(sz*0.2, sz*0.16);
-              ctx.lineTo(sz*0.3, sz*0.16);
-              ctx.moveTo(sz*0.45, -sz*0.08); ctx.lineTo(sz*0.55, -sz*0.18);
-              ctx.stroke();
-              break;
-            case 'panel':
-              ctx.fillRect(-sz/2, -sz/2, sz, sz);
-              ctx.strokeRect(-sz/2, -sz/2, sz, sz);
-              ctx.fillStyle = '#3498DB';
-              ctx.fillRect(-sz*0.4, -sz*0.4, sz*0.8, sz*0.8);
-              break;
-          }
-        };
-        drawSmallIcon(d.iconType);
+        const sz = Math.max(18, 6.2*s);
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = Math.max(3, sz*0.18);
+        ctx.font = `${sz}px "Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(this.ICON_EMOJI[d.iconType] || '❓', 0, 0);
         ctx.restore();
         break;
       }
@@ -28693,6 +28603,37 @@ const VillageModule = {
     ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(label,0,0);
   },
 
+  /* Top-left overlay (scale bar is bottom-left, tool badge top-right, so this corner is free) —
+     two compass arrows, wind and current, each pointing the entered direction (0°=up/N, clockwise),
+     with direction+speed labelled underneath. Screen-space, drawn last so it stays on top and
+     legible regardless of zoom/pan. */
+  _dWindCurrent(ctx,W,H) {
+    if (!this.showWindCurrent) return;
+    const items = [
+      { label: 'VENT', dir: this.windDir||0, speed: this.windSpeed||0, color: '#7EC8E3' },
+      { label: 'COURANT', dir: this.currentDir||0, speed: this.currentSpeed||0, color: '#F39C12' },
+    ];
+    const x0=14, y0=14, rowH=52, panelW=140;
+    ctx.save();
+    ctx.fillStyle='rgba(12,28,55,0.78)';
+    ctx.fillRect(x0-6,y0-6,panelW,rowH*items.length+8);
+    items.forEach((it,i) => {
+      const cy = y0 + i*rowH + rowH/2, cx = x0 + 22;
+      ctx.save();
+      ctx.translate(cx,cy);
+      ctx.rotate(it.dir * Math.PI/180);
+      ctx.strokeStyle = it.color; ctx.fillStyle = it.color; ctx.lineWidth = 2.5; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(0,15); ctx.lineTo(0,-14); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(-6,-6); ctx.lineTo(6,-6); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle='#fff'; ctx.font='bold 10px sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
+      ctx.fillText(it.label, x0+46, cy-8);
+      ctx.fillStyle=it.color; ctx.font='10px sans-serif';
+      ctx.fillText(`${Math.round(it.dir)}° / ${it.speed} kt`, x0+46, cy+8);
+    });
+    ctx.restore();
+  },
+
   _dScaleBar(ctx,W,H,s) {
     const bm=s>=6?20:s>=3?50:100, bp=bm*s, x=14, y=H-26;
     ctx.fillStyle='rgba(12,28,55,0.72)';
@@ -28782,6 +28723,47 @@ const VillageModule = {
     this.sendNetworkUpdate('ship-rotate');
   },
 
+  toggleWindCurrentPanel() {
+    const panel = document.getElementById('village-windcurrent-opts');
+    if (!panel) return;
+    panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'flex' : 'none';
+  },
+
+  setShowWindCurrent(checked) {
+    this.showWindCurrent = !!checked;
+    this._save();
+    this.render();
+    this.sendNetworkUpdate('wind-current-toggle');
+  },
+
+  /* Direction is stored exactly as entered — deliberately not auto-flipping wind 180° for the
+     classic "wind FROM / current TOWARD" convention mismatch, since which one this crew actually
+     uses isn't something to assume; the hint text next to the inputs says so. */
+  setWindCurrent() {
+    const num = (id, max) => {
+      const v = parseFloat(document.getElementById(id)?.value);
+      if (!Number.isFinite(v)) return 0;
+      return max ? ((v % max) + max) % max : Math.max(0, v);
+    };
+    this.windDir = num('village-wind-dir', 360);
+    this.windSpeed = num('village-wind-speed');
+    this.currentDir = num('village-current-dir', 360);
+    this.currentSpeed = num('village-current-speed');
+    this._save();
+    this.render();
+    this.sendNetworkUpdate('wind-current-update');
+  },
+
+  _updateWindCurrentInputs() {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    const show = document.getElementById('village-wc-show');
+    if (show) show.checked = !!this.showWindCurrent;
+    set('village-wind-dir', this.windDir || 0);
+    set('village-wind-speed', this.windSpeed || 0);
+    set('village-current-dir', this.currentDir || 0);
+    set('village-current-speed', this.currentSpeed || 0);
+  },
+
   showVillagePopup(villageId) {
     const el = this.elements.find(e => e.id === villageId);
     if (!el || el.type !== 'village') return;
@@ -28843,6 +28825,9 @@ const VillageModule = {
       elements: this.elements ? this.elements.map(el => ({ ...el })) : this._defaults(),
       drawings: Array.isArray(this.drawings) ? this.drawings.slice(-80).map(d => ({ ...d, pts: Array.isArray(d.pts) ? d.pts.map(p => [...p]) : [] })) : [],
       shipRotation: this.shipRotation || 0,
+      showWindCurrent: this.showWindCurrent || false,
+      windDir: this.windDir || 0, windSpeed: this.windSpeed || 0,
+      currentDir: this.currentDir || 0, currentSpeed: this.currentSpeed || 0,
     };
   },
 
@@ -28861,7 +28846,11 @@ const VillageModule = {
         ? payload.drawings.slice(-80).map(d => ({ ...d, pts: Array.isArray(d.pts) ? d.pts.map(p => [...p]) : [] }))
         : [];
       this.shipRotation = payload.shipRotation || 0;
+      this.showWindCurrent = !!payload.showWindCurrent;
+      this.windDir = payload.windDir || 0; this.windSpeed = payload.windSpeed || 0;
+      this.currentDir = payload.currentDir || 0; this.currentSpeed = payload.currentSpeed || 0;
       this._save();
+      this._updateWindCurrentInputs();
       if (this._popupVillageId) this.showVillagePopup(this._popupVillageId);
       this.render();
     } finally {
@@ -28869,178 +28858,6 @@ const VillageModule = {
     }
   },
 
-  _drawIcon(ctx, type, x, y, s, scale) {
-    ctx.save();
-    ctx.translate(x*scale, y*scale);
-    const sz = Math.max(12, 4.8*scale);
-    ctx.lineWidth = Math.max(1, sz*0.09);
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = Math.max(2, sz*0.2);
-    switch(type) {
-      case 'wc': // WC
-        ctx.fillStyle = 'rgba(255,210,50,0.95)';
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.fillRect(-sz/2, -sz/2, sz, sz);
-        ctx.strokeRect(-sz/2, -sz/2, sz, sz);
-        ctx.fillStyle = 'white';
-        ctx.font = `bold ${Math.max(8, sz*0.42)}px sans-serif`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('WC', 0, 0);
-        break;
-      case 'cafe': // Café
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.fillStyle = '#f5f5f5';
-        ctx.beginPath();
-        ctx.moveTo(-sz*0.45, -sz*0.15);
-        ctx.lineTo(-sz*0.45, sz*0.28);
-        ctx.quadraticCurveTo(0, sz*0.45, sz*0.45, sz*0.28);
-        ctx.lineTo(sz*0.45, -sz*0.15);
-        ctx.closePath();
-        ctx.fill(); ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(sz*0.48, sz*0.05, sz*0.18, -Math.PI/2, Math.PI/2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-sz*0.2, -sz*0.25); ctx.lineTo(-sz*0.28, -sz*0.48);
-        ctx.moveTo(0, -sz*0.24); ctx.lineTo(-sz*0.06, -sz*0.5);
-        ctx.moveTo(sz*0.2, -sz*0.25); ctx.lineTo(sz*0.15, -sz*0.48);
-        ctx.stroke();
-        break;
-      case 'wind': // Wind arrow
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.beginPath();
-        ctx.moveTo(0, -sz*0.55); ctx.lineTo(0, sz*0.52);
-        ctx.moveTo(-sz*0.3, sz*0.2); ctx.lineTo(0, sz*0.52);
-        ctx.lineTo(sz*0.3, sz*0.2);
-        ctx.moveTo(-sz*0.36, -sz*0.36); ctx.lineTo(0, -sz*0.55);
-        ctx.lineTo(sz*0.36, -sz*0.36);
-        ctx.stroke();
-        break;
-      case 'heli': // Helicopter
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.beginPath();
-        ctx.arc(0, 0, sz*0.6, 0, Math.PI*2);
-        ctx.stroke();
-        ctx.fillStyle = '#27AE60';
-        ctx.font = `bold ${Math.max(8, sz*0.6)}px sans-serif`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('H', 0, 0);
-        ctx.beginPath();
-        ctx.moveTo(-sz*0.6, -sz*0.72); ctx.lineTo(sz*0.6, -sz*0.72);
-        ctx.moveTo(0, -sz*0.7); ctx.lineTo(0, -sz*0.95);
-        ctx.stroke();
-        break;
-      case 'food': // Food
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.beginPath();
-        ctx.moveTo(-sz*0.28, -sz*0.5); ctx.lineTo(-sz*0.28, sz*0.5);
-        ctx.moveTo(-sz*0.4, -sz*0.45); ctx.lineTo(-sz*0.16, -sz*0.45);
-        ctx.moveTo(-sz*0.4, -sz*0.32); ctx.lineTo(-sz*0.16, -sz*0.32);
-        ctx.moveTo(-sz*0.4, -sz*0.19); ctx.lineTo(-sz*0.16, -sz*0.19);
-        ctx.moveTo(sz*0.1, -sz*0.5); ctx.lineTo(sz*0.34, -sz*0.14);
-        ctx.lineTo(sz*0.18, sz*0.5);
-        ctx.stroke();
-        break;
-      case 'skidoo': // Skidoo
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.fillStyle = '#f0f6ff';
-        ctx.beginPath();
-        ctx.ellipse(-sz*0.12, 0, sz*0.3, sz*0.2, 0, 0, Math.PI*2);
-        ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#E74C3C';
-        ctx.fillRect(-sz*0.15, -sz*0.18, sz*0.48, sz*0.36);
-        ctx.strokeRect(-sz*0.15, -sz*0.18, sz*0.48, sz*0.36);
-        ctx.beginPath();
-        ctx.moveTo(sz*0.2, -sz*0.1); ctx.lineTo(sz*0.44, -sz*0.34);
-        ctx.lineTo(sz*0.56, -sz*0.26);
-        ctx.moveTo(sz*0.22, sz*0.1); ctx.lineTo(sz*0.5, sz*0.36);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-sz*0.45, sz*0.34); ctx.quadraticCurveTo(0, sz*0.52, sz*0.5, sz*0.34);
-        ctx.stroke();
-        break;
-      case 'sherp': // Sherp (vehicle)
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.fillStyle = '#D72626';
-        ctx.fillRect(-sz*0.34, -sz*0.22, sz*0.68, sz*0.44);
-        ctx.strokeRect(-sz*0.34, -sz*0.22, sz*0.68, sz*0.44);
-        ctx.fillStyle = '#f5f5f5';
-        ctx.fillRect(-sz*0.16, -sz*0.16, sz*0.32, sz*0.24);
-        ctx.strokeRect(-sz*0.16, -sz*0.16, sz*0.32, sz*0.24);
-        ctx.fillStyle = '#101820';
-        [[-0.44,-0.3],[0.44,-0.3],[-0.44,0.3],[0.44,0.3]].forEach(([cx,cy]) => {
-          ctx.beginPath();
-          ctx.arc(sz*cx, sz*cy, sz*0.16, 0, Math.PI*2);
-          ctx.fill();
-        });
-        break;
-      case 'fuel': // Fuel
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.fillStyle = '#f5f5f5';
-        ctx.fillRect(-sz*0.33, -sz*0.5, sz*0.52, sz);
-        ctx.strokeRect(-sz*0.33, -sz*0.5, sz*0.52, sz);
-        ctx.fillStyle = '#E74C3C';
-        ctx.fillRect(-sz*0.24, -sz*0.25, sz*0.32, sz*0.32);
-        ctx.strokeRect(-sz*0.24, -sz*0.25, sz*0.32, sz*0.32);
-        ctx.beginPath();
-        ctx.moveTo(sz*0.2, -sz*0.42); ctx.lineTo(sz*0.44, -sz*0.22);
-        ctx.lineTo(sz*0.44, sz*0.18); ctx.lineTo(sz*0.24, sz*0.22);
-        ctx.stroke();
-        break;
-      case 'zodiac': // Zodiac (boat)
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, sz*0.88, sz*0.34, 0, 0, Math.PI*2);
-        ctx.fillStyle = '#7f8c8d';
-        ctx.fill(); ctx.stroke();
-        ctx.beginPath();
-        ctx.ellipse(0, 0, sz*0.56, sz*0.18, 0, 0, Math.PI*2);
-        ctx.fillStyle = '#ecf0f1';
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#101820';
-        ctx.font = `bold ${Math.max(7, sz*0.32)}px sans-serif`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('6m', 0, 0);
-        break;
-      case 'lifeboat': // Lifeboat
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, sz*1.35, sz*0.45, 0, 0, Math.PI*2);
-        ctx.fillStyle = '#F39C12';
-        ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#f8d27c';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, sz*0.9, sz*0.22, 0, 0, Math.PI*2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#101820';
-        ctx.font = `bold ${Math.max(7, sz*0.3)}px sans-serif`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('15m', 0, 0);
-        break;
-      case 'rifle': // Rifle
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.beginPath();
-        ctx.moveTo(-sz*0.55, -sz*0.08); ctx.lineTo(sz*0.45, -sz*0.08);
-        ctx.moveTo(-sz*0.18, -sz*0.08); ctx.lineTo(-sz*0.38, sz*0.24);
-        ctx.lineTo(-sz*0.24, sz*0.24);
-        ctx.moveTo(sz*0.2, -sz*0.08); ctx.lineTo(sz*0.2, sz*0.16);
-        ctx.lineTo(sz*0.3, sz*0.16);
-        ctx.moveTo(sz*0.45, -sz*0.08); ctx.lineTo(sz*0.55, -sz*0.18);
-        ctx.stroke();
-        break;
-      case 'panel': // Polar panel
-        ctx.fillStyle = 'rgba(255,210,50,0.95)';
-        ctx.strokeStyle = 'rgba(8,18,32,0.9)';
-        ctx.fillRect(-sz/2, -sz/2, sz, sz);
-        ctx.strokeRect(-sz/2, -sz/2, sz, sz);
-        ctx.fillStyle = '#3498DB';
-        ctx.fillRect(-sz*0.4, -sz*0.4, sz*0.8, sz*0.8);
-        break;
-    }
-    ctx.restore();
-  },
 };
 
 
