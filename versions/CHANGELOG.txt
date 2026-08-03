@@ -32,3 +32,4 @@
 [2026-08-02 18:28] v2.0.31 -> v2.0.32  (patch)  -- post drill
 [2026-08-03 12:33] v2.0.32 -> v2.0.33  (patch)  -- sauvegarde 030826 all fonctionnel
 [2026-08-03 13:58] v2.0.33 -> v2.0.34  (patch)  -- pre depot github
+[2026-08-03 14:07] v2.0.34 -> v2.0.35  (patch)  -- all sauvegarde avec mustering  [modules: manifest.json, sw.js, sentinel_server.py, LCC Sentinel Mustering.html, manifest-mustering.json, sw-mustering.js]
