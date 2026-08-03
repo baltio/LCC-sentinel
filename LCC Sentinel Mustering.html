@@ -2854,8 +2854,8 @@ function renderChat() {
   const box = document.getElementById('chatMsgs');
   box.innerHTML = STATE.chat.map(m => `
     <div class="chat-bubble ${m.from === STATE.currentUserNumber ? 'mine' : ''}">
-      <div class="from">${m.from}${m.from===STATE.currentUserNumber?' (me)':''}</div>
-      <div class="txt">${escapeHtml(m.txt)}</div>
+      <div class="from">${m.from || '?'}${m.from===STATE.currentUserNumber?' (me)':''}</div>
+      <div class="txt">${escapeHtml(m.txt || '')}</div>
       <div class="time">${fmtTime(m.ts)}</div>
     </div>`).join('');
   box.scrollTop = box.scrollHeight;
@@ -2874,13 +2874,23 @@ function sendChat(text) {
 }
 
 SyncAdapter.on('chat_message', (msg) => {
-  STATE.chat.push(msg.payload);
+  // Sentinel 3 sends {text}, not {txt}/{from} — pushing msg.payload verbatim used to store an
+  // entry renderChat()/escapeHtml() couldn't read, throwing on the very next chat render (ours
+  // or theirs) and silently blocking every chat send after that until reload. Normalize here so
+  // any sender's shape lands as this tablet's own {ts,from,txt}.
+  const p = msg.payload || {};
+  const normalized = {
+    ts: p.ts || msg.ts || Date.now(),
+    from: p.from || msg.from || msg.user || '?',
+    txt: p.txt || p.text || '',
+  };
+  STATE.chat.push(normalized);
   if (STATE.chat.length > 300) STATE.chat.shift();
   saveState();
   if (!document.getElementById('panelChat').classList.contains('show')) {
     chatUnread++; renderChatDot();
   } else renderChat();
-  pushNotification(`💬 ${msg.payload.from}: ${msg.payload.txt}`);
+  pushNotification(`💬 ${normalized.from}: ${normalized.txt}`);
 });
 
 function renderChatDot() {
@@ -3169,8 +3179,30 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('./sw-mustering.js').then(function(reg) {
       console.log('[SW] Registered, scope:', reg.scope);
+      // See LCC sentinel 3.html's identical comment — a tablet can sit on this page for a long
+      // shift without a fresh navigation, and that's the only time the browser re-checks sw-mustering.js
+      // on its own otherwise (plus a background check roughly every 24h).
+      setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
     }).catch(function(err) {
       console.warn('[SW] Registration failed:', err);
+    });
+
+    // sw-mustering.js calls self.skipWaiting()+clients.claim() unconditionally (see its 'install'
+    // handler), so a new version takes over the moment it finishes installing — 'controllerchange'
+    // is that moment. Only prompt on a REAL update (a controller already existed before), not on
+    // this tablet's very first install.
+    let hadControllerAtLoad = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      if (hadControllerAtLoad) {
+        showAppModal({
+          title: '🔄 Mise à jour disponible',
+          body: 'Une nouvelle version de LCC Sentinel Mustering a été installée en arrière-plan. Recharger pour l\'utiliser — vos pointages et votre configuration restent enregistrés.',
+          confirmText: 'RECHARGER MAINTENANT',
+          cancelText: 'Plus tard',
+          onConfirm: () => window.location.reload(),
+        });
+      }
+      hadControllerAtLoad = true;
     });
   });
 }

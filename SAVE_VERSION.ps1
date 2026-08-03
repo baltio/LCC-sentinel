@@ -118,6 +118,22 @@ foreach ($file in $filesToUpdate) {
     OK "$(Split-Path $file -Leaf) : v$oldVer -> v$newVer"
 }
 
+# sw.js / sw-mustering.js only get fetched again by the browser (and their update-available prompt
+# triggered) when their OWN bytes change — bumping CACHE_NAME here each release is what makes that
+# happen, independently of whatever changed in the HTML they cache. See both files' own comments.
+$ServiceWorkers = @(
+    @{ Path = "sw.js";              Pattern = "CACHE_NAME = 'charcot-sentinel-v[0-9.]+'";  Prefix = "CACHE_NAME = 'charcot-sentinel-v" },
+    @{ Path = "sw-mustering.js";    Pattern = "CACHE_NAME = 'lcc-mustering-v[0-9.]+'";      Prefix = "CACHE_NAME = 'lcc-mustering-v" }
+)
+foreach ($sw in $ServiceWorkers) {
+    $swPath = Join-Path $PSScriptRoot $sw.Path
+    if (-not (Test-Path $swPath)) { continue }
+    $c = Get-Content $swPath -Raw -Encoding UTF8
+    $c = $c -replace $sw.Pattern, "$($sw.Prefix)${newVer}'"
+    Set-Content $swPath $c -Encoding UTF8 -NoNewline
+    OK "$($sw.Path) : cache version -> v$newVer"
+}
+
 $logFile  = Join-Path $VersionsDir "CHANGELOG.txt"
 $logEntry = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] v$oldVer -> v$newVer  ($Bump)"
 if ($Message) { $logEntry += "  -- $Message" }
