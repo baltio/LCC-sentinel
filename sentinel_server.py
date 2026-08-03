@@ -7,9 +7,24 @@
 
   Lancer   : python sentinel_server.py
   Prereqis : pip install websockets   (ou double-cliquer INSTALL.bat)
+
+  SERVEUR DE SECOURS — pour lancer un 2e serveur (autre PC, ou meme PC sur
+  un autre port) que les postes basculent dessus si le principal tombe :
+    python sentinel_server.py --port 8766 --role SECOURS
+  Renseigner cette IP + port 8766 comme "serveur de secours" dans les
+  Settings reseau de l'application (Sentinel 3 et Mustering).
+
+  SYNCHRONISATION ENTRE LES 2 SERVEURS — en plus de la recuperation via les
+  tablettes/PC qui se reconnectent, chaque serveur peut pousser son etat vers
+  l'autre toutes les 5 minutes, pour que le secours parte toujours d'une base
+  recente meme si personne ne s'y est encore connecte. A faire dans LES DEUX
+  SENS (chaque serveur pointe vers l'autre) :
+    Sur le principal : python sentinel_server.py --peer-host <ip_secours> --peer-port 8766
+    Sur le secours    : python sentinel_server.py --port 8766 --role SECOURS --peer-host <ip_principal> --peer-port 8765
 =================================================================
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -29,10 +44,31 @@ except ImportError:
     input("Appuyez sur Entree pour quitter...")
     raise SystemExit(1)
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='CHARCOT SENTINEL — Serveur WebSocket (principal ou secours)')
+    parser.add_argument('--port', type=int, default=8765, help='Port WebSocket (defaut: 8765)')
+    parser.add_argument('--http-port', type=int, default=8080, help='Port HTTP/HTTPS pour la PWA (defaut: 8080)')
+    parser.add_argument('--role', default='PRINCIPAL', help='Etiquette affichee dans la console (ex: PRINCIPAL, SECOURS)')
+    parser.add_argument('--state-file', default=None,
+                         help="Fichier d'etat persistant. Par defaut : sentinel_state.json pour le port "
+                              "8765, sentinel_state_<port>.json pour tout autre port (evite qu'un 2e "
+                              "serveur sur le meme PC n'ecrase le fichier du principal).")
+    parser.add_argument('--peer-host', default=None,
+                         help="IP de l'autre serveur (principal<->secours) vers lequel pousser l'etat "
+                              "periodiquement, en plus de la recuperation via les postes qui se reconnectent.")
+    parser.add_argument('--peer-port', type=int, default=8765, help="Port WebSocket de l'autre serveur (defaut: 8765)")
+    parser.add_argument('--peer-interval', type=int, default=300,
+                         help="Intervalle en secondes entre deux poussees d'etat vers l'autre serveur (defaut: 300 = 5 min)")
+    return parser.parse_args()
+
 # ── Configuration ─────────────────────────────────────────────────────────────
+# HOST/PORT/HTTP_PORT/STATE_FILE/ROLE sont replaces par les valeurs de la ligne de
+# commande juste avant le lancement (voir le bloc __main__ en bas) — les valeurs
+# ci-dessous ne servent que de defaut si le script est importe sans passer par la.
 HOST = '0.0.0.0'   # Ecouter sur toutes les interfaces reseau
 PORT = 8765
 HTTP_PORT = 8080    # Serveur HTTP pour l'application PWA
+ROLE = 'PRINCIPAL'
 STATE_FILE = Path(__file__).with_name('sentinel_state.json')
 CERT_FILE  = Path(__file__).with_name('ssl_cert.pem')
 KEY_FILE   = Path(__file__).with_name('ssl_key.pem')
@@ -45,6 +81,15 @@ PROFILES = {
     '3003': {'id': 'osc',       'name': 'On-Scene Cmdr',    'role': 'OSC',           'initials': 'OS'},
     '4004': {'id': 'backup',    'name': 'Back Up Station',  'role': 'Back Up',       'initials': 'BU'},
     '5005': {'id': 'meetpoint', 'name': 'Meeting Point',    'role': 'Meeting Point', 'initials': 'MP'},
+    '6006': {'id': 'evac303',   'name': 'Evacuation leader 303', 'role': 'Evacuation leader 303', 'initials': 'E3'},
+    # Shared token for all LCC Sentinel Mustering tablets. Every tablet authenticates with the
+    # same PIN but sends its own safety-number identity in payload.profile (name/role/initials),
+    # which overrides these defaults — see the AUTH handler below.
+    '7007': {'id': 'mustering', 'name': 'Mustering Tablet',   'role': 'Mustering',     'initials': 'MU'},
+    # Internal-only token used by push_state_to_peer() when THIS server connects to its peer as a
+    # plain client to hand over a state snapshot — not a human PIN, filtered out of get_client_list()
+    # so it never shows up as a phantom operator in the bridge's connected-clients panel.
+    '0000': {'id': 'relay', 'name': 'Backup Sync', 'role': 'System', 'initials': 'SY'},
 }
 
 # ── Etat serveur ───────────────────────────────────────────────────────────────
@@ -57,6 +102,11 @@ shared_snapshot_meta = {'updatedBy': None, 'updatedAt': None}
 state_dirty = False
 client_counter = 0
 log = logging.getLogger('sentinel')
+
+# ── Sync serveur-a-serveur (principal <-> secours) ──────────────────────────────
+PEER_HOST = None
+PEER_PORT = 8765
+PEER_INTERVAL = 300
 
 # ── Utilitaires ───────────────────────────────────────────────────────────────
 def get_local_ip():
@@ -157,8 +207,48 @@ def get_client_list():
             'profileId':info.get('profileId', ''),
         }
         for ws, info in list(clients.items())
-        if info.get('authenticated')
+        if info.get('authenticated') and info.get('profileId') != 'relay'
     ]
+
+async def push_state_to_peer():
+    """Se connecte brievement a l'autre serveur (principal<->secours) comme un client normal et lui
+    pousse l'etat courant via STATE_SYNC — le meme message que les apps envoient deja, donc aucune
+    logique nouvelle cote reception. Essaie wss puis ws (l'autre serveur peut etre en HTTP simple si
+    son certificat n'a pas ete genere)."""
+    if not PEER_HOST:
+        return
+    for scheme in ('wss', 'ws'):
+        url = f'{scheme}://{PEER_HOST}:{PEER_PORT}'
+        try:
+            ssl_ctx = None
+            if scheme == 'wss':
+                ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                ssl_ctx.check_hostname = False
+                ssl_ctx.verify_mode = ssl.CERT_NONE  # certificat auto-signe, propre a chaque serveur
+            async with websockets.connect(url, ssl=ssl_ctx, open_timeout=5) as peer_ws:
+                await peer_ws.send(json.dumps({'type': 'AUTH', 'payload': {'token': '0000', 'profile': {}}}))
+                reply = json.loads(await asyncio.wait_for(peer_ws.recv(), timeout=5))
+                if reply.get('type') != 'AUTH_OK':
+                    log.warning(f'[PEER-SYNC] Authentification refusee par {url}: {reply.get("payload")}')
+                    return
+                await peer_ws.send(json.dumps({
+                    'type': 'STATE_SYNC',
+                    'payload': {'snapshot': shared_snapshot},
+                }))
+                log.info(f'[PEER-SYNC] Etat pousse vers {url}')
+                return
+        except Exception as exc:
+            log.debug(f'[PEER-SYNC] {url} injoignable: {exc}')
+            continue
+    log.warning(f'[PEER-SYNC] Serveur pair injoignable ({PEER_HOST}:{PEER_PORT}) — nouvelle tentative dans {PEER_INTERVAL}s')
+
+async def peer_sync_loop():
+    # Premiere poussee peu apres le demarrage (le pair a peut-etre demarre juste avant/apres nous),
+    # puis toutes les PEER_INTERVAL secondes.
+    await asyncio.sleep(10)
+    while True:
+        await push_state_to_peer()
+        await asyncio.sleep(PEER_INTERVAL)
 
 async def send_to(ws, message: dict):
     try:
@@ -300,7 +390,8 @@ async def handler(ws, path='/'):
                 await broadcast(msg, exclude=ws)
 
             elif mtype in ('MUSTER_UPDATE', 'ABANDON_UPDATE', 'OSC_TEAM_UPDATE',
-                           'OSC_MESSAGE', 'FIRE_TEAM_UPDATE', 'CHAT_MESSAGE'):
+                           'OSC_MESSAGE', 'FIRE_TEAM_UPDATE', 'CHAT_MESSAGE',
+                           'POLAR_UPDATE', 'VILLAGE_UPDATE'):
                 await broadcast(msg, exclude=ws)
                 if mtype == 'CHAT_MESSAGE':
                     text = (msg.get('payload') or {}).get('text', '')
@@ -502,15 +593,35 @@ async def main():
 
     sep = '=' * 62
     print(f'\n{sep}')
-    print(f'  CHARCOT SENTINEL - Serveur WebSocket + {http_scheme.upper()}')
+    print(f'  CHARCOT SENTINEL - Serveur WebSocket + {http_scheme.upper()}  [{ROLE}]')
     print(f'  LE COMMANDANT CHARCOT - PONANT')
     print(sep)
+    print(f'  Etat persistant: {STATE_FILE.name}')
+    if PEER_HOST:
+        print(f'  Sync vers pair : {PEER_HOST}:{PEER_PORT} toutes les {PEER_INTERVAL}s')
     print(f'  IP du serveur  : {local_ip}')
     print(f'  WebSocket      : {ws_scheme}://{local_ip}:{PORT}')
     print(f'  Application    : {http_scheme}://{local_ip}:{HTTP_PORT}/LCC%20sentinel%203.html')
     if use_https:
-        print(f'  [HTTPS] Certificat auto-signé — accepter l\'avertissement Chrome une seule fois')
+        print(f'  [HTTPS] Certificat auto-signé — 2 ports distincts, 2 avertissements à accepter')
+        print(f'          (voir "CERTIFICAT HTTPS" ci-dessous, a faire 1 fois par appareil/navigateur)')
     print(sep)
+    if use_https:
+        print(f'  CERTIFICAT HTTPS — A FAIRE UNE FOIS PAR APPAREIL / NAVIGATEUR :')
+        print(f'  {"-" * 55}')
+        print(f'  Le port {HTTP_PORT} (appli) et le port {PORT} (WebSocket) sont deux')
+        print(f'  origines distinctes pour Chrome : accepter le certificat sur l\'un')
+        print(f'  ne couvre PAS l\'autre. Sans l\'etape 2, la connexion reseau de')
+        print(f'  l\'appli reste bloquee (timeout silencieux, sans message clair).')
+        print(f'    1. Ouvrir : https://{local_ip}:{HTTP_PORT}/')
+        print(f'       -> "Non securise" -> Avance -> Continuer')
+        print(f'    2. Ouvrir un NOUVEL onglet : https://{local_ip}:{PORT}/')
+        print(f'       -> meme avertissement -> Avance -> Continuer')
+        print(f'       (la page qui suit peut rester blanche/en erreur : normal,')
+        print(f'        ce port ne sert pas de pages, seulement le WebSocket)')
+        print(f'    3. Relancer/recharger l\'application : la connexion doit passer')
+        print(f'  {"-" * 55}')
+        print(sep)
     print(f'  PROFILS ET TOKENS D\'ACCES :')
     print(f'  {"-" * 55}')
     for token, p in PROFILES.items():
@@ -526,7 +637,8 @@ async def main():
     print(f'  OUVRIR L\'APP DANS CHROME :')
     print(f'    {http_scheme}://{local_ip}:{HTTP_PORT}/LCC%20sentinel%203.html')
     if use_https:
-        print(f'    → Accepter l\'avertissement "Non sécurisé" puis installer la PWA')
+        print(f'    → Voir "CERTIFICAT HTTPS" ci-dessus (2 etapes) avant de vous connecter')
+        print(f'    → Puis menu Chrome (⋮) → Installer l\'application (PWA)')
     print(f'    (ou {http_scheme}://localhost:{HTTP_PORT}/LCC%20sentinel%203.html en local)')
     print()
     print(f'  CTRL+C pour arreter le serveur')
@@ -539,15 +651,34 @@ async def main():
 
     async with websockets.serve(handler, HOST, PORT, ssl=ws_ssl):
         autosave_task = asyncio.create_task(autosave_loop())
+        peer_task = asyncio.create_task(peer_sync_loop()) if PEER_HOST else None
+        if PEER_HOST:
+            log.info(f'[PEER-SYNC] Actif vers {PEER_HOST}:{PEER_PORT} toutes les {PEER_INTERVAL}s')
         print(f'\n  Serveur actif - en attente de connexions...\n')
         try:
             await asyncio.Future()   # boucle infinie
         finally:
             autosave_task.cancel()
+            if peer_task:
+                peer_task.cancel()
             save_persistent_state(force=True)
             http_server.shutdown()
 
 if __name__ == '__main__':
+    args = parse_args()
+    PORT = args.port
+    HTTP_PORT = args.http_port
+    ROLE = args.role.strip().upper() or 'PRINCIPAL'
+    if args.state_file:
+        STATE_FILE = Path(args.state_file)
+    elif PORT != 8765:
+        # Port non standard (ex: le secours sur --port 8766) -> fichier distinct par defaut, pour ne
+        # jamais ecraser le sentinel_state.json d'une instance principale tournant sur le meme PC.
+        STATE_FILE = Path(__file__).with_name(f'sentinel_state_{PORT}.json')
+    PEER_HOST = (args.peer_host or '').strip() or None
+    PEER_PORT = args.peer_port
+    PEER_INTERVAL = max(30, args.peer_interval)  # 30s plancher, pour eviter un abus de --peer-interval 1
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
