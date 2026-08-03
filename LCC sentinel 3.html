@@ -6716,6 +6716,16 @@ body {
     </div>
 
     <div id="settings-tab-panel-advanced" style="display:none;flex-direction:column;gap:16px">
+    <!-- Quick-nav: this tab is a long single scroll of unrelated settings groups — jump links instead
+         of restructuring into sub-tabs, so nothing about how each card works or is wired changes. -->
+    <div style="position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:rgba(10,22,40,0.92);backdrop-filter:blur(4px);border:1px solid rgba(92,184,214,0.15);border-radius:var(--radius-md)">
+      <button class="btn btn-ghost" style="font-size:10px;padding:5px 10px" onclick="document.getElementById('ui-settings-card').scrollIntoView({behavior:'smooth',block:'start'})">🎚 Affichage</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:5px 10px" onclick="document.getElementById('adv-sec-vessel').scrollIntoView({behavior:'smooth',block:'start'})">🚢 Navire &amp; Interface</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:5px 10px" onclick="document.getElementById('net-settings-section').scrollIntoView({behavior:'smooth',block:'start'})">📡 Réseau</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:5px 10px" onclick="document.getElementById('adv-sec-profile').scrollIntoView({behavior:'smooth',block:'start'})">👤 Profil &amp; Système</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:5px 10px" onclick="document.getElementById('adv-sec-backup').scrollIntoView({behavior:'smooth',block:'start'})">💾 Sauvegarde</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:5px 10px" onclick="document.getElementById('adv-sec-archives').scrollIntoView({behavior:'smooth',block:'start'})">📦 Archives</button>
+    </div>
     <div class="card" id="ui-settings-card">
       <div class="sec-hdr" style="display:flex;align-items:center;gap:8px">
         🎚 TAILLE DES POLICES &amp; LAYOUT
@@ -6789,7 +6799,7 @@ body {
     </div>
 
     <!-- Row 1: Vessel + Interface -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div id="adv-sec-vessel" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="card">
         <div class="sec-hdr">VESSEL CONFIGURATION</div>
         <div style="display:flex;flex-direction:column;gap:10px">
@@ -6919,6 +6929,40 @@ body {
               Scanner le QR code avec la tablette pour ouvrir directement la page Sentinel 3.
             </div>
           </div>
+          <!-- Liens fixes GitHub Pages : certificat de confiance reconnu, contrairement aux liens
+               IP locale ci-dessus (auto-signés) — c'est la page à utiliser pour l'INSTALLATION de
+               l'appli sur une tablette (menu Chrome ⋮ → "Installer l'application" apparaît sans
+               manipulation de certificat), pas pour la connexion réseau au quotidien. -->
+          <div style="background:rgba(0,0,0,0.2);border:1px solid rgba(231,180,60,0.25);border-radius:var(--radius-md);padding:10px">
+            <div style="font-size:10px;font-weight:700;color:var(--oe-gold);letter-spacing:0.08em;margin-bottom:4px">📦 INSTALLATION PWA — GITHUB (certificat de confiance)</div>
+            <div class="t-small" style="color:var(--oe-cream-dim);margin-bottom:8px">
+              Pages publiques avec certificat HTTPS reconnu — à utiliser pour <b>installer</b> l'appli sur une tablette (icône, plein écran) sans avertissement de sécurité ni manipulation de certificat. Une fois installée, configurer la connexion au serveur du bord comme d'habitude ci-dessus.
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label class="t-small" style="display:block;margin-bottom:3px">CHARCOT SENTINEL 3</label>
+                <input class="input" id="net-github-s3-url" readonly value="https://baltio.github.io/LCC-sentinel/LCC%20sentinel%203.html" style="font-family:var(--font-mono);font-size:10px">
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <button class="btn btn-outline" style="flex:1;font-size:10px" onclick="NetworkModule.copyGithubUrl('net-github-s3-url')">Copier</button>
+                  <button class="btn btn-ghost" style="flex:1;font-size:10px" onclick="NetworkModule.openGithubUrl('net-github-s3-url')">Ouvrir</button>
+                </div>
+                <div style="display:flex;justify-content:center;margin-top:10px">
+                  <div id="net-github-s3-qr" aria-label="QR Code GitHub Sentinel 3" style="width:150px;height:150px;border-radius:8px;border:1px solid rgba(231,180,60,0.25);background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;overflow:hidden"></div>
+                </div>
+              </div>
+              <div>
+                <label class="t-small" style="display:block;margin-bottom:3px">SENTINEL MUSTERING</label>
+                <input class="input" id="net-github-must-url" readonly value="https://baltio.github.io/LCC-sentinel/LCC%20Sentinel%20Mustering.html" style="font-family:var(--font-mono);font-size:10px">
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <button class="btn btn-outline" style="flex:1;font-size:10px" onclick="NetworkModule.copyGithubUrl('net-github-must-url')">Copier</button>
+                  <button class="btn btn-ghost" style="flex:1;font-size:10px" onclick="NetworkModule.openGithubUrl('net-github-must-url')">Ouvrir</button>
+                </div>
+                <div style="display:flex;justify-content:center;margin-top:10px">
+                  <div id="net-github-must-qr" aria-label="QR Code GitHub Mustering" style="width:150px;height:150px;border-radius:8px;border:1px solid rgba(231,180,60,0.25);background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;overflow:hidden"></div>
+                </div>
+              </div>
+            </div>
+          </div>
           <div id="net-ws-cert-block" class="hidden" style="background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.35);border-radius:var(--radius-md);padding:10px">
             <div style="font-size:10px;font-weight:700;color:var(--status-danger);letter-spacing:0.08em;margin-bottom:4px">⚠ CERTIFICAT HTTPS — WEBSOCKET (a scanner en plus, 1 fois par tablette)</div>
             <div style="font-size:9px;color:var(--oe-cream-dim);line-height:1.4;margin-bottom:8px">Port différent du lien de l'appli — sans cette étape, la connexion réseau reste bloquée en silence (timeout).</div>
@@ -6971,7 +7015,7 @@ body {
     </div>
 
     <!-- Row 3: Profils + System -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div id="adv-sec-profile" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="card">
         <div class="sec-hdr">PROFIL UTILISATEUR</div>
         <!-- Profil actif -->
@@ -7018,7 +7062,7 @@ body {
     </div>
 
     <!-- Row 4: Sauvegarde / Récupération de session -->
-    <div class="card">
+    <div class="card" id="adv-sec-backup">
       <div class="sec-hdr" style="display:flex;align-items:center;gap:8px">
         💾 SAUVEGARDE &amp; RÉCUPÉRATION DE SESSION
         <span style="font-size:9px;color:var(--oe-cream-dim);margin-left:4px">Persistance locale — récupération après fermeture</span>
@@ -7078,31 +7122,35 @@ body {
         </div>
         <div style="font-size:9px;color:var(--oe-cream-dim);text-align:right;max-width:200px">
           Exporter essaie d'abord le partage direct (Quick Share/Nearby, sans réseau) avant de télécharger. Importer accepte aussi un fichier de sync exporté depuis une tablette LCC Sentinel Mustering.
+        </div>
+      </div>
+    </div>
 
-            <!-- Row 5: Archivage du log courant -->
-            <div class="settings-section" style="background:linear-gradient(135deg, rgba(139,69,19,0.1), rgba(100,100,100,0.05));border:1px solid rgba(139,69,19,0.3)">
-              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-                <div style="font-size:20px">📦</div>
-                <div>
-                  <div style="color:var(--oe-gold);font-size:10px;font-weight:700;letter-spacing:0.1em">ARCHIVAGE DES MISSIONS</div>
-                  <div style="color:var(--oe-cream-dim);font-size:9px;margin-top:2px">Créer une archive du log courant pour l'historique et l'analyse</div>
-                </div>
-              </div>
+    <!-- This card used to be wrongly nested INSIDE the 200px export/import note above (a leftover
+         markup slip), which squeezed both its ARCHIVER buttons into that narrow column instead of
+         showing as its own section — pulled out here as a proper sibling card. -->
+    <div class="card" id="adv-sec-archives">
+      <div class="settings-section" style="background:linear-gradient(135deg, rgba(139,69,19,0.1), rgba(100,100,100,0.05));border:1px solid rgba(139,69,19,0.3)">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <div style="font-size:20px">📦</div>
+          <div>
+            <div style="color:var(--oe-gold);font-size:10px;font-weight:700;letter-spacing:0.1em">ARCHIVAGE DES MISSIONS</div>
+            <div style="color:var(--oe-cream-dim);font-size:9px;margin-top:2px">Créer une archive du log courant pour l'historique et l'analyse</div>
+          </div>
+        </div>
 
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                <button class="btn " style="font-size:11px;background:#2196F3;border:none;cursor:pointer;color:#fff;font-weight:700"
-                  onclick="LogArchiveModule.createArchive('DRILL', {title: 'DRILL — ' + new Date().toLocaleString('fr-FR')})">
-                  🎓 Archiver comme DRILL
-                </button>
-                <button class="btn " style="font-size:11px;background:#FF5722;border:none;cursor:pointer;color:#fff;font-weight:700"
-                  onclick="LogArchiveModule.createArchive('REAL', {title: 'SITUATION RÉELLE — ' + new Date().toLocaleString('fr-FR')})">
-                  🚨 Archiver comme RÉELLE
-                </button>
-              </div>
-              <div style="font-size:9px;color:var(--oe-cream-dim);margin-top:8px">
-                Les archives sont stockées localement et accessible dans la page <strong>ARCHIVES</strong> pour consultation et comparaison des statistiques.
-              </div>
-            </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button class="btn " style="font-size:11px;background:#2196F3;border:none;cursor:pointer;color:#fff;font-weight:700"
+            onclick="LogArchiveModule.createArchive('DRILL', {title: 'DRILL — ' + new Date().toLocaleString('fr-FR')})">
+            🎓 Archiver comme DRILL
+          </button>
+          <button class="btn " style="font-size:11px;background:#FF5722;border:none;cursor:pointer;color:#fff;font-weight:700"
+            onclick="LogArchiveModule.createArchive('REAL', {title: 'SITUATION RÉELLE — ' + new Date().toLocaleString('fr-FR')})">
+            🚨 Archiver comme RÉELLE
+          </button>
+        </div>
+        <div style="font-size:9px;color:var(--oe-cream-dim);margin-top:8px">
+          Les archives sont stockées localement et accessible dans la page <strong>ARCHIVES</strong> pour consultation et comparaison des statistiques.
         </div>
       </div>
     </div>
@@ -11919,6 +11967,12 @@ const MusterModule = {
   // renderZone() show a distinct "present at zone, now also confirmed at assembly" state (dark
   // hatched green) instead of plain green, once someone has completed both counts.
   assemblyConfirmedPresent: {},
+  // Both keyed by safety number, populated by touchZoneMember() — see its comment for why these
+  // exist: a periodic full-state snapshot from another post can otherwise silently overwrite a
+  // more recent zoneMemberStates change from a third post, and nothing stopped a non-Bridge write
+  // from overwriting one the Bridge just made.
+  zoneMemberTouchedAt: {},   // sn -> Date.now() of the last local-or-incoming write, any source
+  zoneMemberBridgeLock: {},  // sn -> true once a Bridge-sourced write has touched it
   zoneEvacuationStates: {},
   assemblyListMode: 'complete', // 'complete' | 'compact' — shared LIST popup rendering density (PAX + CREW)
   missingCrewViewMode: 'all', // 'all' | 'fire' | 'nonFire' — display filter for the MISSING CREW (NON FIRE + FIRE) popup
@@ -12905,16 +12959,68 @@ const MusterModule = {
     this.renderZone(zoneId, containerId);
   },
 
+  // True only for the Bridge profile on THIS post — the same identity check FireModule already
+  // uses for its own OSC highlight, duplicated here rather than reached across modules.
+  isBridgeUser() {
+    return !!(typeof CharcotSentinel !== 'undefined' && CharcotSentinel.state?.profile?.id === 'bridge');
+  },
+
+  /* Records a write to zoneMemberStates[sn] regardless of source (local click or an incoming
+     MUSTER_UPDATE), for two independent reasons an earlier 6-post concurrency test surfaced:
+       1. applySnapshot()'s periodic full-state sync used to blindly overwrite zoneMemberStates
+          wholesale — a post whose OWN 5s snapshot tick fired before it had received another
+          post's very recent change would broadcast a snapshot that looked "fresh" (its own
+          timestamp) but was actually missing that change, silently reverting it everywhere. Now
+          merged key-by-key against this timestamp instead — see applySnapshot()'s muster block.
+       2. "Bridge always wins a conflict" (explicit ask) needed a place to remember THAT a given
+          sn's current value came from Bridge, independent of arrival order at the server — see
+          zoneMemberBridgeLock, checked by both the local toggles and applyRemoteUpdate below.
+     fromBridge should reflect the WRITE's origin, not the reader — pass isBridgeUser() for a
+     local write, or payload.fromRole==='Bridge' for an incoming one. */
+  touchZoneMember(sn, fromBridge) {
+    this.zoneMemberTouchedAt[sn] = Date.now();
+    if (fromBridge) this.zoneMemberBridgeLock[sn] = true;
+  },
+
   toggleZoneMemberState(sn, zoneId, containerId) {
+    const isBridge = this.isBridgeUser();
+    if (this.zoneMemberBridgeLock[sn] && !isBridge) {
+      CharcotSentinel.showToast(`#${sn} : statut défini par le Bridge — seul le Bridge peut le modifier`, 'warning');
+      return;
+    }
     const currentState = this.getZoneMemberState(sn);
     const nextState = currentState === 'pending' ? 'present' : currentState === 'present' ? 'missing' : 'pending';
     this.zoneMemberStates[sn] = nextState;
     this.zoneConfirmedPresent[sn] = nextState === 'present';
+    this.touchZoneMember(sn, isBridge);
     this.renderZone(zoneId, containerId);
     const cr = this.getCrewInfo(sn);
     const name = cr ? cr.rank : sn;
     CharcotSentinel.log(CharcotSentinel.state.profile.name,
       `Muster zone ${zoneId}: #${sn} (${name}) ${nextState.toUpperCase()}`, 'MUSTER');
+    this.broadcastZoneMemberUpdate(sn, zoneId, currentState, nextState, name);
+  },
+
+  /* Manual bridge-side zone/assembly toggles used to be purely local — a Bridge officer
+     correcting someone's status here never reached the Mustering tablets, silently desyncing
+     them (unlike a real tablet checkin, which DOES reach the bridge via applyRemoteUpdate).
+     Mirrors the payload shape boardPaxFromStation already broadcasts for PAX, reconstructing
+     the Mustering listId/personId pair (personId is always `${listId}_${sn}` on every list —
+     verified against LISTS in LCC Sentinel Mustering.html) so applyRemoteUpdate on the far end
+     (whether that's another Sentinel3 instance or a Mustering tablet) treats it exactly like a
+     real checkin. */
+  broadcastZoneMemberUpdate(sn, zoneId, from, to, name) {
+    if (typeof NetworkModule === 'undefined' || typeof NetworkModule.send !== 'function') return;
+    const listIdByZone = { zone12: 'stairMVZ12', zone3: 'stairMVZ3', zone4: 'stairMVZ4' };
+    const listId = listIdByZone[zoneId];
+    if (!listId) return;
+    NetworkModule.send({
+      type: 'MUSTER_UPDATE',
+      payload: {
+        kind: 'checkin', listId, personId: `${listId}_${sn}`, sn, name,
+        from, to, byUser: CharcotSentinel.state.profile.name, fromRole: CharcotSentinel.state.profile.role, origin: 'bridge',
+      },
+    });
   },
 
   setZoneEvacuationState(zoneId, state) {
@@ -12949,12 +13055,24 @@ const MusterModule = {
     if (!payload || typeof payload !== 'object' || !payload.sn) return;
     const stateMap = { present: 'present', missing: 'missing', unknown: 'pending' };
     const mapped = stateMap[payload.to] || 'pending';
+    const isFromBridge = payload.fromRole === 'Bridge';
+
+    // Bridge always wins a conflict (explicit requirement, verified missing in a 6-post concurrency
+    // test): once a Bridge-sourced write has touched this sn, every OTHER source's update — another
+    // Sentinel3 post, or a Mustering tablet — is dropped rather than applied, regardless of arrival
+    // order at the server. Bridge's own next write still goes through and can move it again.
+    if (this.zoneMemberBridgeLock[payload.sn] && !isFromBridge) {
+      CharcotSentinel.log(`Mustering #${payload.byUser || '?'}`,
+        `Muster: mise à jour #${payload.sn} ignorée — statut défini par le Bridge`, 'MUSTER');
+      return;
+    }
 
     const zoneByList = { stairMVZ12: 'zone12', stairMVZ3: 'zone3', stairMVZ4: 'zone4' };
     const zoneId = zoneByList[payload.listId];
     if (zoneId) {
       this.zoneMemberStates[payload.sn] = mapped;
       this.zoneConfirmedPresent[payload.sn] = mapped === 'present';
+      this.touchZoneMember(payload.sn, isFromBridge);
       const containerId = zoneId === 'zone4' ? 'muster-zone4' : zoneId === 'zone3' ? 'muster-zone3' : 'muster-zone12';
       this.renderZone(zoneId, containerId);
       this.updateCounters();
@@ -12975,6 +13093,7 @@ const MusterModule = {
       // an already-COMPLETE zone (painting it orange) the instant any assembly-side checkin arrived.
       this.zoneMemberStates[payload.sn] = mapped;
       this.assemblyConfirmedPresent[payload.sn] = mapped === 'present';
+      this.touchZoneMember(payload.sn, isFromBridge);
       if (assemblyKey.startsWith('crew')) this.syncAssemblyAccountingFromMissing(assemblyKey);
       this.renderAssembly(assemblyKey, this.getAssemblyContainerId(assemblyKey));
       this.updateCounters();
@@ -13005,15 +13124,38 @@ const MusterModule = {
   },
 
   toggleAssemblyMemberState(sn, key, containerId) {
+    const isBridge = this.isBridgeUser();
+    if (this.zoneMemberBridgeLock[sn] && !isBridge) {
+      CharcotSentinel.showToast(`#${sn} : statut défini par le Bridge — seul le Bridge peut le modifier`, 'warning');
+      return;
+    }
     const currentState = this.getZoneMemberState(sn);
     const nextState = currentState === 'pending' ? 'present' : currentState === 'present' ? 'missing' : 'pending';
     this.zoneMemberStates[sn] = nextState;
     this.assemblyConfirmedPresent[sn] = nextState === 'present';
+    this.touchZoneMember(sn, isBridge);
     this.renderAssembly(key, containerId);
     const cr = this.getCrewInfo(sn);
     const name = cr ? cr.rank : sn;
     CharcotSentinel.log(CharcotSentinel.state.profile.name,
       `Muster assembly ${key}: #${sn} (${name}) ${nextState.toUpperCase()}`, 'MUSTER');
+    this.broadcastAssemblyMemberUpdate(sn, key, currentState, nextState, name);
+  },
+
+  /* See broadcastZoneMemberUpdate's comment — same gap, same fix, for the assembly-station
+     toggles. Key -> Mustering listId mapping mirrors applyRemoteUpdate's assemblyByList. */
+  broadcastAssemblyMemberUpdate(sn, key, from, to, name) {
+    if (typeof NetworkModule === 'undefined' || typeof NetworkModule.send !== 'function') return;
+    const listIdByKey = { paxA: 'crewSafetyPaxA', paxB: 'crewSafetyPaxB', crewA: 'crewA', crewB: 'crewB' };
+    const listId = listIdByKey[key];
+    if (!listId) return;
+    NetworkModule.send({
+      type: 'MUSTER_UPDATE',
+      payload: {
+        kind: 'checkin', listId, personId: `${listId}_${sn}`, sn, name,
+        from, to, byUser: CharcotSentinel.state.profile.name, fromRole: CharcotSentinel.state.profile.role, origin: 'bridge',
+      },
+    });
   },
 
   /* ── Toggle crew check-in ── */
@@ -22524,7 +22666,7 @@ const NetworkModule = {
       if (incomingUpdatedAt && this.localStateTouchedAt && incomingUpdatedAt < this.localStateTouchedAt) {
         sLog('NETWORK', `Snapshot ignoré — plus ancien que l'état local (source: ${state.snapshotMeta?.updatedBy || '?'})`, 'NETWORK');
       } else {
-        this.applySnapshot(state.snapshot);
+        this.applySnapshot(state.snapshot, incomingUpdatedAt);
         if (incomingUpdatedAt) this.localStateTouchedAt = Math.max(this.localStateTouchedAt || 0, incomingUpdatedAt);
       }
     }
@@ -22635,7 +22777,7 @@ const NetworkModule = {
     };
   },
 
-  applySnapshot(snapshot) {
+  applySnapshot(snapshot, snapshotUpdatedAt) {
     if (!snapshot || typeof snapshot !== 'object') return;
 
     if (snapshot.charcot?.state) {
@@ -22714,9 +22856,26 @@ const NetworkModule = {
 
     if (snapshot.muster && typeof MusterModule !== 'undefined') {
       if (snapshot.muster.checkedIn) MusterModule.checkedIn = this.safeClone(snapshot.muster.checkedIn);
-      if (snapshot.muster.zoneMemberStates) MusterModule.zoneMemberStates = this.safeClone(snapshot.muster.zoneMemberStates);
-      if (snapshot.muster.zoneConfirmedPresent) MusterModule.zoneConfirmedPresent = this.safeClone(snapshot.muster.zoneConfirmedPresent);
-      if (snapshot.muster.assemblyConfirmedPresent) MusterModule.assemblyConfirmedPresent = this.safeClone(snapshot.muster.assemblyConfirmedPresent);
+      // zoneMemberStates (+ its two confirmed-present companions) used to be replaced wholesale like
+      // everything else here — but this is the ONE dict multiple posts realistically hand-edit at the
+      // same time (crew muster status), and a 6-post concurrency test showed the failure mode: post B's
+      // own periodic snapshot tick can fire before B has received post A's just-broadcast MUSTER_UPDATE,
+      // so B's snapshot looks fresh (its own timestamp) but is actually missing A's change — applying it
+      // wholesale silently reverted A's update on every OTHER post too. Merged key-by-key instead: a key
+      // this post touched (locally or via an incoming MUSTER_UPDATE — see touchZoneMember) more recently
+      // than this snapshot was captured keeps its local value; only genuinely-unknown-here keys accept
+      // the snapshot's value. No snapshotUpdatedAt (e.g. loading an archived file, not a live sync) means
+      // there's nothing to compare against, so it falls back to the old trust-it-wholesale behavior.
+      ['zoneMemberStates', 'zoneConfirmedPresent', 'assemblyConfirmedPresent'].forEach(field => {
+        const incoming = snapshot.muster[field];
+        if (!incoming) return;
+        if (!snapshotUpdatedAt) { MusterModule[field] = this.safeClone(incoming); return; }
+        const touched = MusterModule.zoneMemberTouchedAt || {};
+        Object.keys(incoming).forEach(sn => {
+          if ((touched[sn] || 0) > snapshotUpdatedAt) return; // this post has a more recent write for sn — keep it
+          MusterModule[field][sn] = incoming[sn];
+        });
+      });
       if (snapshot.muster.zoneEvacuationStates) MusterModule.zoneEvacuationStates = this.safeClone(snapshot.muster.zoneEvacuationStates);
       if (Array.isArray(snapshot.muster.flowActionChecks)) MusterModule.flowActionChecks = this.safeClone(snapshot.muster.flowActionChecks);
       if (snapshot.muster.lifeboatStates) MusterModule.lifeboatStates = this.safeClone(snapshot.muster.lifeboatStates);
@@ -22945,7 +23104,16 @@ const NetworkModule = {
       local: true,
     });
 
-    this.send({ type: 'CHAT_MESSAGE', payload: { text: trimmed } });
+    // Mustering tablets store incoming chat payloads verbatim as {ts,from,txt} (their own local
+    // chat shape) — sending only {text} here left every message FROM Sentinel 3 showing up on a
+    // tablet as "undefined: undefined" and, worse, crashed the tablet's chat renderer on the next
+    // render (escapeHtml(undefined)), which silently blocked it from sending anything further.
+    // Sending both field names keeps this side and Mustering compatible either way.
+    this.send({ type: 'CHAT_MESSAGE', payload: {
+      text: trimmed, txt: trimmed,
+      from: CharcotSentinel?.state?.profile?.name || 'ME',
+      ts: this.getSyncedNowMs(),
+    } });
   },
 
   sendChatFromInput(inputId) {
@@ -22960,9 +23128,11 @@ const NetworkModule = {
     if (!panels.length) return;
     const t = new Date(msg.ts || Date.now()).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     const localStyle = msg?.local ? 'background:rgba(92,184,214,0.08);border-left:2px solid rgba(92,184,214,0.6);padding-left:6px;' : '';
+    // Mustering tablets send {txt}, not {text} — fall back so a tablet's chat message doesn't
+    // render as blank here (see sendChatMessage's comment for the other half of this mismatch).
     const html = `<span style="color:var(--oe-gold-dim)">${t}</span>
       <span style="color:var(--oe-gold);margin:0 4px;font-weight:700">[${msg.user}]</span>
-      <span>${msg.payload.text}</span>`;
+      <span>${msg.payload.text || msg.payload.txt || ''}</span>`;
 
     panels.forEach((panel) => {
       panel.querySelectorAll('[data-chat-placeholder="1"]').forEach((n) => n.remove());
@@ -23268,6 +23438,39 @@ const NetworkModule = {
     window.open(url, '_blank', 'noopener');
   },
 
+  // Fixed GitHub Pages URLs (trusted cert) — unlike the local-IP links above these don't depend on
+  // any Settings field, so both helpers just read the readonly input's own value directly.
+  async copyGithubUrl(inputId) {
+    const url = document.getElementById(inputId)?.value || '';
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      CharcotSentinel.showToast('Lien copié', 'info');
+    } catch(e) {
+      CharcotSentinel.showToast('Impossible de copier automatiquement', 'warning');
+    }
+  },
+
+  openGithubUrl(inputId) {
+    const url = document.getElementById(inputId)?.value || '';
+    if (!url) return;
+    window.open(url, '_blank', 'noopener');
+  },
+
+  // Fixed URLs, rendered once — no dependency on Settings fields, so unlike updateAccessQrBlock
+  // (which also updates a hint label reflecting the current input) there's nothing to react to.
+  renderGithubQrCodes() {
+    [['net-github-s3-url', 'net-github-s3-qr'], ['net-github-must-url', 'net-github-must-qr']].forEach(([inputId, qrId]) => {
+      const url = document.getElementById(inputId)?.value || '';
+      const qr = document.getElementById(qrId);
+      if (!qr || !url || qr.dataset.rendered === url) return;
+      qr.innerHTML = '';
+      if (typeof QRCode !== 'function') return;
+      new QRCode(qr, { text: url, width: 148, height: 148, colorDark: '#0A1628', colorLight: '#FFFFFF', correctLevel: QRCode.CorrectLevel.M });
+      qr.dataset.rendered = url;
+    });
+  },
+
   async copyWsCertUrl() {
     const url = this.getWsCertUrl();
     if (!url) {
@@ -23309,6 +23512,7 @@ const NetworkModule = {
     if (els.backupHost) els.backupHost.value = this.config.backupHost || '';
     if (els.backupPort) els.backupPort.value = this.config.backupPort || 8765;
     this.updateMusteringAccessUI();
+    this.renderGithubQrCodes();
   },
 };
 
@@ -28778,8 +28982,33 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('./sw.js').then(function(reg) {
       console.log('[SW] Registered, scope:', reg.scope);
+      // A tablet can stay on this page for days without a fresh navigation, and the browser only
+      // re-checks sw.js for changes on navigation (or ~once/24h in the background) — poll manually
+      // so a release pushed to GitHub is actually noticed while the app is open, not just next launch.
+      setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
     }).catch(function(err) {
       console.warn('[SW] Registration failed:', err);
+    });
+
+    // sw.js calls self.skipWaiting()+clients.claim() unconditionally, so a new version takes over
+    // automatically the moment it finishes installing — no separate "waiting" step to gate a button
+    // on. 'controllerchange' is what actually fires at that moment. The already-loaded page keeps
+    // running the OLD html/JS from memory until reloaded, so we still need to tell the user — but
+    // only on a REAL update (a controller was already present before this happened), not on the
+    // very first install of a device that never had one.
+    let hadControllerAtLoad = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      if (hadControllerAtLoad && typeof CharcotSentinel !== 'undefined' && CharcotSentinel.showModal) {
+        CharcotSentinel.showModal({
+          title: '🔄 Mise à jour disponible',
+          body: 'Une nouvelle version de CHARCOT SENTINEL a été installée en arrière-plan. Recharger la page pour l\'utiliser — vos données locales (session, sauvegardes) ne sont pas affectées.',
+          confirmText: 'RECHARGER MAINTENANT',
+          confirmClass: 'btn-gold',
+          cancelText: 'Plus tard',
+          onConfirm: () => window.location.reload(),
+        });
+      }
+      hadControllerAtLoad = true;
     });
   });
 }
