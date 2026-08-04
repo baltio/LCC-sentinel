@@ -1,0 +1,3250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="LCC SENTINEL MUSTERING — Crew/PAX headcount for abandon ship — tablet companion to LCC Sentinel 3">
+<meta name="theme-color" content="#06111F">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>LCC SENTINEL MUSTERING (DEMO)</title>
+<link rel="manifest" href="manifest-mustering.json">
+<link rel="icon" type="image/png" sizes="96x96" href="assets/img/general/icon-96.png">
+<link rel="icon" type="image/x-icon" href="assets/img/general/LOGO_CC_RGBv2.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!--
+  ============================================================
+  LCC SENTINEL MUSTERING — v0.1.0 (standalone mock)
+  Tablet companion to LCC Sentinel 3 — crew/PAX headcount
+  during abandon ship.
+
+  This version is STANDALONE: no real network connection.
+  The SyncAdapter layer simulates a multi-tablet bus via
+  localStorage (works across multiple tabs/windows of the
+  same browser opening this file). It is designed as the
+  single seam for the future WebSocket connection to
+  sentinel_server.py — see SyncAdapter below.
+  ============================================================
+-->
+<style>
+/* ── design tokens — reused from LCC Sentinel 3 for visual consistency ── */
+:root {
+  --oe-navy:        #06111F;
+  --oe-navy-mid:    #0B1A2E;
+  --oe-navy-light:  #112640;
+  --oe-navy-border: #1A3A5C;
+  --oe-gold:        #5CB8D6;
+  --oe-gold-light:  #8DD5ED;
+  --oe-gold-dim:    #367A94;
+  --oe-cream:       #E4EEF4;
+  --oe-cream-dim:   #8BA5B8;
+  --oe-white:       #FFFFFF;
+
+  --muster-primary: #2E7D4F;
+  --muster-light:   #4CAF7D;
+  --muster-glow:    rgba(46, 125, 79, 0.35);
+  --abandon-primary:#1B5E3B;
+  --abandon-light:  #27AE60;
+
+  --status-ok:      #27AE60;
+  --status-warn:    #F39C12;
+  --status-danger:  #E74C3C;
+  --status-info:    #2980B9;
+  --status-inactive:#4A5568;
+
+  --font-display: 'Barlow Condensed', 'Arial Narrow', Impact, sans-serif;
+  --font-ui:      'Barlow', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+
+  --sp-xs: 4px; --sp-sm: 8px; --sp-md: 16px; --sp-lg: 24px; --sp-xl: 32px; --sp-2xl: 48px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 20px;
+  --transition-fast: 150ms ease; --transition-mid: 300ms ease;
+  --shadow-card: 0 4px 24px rgba(0,0,0,.5);
+  --shadow-deep: 0 8px 40px rgba(0,0,0,.7);
+
+  --header-height: 68px;
+  --ribbon-height: 28px;
+  --touch-min: 52px;
+}
+
+[data-theme="light"] {
+  --oe-navy:        #d4dce0;
+  --oe-navy-mid:    #DAE7EF;
+  --oe-navy-light:  #C8D8E4;
+  --oe-navy-border: #A0BDD0;
+  --oe-gold:        #0E6E8B;
+  --oe-gold-light:  #2B8EAE;
+  --oe-gold-dim:    #0A546C;
+  --oe-cream:       #0B1A2E;
+  --oe-cream-dim:   #2C4A60;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  margin: 0; font-family: var(--font-ui); background: var(--oe-navy); color: var(--oe-cream);
+  overflow: hidden; user-select: none; -webkit-user-select: none;
+}
+button, input { font-family: inherit; }
+.hidden { display: none !important; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--oe-navy-border); border-radius: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ── demo ribbon ── */
+.demo-ribbon {
+  height: var(--ribbon-height); display: flex; align-items: center; justify-content: center;
+  background: repeating-linear-gradient(135deg, #F39C12, #F39C12 12px, #1a1204 12px, #1a1204 24px);
+  color: #1a1204; font: 700 12px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase;
+}
+.demo-ribbon span { background: #F39C12; padding: 2px 12px; border-radius: 4px; }
+
+/* ── login screen ── */
+.login-screen {
+  min-height: calc(100% - var(--ribbon-height)); display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  background: radial-gradient(ellipse at 50% -10%, var(--oe-navy-light), var(--oe-navy) 60%);
+  padding: var(--sp-xl); overflow-y: auto;
+}
+.login-brand { text-align: center; margin-bottom: var(--sp-xl); flex-shrink: 0; }
+.login-brand .t-eyebrow { font: 600 13px/1 var(--font-ui); color: var(--oe-gold); letter-spacing: .25em; text-transform: uppercase; }
+.login-brand h1 { font: 800 44px/1 var(--font-display); letter-spacing: .04em; margin: 6px 0 4px; color: var(--oe-cream); }
+.login-brand .sub { color: var(--oe-cream-dim); font-size: 14px; }
+.login-card {
+  width: min(880px, 100%); background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border);
+  border-radius: var(--radius-xl); box-shadow: var(--shadow-deep); padding: var(--sp-xl); flex-shrink: 0; margin-bottom: var(--sp-xl);
+}
+.login-card h2 { margin: 0 0 var(--sp-lg); font: 700 15px/1 var(--font-ui); color: var(--oe-cream-dim); letter-spacing: .1em; text-transform: uppercase; text-align: center; }
+.login-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-md); }
+.login-btn {
+  background: var(--oe-navy-light); border: 1px solid var(--oe-navy-border); border-radius: var(--radius-lg);
+  padding: var(--sp-lg) var(--sp-sm); display: flex; flex-direction: column; align-items: center; gap: var(--sp-sm);
+  cursor: pointer; transition: var(--transition-fast); min-height: 130px;
+}
+.login-btn:active { transform: scale(.96); background: var(--oe-navy-border); }
+.login-avatar { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 700 18px/1 var(--font-display); color: #06111F; }
+.login-number { font: 800 22px/1 var(--font-mono); color: var(--oe-cream); }
+.login-role { font-size: 11px; color: var(--oe-cream-dim); text-align: center; line-height: 1.3; }
+
+@media (max-width: 640px) {
+  .login-screen { padding: var(--sp-md); }
+  .login-brand { margin-bottom: var(--sp-md); }
+  .login-brand h1 { font-size: 30px; }
+  .login-brand .sub { font-size: 12px; }
+  .login-card { padding: var(--sp-md); margin-bottom: var(--sp-md); }
+  .login-card h2 { margin-bottom: var(--sp-md); }
+  .login-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--sp-sm); }
+  .login-btn { padding: var(--sp-md) 4px; min-height: 96px; gap: 6px; }
+  .login-avatar { width: 42px; height: 42px; font-size: 14px; }
+  .login-number { font-size: 17px; }
+  .login-role { font-size: 9.5px; }
+}
+
+/* ── app shell ── */
+.app-shell { height: calc(100% - var(--ribbon-height)); display: flex; flex-direction: column; }
+.header {
+  background: var(--oe-navy-mid); border-bottom: 1px solid var(--oe-navy-border);
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+.header-top {
+  height: var(--header-height); display: flex; align-items: center; gap: var(--sp-md); padding: 0 var(--sp-md); flex-shrink: 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.header-top::-webkit-scrollbar { display: none; }
+.header-brand { display: flex; align-items: center; gap: var(--sp-sm); flex-shrink: 0; }
+.header-brand .mark { width: 40px; height: 40px; border-radius: var(--radius-md); background: linear-gradient(135deg, var(--muster-primary), var(--muster-light));
+  display: flex; align-items: center; justify-content: center; font: 800 13px/1 var(--font-display); color: #06150c; }
+.header-brand .name { font: 700 16px/1.1 var(--font-display); letter-spacing: .03em; }
+.header-brand .name small { display: block; font: 500 10px/1 var(--font-ui); color: var(--oe-cream-dim); letter-spacing: .12em; text-transform: uppercase; margin-top: 2px; }
+
+.header-user { display: flex; align-items: center; gap: var(--sp-sm); background: var(--oe-navy-light); border: 1px solid var(--oe-navy-border);
+  border-radius: 999px; padding: 4px 12px 4px 4px; cursor: pointer; flex-shrink: 0; }
+.header-user .avatar-sm { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 700 12px/1 var(--font-mono); color: #06111F; }
+.header-user .info { line-height: 1.15; }
+.header-user .info .num { font: 700 13px/1 var(--font-mono); }
+.header-user .info .role { font-size: 10px; color: var(--oe-cream-dim); }
+
+.header-tabs-wrap { min-width: 0; height: 52px; flex-shrink: 0; position: relative; border-top: 1px solid var(--oe-navy-border); }
+.list-switcher-btn {
+  display: none; width: 100%; height: 52px; align-items: center; gap: 10px; padding: 0 var(--sp-md);
+  background: var(--oe-navy-mid); border: none; border-top: 1px solid var(--oe-navy-border); color: var(--oe-cream);
+  font: 700 14px/1 var(--font-ui); cursor: pointer; text-align: left; flex-shrink: 0;
+}
+.list-switcher-btn .ic { font-size: 18px; flex-shrink: 0; }
+.list-switcher-btn .cur { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-switcher-btn .chev { color: var(--oe-cream-dim); flex-shrink: 0; }
+.list-switcher-btn .badge-missing { flex-shrink: 0; }
+
+.switcher-row {
+  display: flex; align-items: center; gap: 12px; padding: 14px 12px; border-radius: var(--radius-lg);
+  background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border); cursor: pointer; margin-bottom: 8px;
+}
+.switcher-row.active { border-color: var(--muster-light); background: var(--oe-navy-light); }
+.switcher-row .ic { font-size: 20px; flex-shrink: 0; }
+.switcher-row .lbl { flex: 1; min-width: 0; font: 700 14px/1.3 var(--font-ui); }
+.switcher-row .badge-missing { flex-shrink: 0; }
+
+.checklist-section { margin-bottom: var(--sp-lg); }
+.checklist-section h4 { margin: 0 0 var(--sp-sm); font: 700 13px/1.3 var(--font-ui); color: var(--oe-gold); letter-spacing: .04em; text-transform: uppercase; }
+.checklist-item { background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border); border-radius: var(--radius-lg); padding: 10px 12px; margin-bottom: 8px; }
+.ci-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ci-label { flex: 1; min-width: 140px; font: 600 13px/1.3 var(--font-ui); }
+.ci-hint { font-size: 11px; margin-top: 3px; font-weight: 600; }
+.ci-hint.good { color: var(--status-ok); }
+.ci-hint.bad { color: var(--status-warn); }
+.ci-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.ci-btn { height: 36px; padding: 0 12px; border-radius: var(--radius-md); border: 1px solid var(--oe-navy-border);
+  background: var(--oe-navy-light); color: var(--oe-cream-dim); font: 700 12px/1 var(--font-ui); cursor: pointer; }
+.ci-btn.ok.on { background: var(--status-ok); border-color: var(--status-ok); color: #06150c; }
+.ci-btn.notok.on { background: var(--status-danger); border-color: var(--status-danger); color: #fff; }
+.ci-note {
+  width: 100%; margin-top: 8px; background: var(--oe-navy); border: 1px solid var(--status-danger); border-radius: var(--radius-md);
+  color: var(--oe-cream); padding: 8px 10px; font: 500 13px/1.4 var(--font-ui); min-height: 50px; resize: vertical;
+}
+.ci-meta { margin-top: 6px; font-size: 10px; color: var(--oe-cream-dim); }
+
+@media (max-width: 640px) {
+  .header-tabs-wrap { display: none; }
+  .list-switcher-btn { display: flex; }
+}
+.header-tabs-wrap::before, .header-tabs-wrap::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 28px; pointer-events: none; z-index: 2;
+  opacity: 0; transition: opacity .15s;
+}
+.header-tabs-wrap::before { left: 0; background: linear-gradient(90deg, var(--oe-navy-mid), transparent); }
+.header-tabs-wrap::after { right: 0; background: linear-gradient(270deg, var(--oe-navy-mid), transparent); }
+.header-tabs-wrap.scroll-left::before { opacity: 1; }
+.header-tabs-wrap.scroll-right::after { opacity: 1; }
+.header-tabs { width: 100%; height: 100%; display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; align-items: center; padding: 0 var(--sp-md); }
+.header-tabs::-webkit-scrollbar { display: none; }
+.tabs-scroll-btn {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
+  width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--oe-navy-border);
+  background: var(--oe-navy-light); color: var(--oe-cream); font: 700 16px/1 var(--font-ui);
+  display: none; align-items: center; justify-content: center; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,.5);
+}
+.tabs-scroll-btn:active { transform: translateY(-50%) scale(.9); }
+.tabs-scroll-left { left: 2px; }
+.tabs-scroll-right { right: 2px; }
+.header-tabs-wrap.scroll-left .tabs-scroll-left { display: flex; }
+.header-tabs-wrap.scroll-right .tabs-scroll-right { display: flex; }
+.tab-btn {
+  display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-radius: var(--radius-md);
+  background: transparent; border: 1px solid transparent; color: var(--oe-cream-dim); cursor: pointer; flex-shrink: 0;
+  font: 600 13px/1 var(--font-ui); white-space: nowrap; transition: var(--transition-fast);
+}
+.tab-btn:active { transform: scale(.97); }
+.tab-btn.active { background: var(--oe-navy-light); border-color: var(--muster-light); color: var(--oe-cream); box-shadow: 0 0 0 1px var(--muster-light) inset; }
+.tab-btn .badge-missing { background: var(--status-danger); color: #fff; font: 700 10px/1 var(--font-mono); border-radius: 999px; padding: 2px 6px; min-width: 18px; text-align: center; }
+
+.header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+.icon-btn {
+  position: relative; width: var(--touch-min); height: var(--touch-min); border-radius: var(--radius-md);
+  background: var(--oe-navy-light); border: 1px solid var(--oe-navy-border); color: var(--oe-cream);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 20px; transition: var(--transition-fast);
+}
+.icon-btn:active { transform: scale(.93); background: var(--oe-navy-border); }
+.icon-btn .dot { position: absolute; top: 6px; right: 6px; min-width: 16px; height: 16px; border-radius: 999px; background: var(--status-danger);
+  color: #fff; font: 700 10px/16px var(--font-mono); text-align: center; padding: 0 3px; border: 2px solid var(--oe-navy-mid); }
+.net-badge { display: flex; align-items: center; gap: 8px; height: var(--touch-min); padding: 0 14px; border-radius: var(--radius-md);
+  background: var(--oe-navy-light); border: 1px solid var(--oe-navy-border); cursor: pointer; }
+.net-badge .led { width: 9px; height: 9px; border-radius: 50%; background: var(--status-warn); box-shadow: 0 0 8px var(--status-warn); flex-shrink: 0; }
+.net-badge.online .led { background: var(--status-ok); box-shadow: 0 0 8px var(--status-ok); }
+.net-badge .txt { font: 700 11px/1.2 var(--font-ui); letter-spacing: .04em; text-transform: uppercase; }
+.net-badge .txt small { display: block; font-weight: 500; color: var(--oe-cream-dim); text-transform: none; letter-spacing: 0; margin-top: 1px; }
+
+/* ── content / list view ── */
+.content { flex: 1; overflow: hidden; display: flex; position: relative; }
+.list-view { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.list-toolbar { padding: var(--sp-md); display: flex; flex-direction: column; gap: var(--sp-sm); border-bottom: 1px solid var(--oe-navy-border); background: var(--oe-navy); flex-shrink: 0; }
+.list-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-md); flex-wrap: wrap; }
+.list-title-row h2 { margin: 0; font: 700 20px/1.2 var(--font-display); letter-spacing: .02em; }
+.list-title-row .loc { color: var(--oe-cream-dim); font-size: 13px; }
+.search-row { display: flex; gap: var(--sp-sm); }
+.search-input-wrap { position: relative; flex: 1; }
+.search-input-wrap .ic { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); opacity: .5; }
+.search-input {
+  width: 100%; height: var(--touch-min); border-radius: var(--radius-md); background: var(--oe-navy-mid);
+  border: 1px solid var(--oe-navy-border); color: var(--oe-cream); padding: 0 14px 0 42px; font-size: 16px;
+}
+.search-input:focus { outline: none; border-color: var(--muster-light); }
+.clear-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border-radius: 50%;
+  background: var(--oe-navy-border); border: none; color: var(--oe-cream); cursor: pointer; display: none; align-items: center; justify-content: center; }
+.filters-row { display: flex; align-items: center; gap: var(--sp-sm); flex-wrap: wrap; }
+.chip { height: 38px; padding: 0 14px; border-radius: 999px; background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border);
+  color: var(--oe-cream-dim); font: 600 12px/1 var(--font-ui); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.chip.active { color: var(--oe-navy); }
+.chip[data-f="all"].active { background: var(--oe-gold); border-color: var(--oe-gold); }
+.chip[data-f="present"].active { background: var(--status-ok); border-color: var(--status-ok); }
+.chip[data-f="missing"].active { background: var(--status-danger); border-color: var(--status-danger); }
+.chip[data-f="unknown"].active { background: var(--status-inactive); border-color: var(--status-inactive); color: #fff; }
+.chip[data-f="boarded"].active { background: #8BC34A; border-color: #8BC34A; color: #1a2b08; }
+.chip[data-f="ashore"].active { background: #9C27B0; border-color: #9C27B0; color: #fff; }
+.mode-row { display: flex; gap: 6px; }
+.mode-btn { height: 38px; padding: 0 14px; border-radius: 999px; background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border);
+  color: var(--oe-cream-dim); font: 700 12px/1 var(--font-ui); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.mode-btn.active { background: var(--oe-navy-light); border-color: var(--muster-light); color: var(--oe-cream); }
+
+.range-tabs { display: flex; gap: 6px; flex-wrap: wrap; padding: var(--sp-sm) var(--sp-md); border-bottom: 1px solid var(--oe-navy-border); background: var(--oe-navy); flex-shrink: 0; }
+.range-tabs.hidden { display: none; }
+.range-tab-btn { height: 34px; padding: 0 13px; border-radius: 999px; background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border);
+  color: var(--oe-cream-dim); font: 700 12px/1 var(--font-mono); cursor: pointer; }
+.range-tab-btn.active { background: var(--oe-gold); border-color: var(--oe-gold); color: var(--oe-navy); }
+
+.compact-group-head { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; }
+.compact-group-head:first-child { margin-top: 0; }
+.compact-group-head .lbl { font: 700 12px/1 var(--font-mono); color: var(--oe-gold); white-space: nowrap; }
+.compact-group-head .line { flex: 1; height: 1px; background: var(--oe-navy-border); }
+.compact-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.compact-chip {
+  min-width: 60px; height: 44px; padding: 0 10px; border-radius: var(--radius-md); border: 1px solid var(--oe-navy-border);
+  background: var(--oe-navy-light); color: var(--oe-cream-dim); font: 700 14px/1 var(--font-mono); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: var(--transition-fast);
+}
+.compact-chip:active { transform: scale(.93); }
+.compact-chip.st-assembly { background: var(--status-ok); border-color: var(--status-ok); color: #06150c; }
+.compact-chip.st-firstcount { background: repeating-linear-gradient(45deg,#2E7D32,#2E7D32 6px,#66BB6A 6px,#66BB6A 12px); border-color: #2E7D32; color: #fff; }
+.compact-chip.st-missing { background: var(--status-danger); border-color: var(--status-danger); color: #fff; }
+.compact-chip.st-ashore { background: #9C27B0; border-color: #9C27B0; color: #fff; }
+.compact-chip.st-craft { background: #8BC34A; border-color: #8BC34A; color: #1a2b08; }
+
+.summary-bar { display: flex; align-items: center; gap: var(--sp-lg); margin-left: auto; flex-wrap: wrap; }
+.summary-stat { text-align: center; }
+.summary-stat b { display: block; font: 800 20px/1 var(--font-mono); }
+.summary-stat span { font-size: 10px; color: var(--oe-cream-dim); text-transform: uppercase; letter-spacing: .06em; }
+.summary-stat.present b { color: var(--status-ok); }
+.summary-stat.missing b { color: var(--status-danger); }
+.summary-stat.unknown b { color: var(--oe-cream-dim); }
+.summary-stat.craft b { color: #8BC34A; }
+.summary-stat.ashore-stat b { color: #9C27B0; }
+.progress-track { height: 8px; border-radius: 4px; background: var(--oe-navy-border); overflow: hidden; display: flex; min-width: 160px; }
+.progress-track .seg-present { background: var(--status-ok); }
+.progress-track .seg-missing { background: var(--status-danger); }
+
+.person-list { flex: 1; overflow-y: auto; padding: var(--sp-md); display: flex; flex-direction: column; gap: 8px; }
+/* #boardingSection is either the PRIMARY content of a Pax tab (needs to grow + scroll like
+   .person-list does) or a small secondary "assigned from elsewhere" strip under a Crew tab's own
+   .person-list (bounded height, own scroll, doesn't steal flex space from the main list). */
+#boardingSection.primary-view { flex: 1; overflow-y: auto; min-height: 0; padding: 0 var(--sp-md); }
+#boardingSection:not(.primary-view):not(.hidden) { max-height: 220px; overflow-y: auto; margin: 0 var(--sp-md); }
+.person-row {
+  display: flex; align-items: center; gap: var(--sp-md); background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border);
+  border-radius: var(--radius-lg); padding: 10px 12px; transition: var(--transition-fast);
+}
+.person-row.st-assembly { border-color: var(--status-ok); background: linear-gradient(90deg, rgba(39,174,96,.12), var(--oe-navy-mid) 18%); }
+.person-row.st-firstcount { border-color: #2E7D32; background: linear-gradient(90deg, rgba(46,125,50,.16), var(--oe-navy-mid) 18%); }
+.person-row.st-missing { border-color: var(--status-danger); background: linear-gradient(90deg, rgba(231,76,60,.14), var(--oe-navy-mid) 18%); }
+.person-row.st-ashore { border-color: #9C27B0; background: linear-gradient(90deg, rgba(156,39,176,.14), var(--oe-navy-mid) 18%); }
+.person-row.st-craft { border-color: #8BC34A; background: linear-gradient(90deg, rgba(139,195,74,.14), var(--oe-navy-mid) 18%); }
+.person-num { width: 56px; flex-shrink: 0; text-align: center; font: 700 15px/1 var(--font-mono); color: var(--oe-gold-light); }
+.person-num small { display: block; font: 500 9px/1 var(--font-ui); color: var(--oe-cream-dim); margin-top: 3px; text-transform: uppercase; }
+.person-id { flex: 1; min-width: 0; }
+.person-id .nm { font: 700 15px/1.3 var(--font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person-id .meta { font-size: 12px; color: var(--oe-cream-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.status-btn {
+  height: var(--touch-min); min-width: var(--touch-min); padding: 0 16px; border-radius: var(--radius-md); border: 1px solid var(--oe-navy-border);
+  background: var(--oe-navy-light); color: var(--oe-cream-dim); font: 700 13px/1 var(--font-ui); cursor: pointer;
+  display: flex; align-items: center; gap: 6px; transition: var(--transition-fast);
+}
+.status-btn:active { transform: scale(.94); }
+.status-btn.present.on { background: var(--status-ok); border-color: var(--status-ok); color: #06150c; }
+.status-btn.missing.on { background: var(--status-danger); border-color: var(--status-danger); color: #fff; }
+.status-btn.ashore.on { background: #9C27B0; border-color: #9C27B0; color: #fff; }
+.hist-btn { width: 44px; height: 44px; border-radius: var(--radius-md); background: transparent; border: 1px solid var(--oe-navy-border);
+  color: var(--oe-cream-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.empty-state { text-align: center; padding: var(--sp-2xl); color: var(--oe-cream-dim); }
+.empty-state .big { font-size: 36px; margin-bottom: 8px; }
+
+/* ── side panels ── */
+.backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: var(--transition-mid); z-index: 40; }
+.backdrop.show { opacity: 1; pointer-events: auto; }
+.side-panel {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 94vw); background: var(--oe-navy-mid);
+  border-left: 1px solid var(--oe-navy-border); box-shadow: var(--shadow-deep); transform: translateX(100%);
+  transition: transform var(--transition-mid); z-index: 50; display: flex; flex-direction: column;
+}
+.side-panel.show { transform: translateX(0); }
+.panel-head { height: 60px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-md);
+  border-bottom: 1px solid var(--oe-navy-border); }
+.panel-head h3 { margin: 0; font: 700 15px/1 var(--font-display); letter-spacing: .05em; text-transform: uppercase; }
+.panel-close { width: 40px; height: 40px; border-radius: var(--radius-md); background: var(--oe-navy-light); border: 1px solid var(--oe-navy-border);
+  color: var(--oe-cream); cursor: pointer; font-size: 18px; }
+.panel-body { flex: 1; overflow-y: auto; padding: var(--sp-md); display: flex; flex-direction: column; gap: var(--sp-md); }
+
+/* history */
+.hist-entry { display: flex; gap: 10px; padding: 10px; border-radius: var(--radius-md); background: var(--oe-navy-light); border: 1px solid var(--oe-navy-border); }
+.hist-entry .ic { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+.hist-entry.to-present .ic { background: rgba(39,174,96,.25); color: var(--status-ok); }
+.hist-entry.to-missing .ic { background: rgba(231,76,60,.25); color: var(--status-danger); }
+.hist-entry.to-unknown .ic { background: rgba(74,85,104,.35); color: var(--oe-cream-dim); }
+.hist-entry .body { flex: 1; min-width: 0; }
+.hist-entry .line1 { font: 600 13px/1.4 var(--font-ui); }
+.hist-entry .line2 { font-size: 11px; color: var(--oe-cream-dim); margin-top: 2px; }
+.hist-entry .tag-remote { display: inline-block; background: var(--status-info); color: #fff; font: 700 9px/1 var(--font-ui); padding: 2px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+
+/* chat */
+.chat-msgs { flex: 1; overflow-y: auto; padding: var(--sp-md); display: flex; flex-direction: column; gap: 10px; }
+.chat-bubble { max-width: 82%; padding: 8px 12px; border-radius: var(--radius-lg); background: var(--oe-navy-light); border: 1px solid var(--oe-navy-border); }
+.chat-bubble.mine { align-self: flex-end; background: var(--muster-primary); border-color: var(--muster-primary); color: #fff; }
+.chat-bubble .from { font: 700 10px/1 var(--font-mono); opacity: .75; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .05em; }
+.chat-bubble .txt { font-size: 14px; line-height: 1.4; }
+.chat-bubble .time { font-size: 9px; opacity: .6; margin-top: 4px; text-align: right; }
+.chat-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 var(--sp-md); }
+.chat-quick button { border: 1px solid var(--oe-navy-border); background: var(--oe-navy-light); color: var(--oe-cream-dim);
+  border-radius: 999px; padding: 8px 12px; font-size: 12px; cursor: pointer; }
+.chat-input-row { display: flex; gap: 8px; padding: var(--sp-md); border-top: 1px solid var(--oe-navy-border); }
+.chat-input-row input { flex: 1; height: var(--touch-min); border-radius: var(--radius-md); background: var(--oe-navy-light);
+  border: 1px solid var(--oe-navy-border); color: var(--oe-cream); padding: 0 14px; font-size: 15px; }
+.chat-input-row button { width: var(--touch-min); height: var(--touch-min); border-radius: var(--radius-md); background: var(--muster-primary);
+  border: none; color: #fff; font-size: 18px; cursor: pointer; }
+
+/* settings / network */
+.field-group { display: flex; flex-direction: column; gap: 6px; }
+.field-group label { font: 600 11px/1 var(--font-ui); color: var(--oe-cream-dim); text-transform: uppercase; letter-spacing: .06em; }
+.field-group input, .field-group select { height: 48px; border-radius: var(--radius-md); background: var(--oe-navy-light);
+  border: 1px solid var(--oe-navy-border); color: var(--oe-cream); padding: 0 12px; font-size: 15px; }
+.field-group .hint { font-size: 11px; color: var(--oe-cream-dim); }
+.settings-card { background: var(--oe-navy-light); border: 1px solid var(--oe-navy-border); border-radius: var(--radius-lg); padding: var(--sp-md); display: flex; flex-direction: column; gap: var(--sp-sm); }
+.settings-card h4 { margin: 0; font: 700 12px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--oe-gold-light); }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.btn-block { width: 100%; height: var(--touch-min); border-radius: var(--radius-md); border: 1px solid var(--oe-navy-border);
+  background: var(--oe-navy-light); color: var(--oe-cream); font: 700 13px/1 var(--font-ui); cursor: pointer; }
+.btn-block.danger { background: rgba(231,76,60,.15); border-color: var(--status-danger); color: var(--status-danger); }
+.btn-block.primary { background: var(--muster-primary); border-color: var(--muster-primary); color: #fff; }
+.switch { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .track { position: absolute; inset: 0; background: var(--oe-navy-border); border-radius: 999px; cursor: pointer; transition: var(--transition-fast); }
+.switch .track::before { content: ''; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: var(--transition-fast); }
+.switch input:checked + .track { background: var(--muster-primary); }
+.switch input:checked + .track::before { transform: translateX(20px); }
+.assigned-list-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border);
+  border-radius: 999px; padding: 6px 12px; font-size: 12px; }
+
+/* network popover */
+.net-pop { position: absolute; top: 6px; right: var(--sp-md); width: min(340px, 90vw);
+  background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-deep);
+  z-index: 55; opacity: 0; transform: translateY(-8px); pointer-events: none; transition: var(--transition-fast); }
+.net-pop.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.net-pop-body { padding: var(--sp-md); display: flex; flex-direction: column; gap: var(--sp-sm); }
+.peer-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; }
+.peer-row .led { width: 8px; height: 8px; border-radius: 50%; background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok); }
+
+/* toast */
+.toast-stack { position: absolute; bottom: var(--sp-lg); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center; }
+.toast { background: var(--oe-navy-mid); border: 1px solid var(--muster-light); box-shadow: var(--shadow-card); border-radius: var(--radius-md);
+  padding: 10px 18px; font: 600 13px/1.3 var(--font-ui); animation: toast-in .25s ease, toast-out .3s ease 2.4s forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toast-out { to { opacity: 0; transform: translateY(-6px); } }
+
+.app-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 90; display: flex; align-items: center; justify-content: center; padding: var(--sp-lg); }
+.app-modal { background: var(--oe-navy-mid); border: 1px solid var(--oe-navy-border); border-radius: var(--radius-md); box-shadow: var(--shadow-card); max-width: 420px; width: 100%; padding: var(--sp-lg); }
+.app-modal h3 { margin: 0 0 10px; font: 700 16px/1.3 var(--font-ui); color: var(--oe-gold); }
+.app-modal p { margin: 0 0 16px; font: 400 13px/1.5 var(--font-ui); color: var(--oe-cream); }
+.app-modal .app-modal-actions { display: flex; flex-direction: column; gap: 8px; }
+
+@media (max-width: 820px) {
+  .header-top { gap: 6px; padding: 0 8px; }
+  .header-tabs { padding: 0 8px; }
+  .header-brand .name { display: none; }
+  .summary-bar { display: none; }
+}
+
+/* Short viewports (phone in landscape): shrink the chrome so less of it needs scrolling. */
+@media (max-height: 480px) {
+  .header-top { height: 52px; }
+  .header-tabs-wrap { height: 42px; }
+  .icon-btn { width: 40px; height: 40px; font-size: 17px; }
+  .header-user { padding: 3px 10px 3px 3px; }
+  .header-user .avatar-sm { width: 26px; height: 26px; }
+  .header-user .info .role { display: none; }
+  .net-badge { height: 40px; padding: 0 10px; }
+  .net-badge .txt small { display: none; }
+  .tab-btn { height: 34px; padding: 0 12px; }
+}
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="demo-ribbon"><span>DEMO MODE — FICTIONAL DATA — LOCAL SYNC ONLY</span></div>
+
+<!-- ═══════════ LOGIN ═══════════ -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-brand">
+    <div class="t-eyebrow">LCC SENTINEL</div>
+    <h1>MUSTERING</h1>
+    <div class="sub">Crew / PAX headcount — Abandon Ship · v0.1.0 (standalone mock)</div>
+  </div>
+  <div class="login-card">
+    <h2>Select your ID (Safety Number)</h2>
+    <div id="loginGrid" class="login-grid"></div>
+  </div>
+</div>
+
+<!-- ═══════════ APP SHELL ═══════════ -->
+<div id="appShell" class="app-shell hidden">
+  <header class="header">
+    <div class="header-top">
+      <div class="header-brand">
+        <div class="mark">LCC</div>
+        <div class="name">MUSTERING<small>Sentinel Companion</small></div>
+      </div>
+      <div class="header-user" id="headerUserBtn" title="Switch user">
+        <div class="avatar-sm" id="headerUserAvatar"></div>
+        <div class="info"><div class="num" id="headerUserNum"></div><div class="role" id="headerUserRole"></div></div>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn hidden" id="btnChecklist" title="Evacuation Checklist">✅<span class="dot hidden" id="checklistDot">0</span></button>
+        <button class="icon-btn" id="btnHistory" title="History">🕒</button>
+        <button class="icon-btn" id="btnChat" title="Network chat">💬<span class="dot hidden" id="chatDot">0</span></button>
+        <button class="icon-btn" id="btnNotif" title="Notifications">🔔<span class="dot hidden" id="notifDot">0</span></button>
+        <div class="net-badge" id="netBadge" title="Network status">
+          <span class="led" id="netLed"></span>
+          <span class="txt" id="netTxt">STANDALONE<small>Local demo</small></span>
+        </div>
+        <button class="icon-btn" id="btnSettings" title="Settings">⚙️</button>
+      </div>
+    </div>
+    <div class="header-tabs-wrap" id="headerTabsWrap">
+      <button class="tabs-scroll-btn tabs-scroll-left" id="tabsScrollLeft" aria-label="Scroll tabs left">‹</button>
+      <nav class="header-tabs" id="headerTabs"></nav>
+      <button class="tabs-scroll-btn tabs-scroll-right" id="tabsScrollRight" aria-label="Scroll tabs right">›</button>
+    </div>
+    <button class="list-switcher-btn" id="listSwitcherBtn">
+      <span class="ic">☰</span>
+      <span class="cur" id="listSwitcherLabel">—</span>
+      <span class="chev">▾</span>
+      <span class="badge-missing hidden" id="listSwitcherBadge"></span>
+    </button>
+  </header>
+
+  <div class="content" id="content">
+    <div class="list-view">
+      <div class="list-toolbar">
+        <div class="list-title-row">
+          <div><h2 id="listTitle">—</h2><div class="loc" id="listLoc">—</div></div>
+          <div class="summary-bar" id="summaryBar"></div>
+        </div>
+        <div class="search-row" id="searchRow">
+          <div class="search-input-wrap">
+            <span class="ic">🔎</span>
+            <input class="search-input" id="searchInput" placeholder="Name, first name, cabin, safety number…" autocomplete="off">
+            <button class="clear-btn" id="clearSearch">✕</button>
+          </div>
+        </div>
+        <div class="filters-row" id="filtersRow">
+          <div class="filter-chips" id="filterChips" style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="chip active" data-f="all">All</button>
+            <button class="chip" data-f="present">✓ Present</button>
+            <button class="chip" data-f="missing">✕ Missing</button>
+            <button class="chip" data-f="boarded">🛟 Boarded</button>
+            <button class="chip" data-f="ashore">🏝️ Ashore</button>
+            <button class="chip" data-f="unknown">— Unverified</button>
+          </div>
+          <div class="mode-row" style="margin-left:auto">
+            <button class="mode-btn active" id="modeCompleteBtn" data-mode="complete">📋 Complete</button>
+            <button class="mode-btn" id="modeCompactBtn" data-mode="compact">🔘 Compact</button>
+          </div>
+        </div>
+      </div>
+      <div class="hidden" id="craftStatusBar"></div>
+      <div class="hidden" id="reassignBar"></div>
+      <div class="hidden" id="boardingSection"></div>
+      <div class="range-tabs" id="rangeTabs"></div>
+      <div class="person-list" id="personList"></div>
+    </div>
+
+    <div class="backdrop" id="backdrop"></div>
+
+    <!-- History -->
+    <!-- List switcher (compact/mobile header) -->
+    <div class="side-panel" id="panelListSwitcher">
+      <div class="panel-head"><h3>Choose a list</h3><button class="panel-close" data-close>✕</button></div>
+      <div class="panel-body" id="listSwitcherBody"></div>
+    </div>
+
+    <!-- Evacuation Checklist (301 — Evacuation Leader) -->
+    <div class="side-panel" id="panelChecklist">
+      <div class="panel-head"><h3>Evacuation Checklist</h3><button class="panel-close" data-close>✕</button></div>
+      <div class="panel-body">
+        <div class="hint" id="checklistProgress" style="text-align:center;font-weight:700;">0/16 confirmed OK</div>
+        <div id="checklistBody"></div>
+      </div>
+    </div>
+
+    <!-- Reassign crew/PAX to a lifeboat (Lifeboat Commander) -->
+    <div class="side-panel" id="panelReassign">
+      <div class="panel-head"><h3 id="reassignTitle">Add person</h3><button class="panel-close" data-close>✕</button></div>
+      <div class="panel-body">
+        <div class="search-input-wrap" style="margin-bottom:10px">
+          <span class="ic">🔎</span>
+          <input class="search-input" id="reassignSearch" placeholder="Name, safety number, cabin…" autocomplete="off">
+        </div>
+        <div id="reassignResults"></div>
+      </div>
+    </div>
+
+    <div class="side-panel" id="panelHistory">
+      <div class="panel-head"><h3 id="histTitle">History</h3><button class="panel-close" data-close>✕</button></div>
+      <div class="panel-body" id="histBody"></div>
+    </div>
+
+    <!-- Chat -->
+    <div class="side-panel" id="panelChat">
+      <div class="panel-head"><h3>Network Chat</h3><button class="panel-close" data-close>✕</button></div>
+      <div class="chat-msgs" id="chatMsgs"></div>
+      <div class="chat-quick" id="chatQuick"></div>
+      <div class="chat-input-row">
+        <input id="chatInput" placeholder="Message…" autocomplete="off">
+        <button id="chatSend">➤</button>
+      </div>
+    </div>
+
+    <!-- Notifications -->
+    <div class="side-panel" id="panelNotif">
+      <div class="panel-head"><h3>Notifications</h3><button class="panel-close" data-close>✕</button></div>
+      <div class="panel-body" id="notifBody"></div>
+    </div>
+
+    <!-- Settings -->
+    <div class="side-panel" id="panelSettings">
+      <div class="panel-head"><h3>Settings</h3><button class="panel-close" data-close>✕</button></div>
+      <div class="panel-body">
+        <div class="settings-card">
+          <h4>Active user</h4>
+          <div class="row-between"><span id="setUserLabel">—</span><button class="btn-block" style="width:auto;height:40px;padding:0 14px" id="btnSwitchUser">Switch</button></div>
+          <div id="setUserLists" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        </div>
+        <div class="settings-card">
+          <h4>Installer l'application</h4>
+          <div class="hint" id="installAppHint">"Ajouter à l'écran d'accueil" depuis le menu Chrome ne crée qu'un raccourci — pas une vraie installation. Le bouton ci-dessous n'apparaît que quand Chrome reconnaît réellement l'app comme installable (certificat HTTPS accepté sur les 2 ports, voir la fenêtre du serveur).</div>
+          <button class="btn-block primary hidden" id="btnInstallApp">📲 Installer l'application</button>
+        </div>
+        <div class="settings-card">
+          <h4>Display</h4>
+          <div class="row-between"><span>Light theme</span><label class="switch"><input type="checkbox" id="themeToggle"><span class="track"></span></label></div>
+          <div class="row-between"><span>Fullscreen mode</span><label class="switch"><input type="checkbox" id="fullscreenToggle"><span class="track"></span></label></div>
+          <div class="hint">Hides the browser's address bar and system UI — recommended for tablets/phones left running this app continuously.</div>
+        </div>
+        <div class="settings-card">
+          <h4>LCC Sentinel 3 server connection</h4>
+          <div class="row-between"><span>Connect to server (live mode)</span><label class="switch"><input type="checkbox" id="cfgEnabled"><span class="track"></span></label></div>
+          <div class="field-group"><label>Server IP address</label><input id="cfgHost" placeholder="192.168.1.10"></div>
+          <div class="field-group"><label>Port</label><input id="cfgPort" placeholder="8765"></div>
+          <div class="field-group"><label>Token</label><input id="cfgToken" placeholder="7007"></div>
+          <div class="hint" id="cfgHint">Off: this tablet stays in standalone demo mode, with sync simulated across tabs of the same browser. On: it connects over WiFi to sentinel_server.py, authenticates, and loads the live crew/PAX rosters from LCC Sentinel 3 instead of the built-in demo data.</div>
+          <div class="field-group"><label>Backup server IP (optional)</label><input id="cfgBackupHost" placeholder="192.168.1.11 — leave blank if none"></div>
+          <div class="field-group"><label>Backup port</label><input id="cfgBackupPort" placeholder="8765"></div>
+          <div class="hint">If set, this tablet automatically switches to the backup server when the primary stops responding, and back again if the backup also drops.</div>
+          <button class="btn-block" id="btnSaveCfg">Save &amp; apply</button>
+        </div>
+        <div class="settings-card">
+          <h4>Fallback if the ship's WiFi access points go down</h4>
+          <div class="hint">
+            A browser page can't drive WiFi Direct directly — this ad-hoc network is set up once at the Windows/Android level, then the app connects to it like any normal WiFi, using the "Backup server" fields above:<br><br>
+            <b>1.</b> On the bridge PC: Windows → Settings → Network &amp; Internet → <b>Mobile hotspot</b> → turn on.<br>
+            <b>2.</b> On this tablet: join that hotspot like a normal WiFi network (SSID/password shown by Windows).<br>
+            <b>3.</b> The button below fills in the PC's usual IP address on that hotspot (double-check with <code>ipconfig</code> on the PC if the connection doesn't work — the real IP can vary by network adapter).
+          </div>
+          <button class="btn-block" onclick="document.getElementById('cfgBackupHost').value='192.168.137.1';document.getElementById('cfgBackupPort').value='8765';showToast('Windows mobile hotspot IP pre-filled (192.168.137.1) — verify with ipconfig');">Pre-fill Windows mobile hotspot IP</button>
+        </div>
+        <div class="settings-card">
+          <h4>Crew/PAX rosters — offline backup</h4>
+          <div class="hint" id="rosterCacheHint">No roster loaded yet.</div>
+          <button class="btn-block" id="btnRequestSync">🔄 Refresh from server now</button>
+          <button class="btn-block" id="btnDownloadRoster">⬇ Download rosters to a file</button>
+          <button class="btn-block" id="btnLoadRoster">⬆ Load rosters from a file</button>
+          <input type="file" id="rosterFileInput" accept="application/json,.json" class="hidden">
+          <div class="hint">The downloaded file is saved to this tablet's Downloads folder — it survives a browser data reset or device restart, not just the in-browser cache. Use "Load rosters" to restore it (e.g. after a factory reset, or to hand-carry rosters to a tablet that never connected to the server).</div>
+        </div>
+        <div class="settings-card">
+          <h4>Proximity sync — no server / no WiFi needed</h4>
+          <div class="hint">If the server or the ship's WiFi drops, two tablets near each other can still sync directly: export a sync file and send it via Android's Quick Share/Nearby (Bluetooth + WiFi Direct, no internet needed), or hand-carry it. Covers all list statuses (crew, PAX, teams, zones, lifeboats/rescue boats), craft status and the checklist.</div>
+          <button class="btn-block" id="btnExportProximitySync">📤 Export sync file (share to nearby tablet)</button>
+          <button class="btn-block" id="btnImportProximitySync">📥 Import sync file</button>
+          <input type="file" id="proximitySyncFileInput" accept="application/json,.json" class="hidden">
+        </div>
+        <div class="settings-card">
+          <h4>Demo data</h4>
+          <div class="hint">Resets all lists, statuses, history, and demo messages on this device.</div>
+          <button class="btn-block danger" id="btnResetDemo">Reset demo data</button>
+        </div>
+        <div class="hint" style="text-align:center;opacity:.6;">LCC Sentinel Mustering — v0.1.0 (standalone mock)<br>Companion to LCC Sentinel 3</div>
+      </div>
+    </div>
+
+    <!-- Network popover -->
+    <div class="net-pop" id="netPop">
+      <div class="panel-head"><h3>Network</h3><button class="panel-close" data-close>✕</button></div>
+      <div class="net-pop-body">
+        <button class="btn-block" id="btnExportProximitySyncFromNet">📤 Export sync file (share to nearby tablet)</button>
+        <div class="hint" id="netPopStatus">Standalone mode — no connection to the LCC Sentinel 3 server. Multi-tablet sync demo simulated locally (open this file in another tab to test).</div>
+        <div><div class="field-group"><label>Detected tablets (this device)</label></div><div id="peerList"></div></div>
+        <button class="btn-block" id="btnOpenSettingsFromNet">Configure connection…</button>
+      </div>
+    </div>
+
+    <div class="toast-stack" id="toastStack"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════ CONFIG (mock — to be refined) ═══════════════════════════ */
+
+const LISTS = {
+  crewManifest: { id:'crewManifest', label:'CREW MANIFEST', loc:'Ship-wide', icon:'📋', type:'crew', sortBy:'sn',
+    combineOf:['crewA','crewB','teamADA','teamAdmin','teamCrowd','crewSafetyPaxA','crewSafetyPaxB',
+      'stairMVZ12','stairMVZ3','stairMVZ4','lifeboat1','lifeboat2','lifeboat3','lifeboat4',
+      'rescueboat1','rescueboat2','teamLB1Prep','teamLB2Prep','teamLR1Prep','teamLR2Prep',
+      'teamRBPrep','teamPolarKits'] },
+  paxManifest: { id:'paxManifest', label:'PAX MANIFEST', loc:'Ship-wide', icon:'📋', type:'pax', sortBy:'cabin',
+    combineOf:['paxA','paxB'] },
+  crewA: { id:'crewA', label:'CREW ASSEMBLY STATION A', loc:'Atrium', type:'crew', icon:'👨‍✈️',
+    persons: [
+      {sn:'101', last:'BERNARD', first:'Julien', fn:'Crew Assembly A', cabin:'C-101'},
+      {sn:'105', last:'LEFEVRE', first:'Karim', fn:'Crew Assembly A', cabin:'C-105'},
+      {sn:'107', last:'GIRARD', first:'Paul', fn:'Crew Assembly A', cabin:'C-107'},
+      {sn:'115', last:'MARTIN', first:'Elise', fn:'Crew Assembly A', cabin:'C-115'},
+      {sn:'125', last:'SIMON', first:'Chloé', fn:'Crew Assembly A', cabin:'C-125'},
+      {sn:'135', last:'MICHEL', first:'Sarah', fn:'Crew Assembly A', cabin:'C-135'},
+      {sn:'201', last:'ROBERT', first:'Nina', fn:'Crew Assembly A', cabin:'C-201'},
+      {sn:'203', last:'DURAND', first:'Léo', fn:'Crew Assembly A', cabin:'C-203'},
+      {sn:'931', last:'OKAFOR', first:'Chinedu', fn:'Crew Assembly A', cabin:'C-931'},
+      {sn:'933', last:'SANDBERG', first:'Elsa', fn:'Crew Assembly A', cabin:'C-933'},
+      {sn:'935', last:'MARCHETTI', first:'Giulia', fn:'Crew Assembly A', cabin:'C-935'},
+    ] },
+  crewB: { id:'crewB', label:'CREW ASSEMBLY STATION B', loc:'Muster Deck', type:'crew', icon:'👩‍✈️',
+    persons: [
+      {sn:'104', last:'ROUX', first:'Antoine', fn:'Crew Assembly B', cabin:'C-104'},
+      {sn:'106', last:'DUBOIS', first:'Nadia', fn:'Crew Assembly B', cabin:'C-106'},
+      {sn:'108', last:'FABRE', first:'Alice', fn:'Crew Assembly B', cabin:'C-108'},
+      {sn:'130', last:'LAURENT', first:'Hugo', fn:'Crew Assembly B', cabin:'C-130'},
+      {sn:'202', last:'RICHARD', first:'Eva', fn:'Crew Assembly B', cabin:'C-202'},
+      {sn:'210', last:'ANDRE', first:'Kevin', fn:'Crew Assembly B', cabin:'C-210'},
+      {sn:'220', last:'BLANC', first:'Rachid', fn:'Crew Assembly B', cabin:'C-220'},
+      {sn:'932', last:'HOFFMANN', first:'Karl', fn:'Crew Assembly B', cabin:'C-932'},
+      {sn:'934', last:'NGUYEN', first:'Mai', fn:'Crew Assembly B', cabin:'C-934'},
+    ] },
+  paxA: { id:'paxA', label:'PAX ASSEMBLY STATION A', loc:'Atrium', type:'pax', icon:'🧳',
+    persons: [
+      {sn:'', last:'BERG', first:'Henry', fn:'Passenger', cabin:'642'},
+      {sn:'', last:'BERG', first:'Petra', fn:'Passenger', cabin:'642'},
+      {sn:'', last:'BERG', first:'Zoé', fn:'Passenger', cabin:'642'},
+      {sn:'', last:'ALVES', first:'Henry', fn:'Passenger', cabin:'821'},
+      {sn:'', last:'KOVACS', first:'Diego', fn:'Passenger', cabin:'735'},
+      {sn:'', last:'KOVACS', first:'Riitta', fn:'Passenger', cabin:'735'},
+      {sn:'', last:'OKAFOR', first:'Klaus', fn:'Passenger', cabin:'833'},
+      {sn:'', last:'OKAFOR', first:'Eva', fn:'Passenger', cabin:'833'},
+      {sn:'', last:'MORGAN', first:'Sofia', fn:'Passenger', cabin:'633'},
+      {sn:'', last:'TANAKA', first:'Maria', fn:'Passenger', cabin:'719'},
+      {sn:'', last:'DIALLO', first:'Tuula', fn:'Passenger', cabin:'744'},
+      {sn:'', last:'IVANOVA', first:'Magnus', fn:'Passenger', cabin:'645'},
+      {sn:'', last:'IVANOVA', first:'Greta', fn:'Passenger', cabin:'645'},
+      {sn:'', last:'IVANOVA', first:'Léo', fn:'Passenger', cabin:'645'},
+      {sn:'', last:'KOSKINEN', first:'Jonas', fn:'Passenger', cabin:'643'},
+      {sn:'', last:'KOSKINEN', first:'Charlotte', fn:'Passenger', cabin:'643'},
+      {sn:'', last:'KOSKINEN', first:'Noa', fn:'Passenger', cabin:'643'},
+      {sn:'', last:'HILTUNEN', first:'Pavel', fn:'Passenger', cabin:'823'},
+      {sn:'', last:'NIEMI', first:'Paul', fn:'Passenger', cabin:'838'},
+      {sn:'', last:'NIEMI', first:'Elena', fn:'Passenger', cabin:'838'},
+      {sn:'', last:'CARTER', first:'Karl', fn:'Passenger', cabin:'747'},
+      {sn:'', last:'CARTER', first:'Greta', fn:'Passenger', cabin:'747'},
+      {sn:'', last:'CARTER', first:'Tom', fn:'Passenger', cabin:'747'},
+      {sn:'', last:'YAMAMOTO', first:'Jonas', fn:'Passenger', cabin:'627'},
+      {sn:'', last:'YAMAMOTO', first:'Astrid', fn:'Passenger', cabin:'627'},
+      {sn:'', last:'MAKI', first:'Gabriel', fn:'Passenger', cabin:'715'},
+      {sn:'', last:'MAKI', first:'Eva', fn:'Passenger', cabin:'715'},
+      {sn:'', last:'JARVINEN', first:'Otto', fn:'Passenger', cabin:'741'},
+      {sn:'', last:'JARVINEN', first:'Charlotte', fn:'Passenger', cabin:'741'},
+      {sn:'', last:'SCHMIDT', first:'Lars', fn:'Passenger', cabin:'725'},
+      {sn:'', last:'SCHMIDT', first:'Riitta', fn:'Passenger', cabin:'725'},
+      {sn:'', last:'SCHMIDT', first:'Théo', fn:'Passenger', cabin:'725'},
+      {sn:'', last:'ADEYEMI', first:'Lars', fn:'Passenger', cabin:'733'},
+      {sn:'', last:'ADEYEMI', first:'Awa', fn:'Passenger', cabin:'733'},
+      {sn:'', last:'KOSKINEN', first:'James', fn:'Passenger', cabin:'817'},
+      {sn:'', last:'KOSKINEN', first:'Charlotte', fn:'Passenger', cabin:'817'},
+      {sn:'', last:'FERRARI', first:'Karl', fn:'Passenger', cabin:'748'},
+      {sn:'', last:'FERRARI', first:'Yuki', fn:'Passenger', cabin:'748'},
+      {sn:'', last:'FERRARI', first:'Théo', fn:'Passenger', cabin:'748'},
+      {sn:'', last:'MANNINEN', first:'Kenji', fn:'Passenger', cabin:'811'},
+      {sn:'', last:'MANNINEN', first:'Ruth', fn:'Passenger', cabin:'811'},
+      {sn:'', last:'OKAFOR', first:'Anders', fn:'Passenger', cabin:'635'},
+      {sn:'', last:'OKAFOR', first:'Kaisa', fn:'Passenger', cabin:'635'},
+      {sn:'', last:'KOSTOVA', first:'Bjorn', fn:'Passenger', cabin:'647'},
+      {sn:'', last:'KOSTOVA', first:'Colette', fn:'Passenger', cabin:'647'},
+      {sn:'', last:'KOSTOVA', first:'Tom', fn:'Passenger', cabin:'647'},
+      {sn:'', last:'PETROV', first:'Oliver', fn:'Passenger', cabin:'721'},
+      {sn:'', last:'PETROV', first:'Sofia', fn:'Passenger', cabin:'721'},
+      {sn:'', last:'PETROV', first:'Mia', fn:'Passenger', cabin:'721'},
+      {sn:'', last:'SMITH', first:'Peter', fn:'Passenger', cabin:'638'},
+      {sn:'', last:'SMITH', first:'Greta', fn:'Passenger', cabin:'638'},
+      {sn:'', last:'SMITH', first:'Tom', fn:'Passenger', cabin:'638'},
+      {sn:'', last:'HILTUNEN', first:'Henri', fn:'Passenger', cabin:'750'},
+      {sn:'', last:'HILTUNEN', first:'Anna', fn:'Passenger', cabin:'750'},
+      {sn:'', last:'HILTUNEN', first:'Nina', fn:'Passenger', cabin:'750'},
+      {sn:'', last:'HAWKINS', first:'Charlotte', fn:'Passenger', cabin:'752'},
+      {sn:'', last:'HAWKINS', first:'Kaisa', fn:'Passenger', cabin:'752'},
+      {sn:'', last:'HAWKINS', first:'Léo', fn:'Passenger', cabin:'752'},
+      {sn:'', last:'WOOD', first:'Thomas', fn:'Passenger', cabin:'826'},
+      {sn:'', last:'WOOD', first:'Maria', fn:'Passenger', cabin:'826'},
+      {sn:'', last:'WOOD', first:'Zoé', fn:'Passenger', cabin:'826'},
+      {sn:'', last:'AALTO', first:'Stefan', fn:'Passenger', cabin:'840'},
+      {sn:'', last:'AALTO', first:'Diego', fn:'Passenger', cabin:'840'},
+      {sn:'', last:'LOPEZ', first:'Pavel', fn:'Passenger', cabin:'753'},
+      {sn:'', last:'MORGAN', first:'James', fn:'Passenger', cabin:'723'},
+      {sn:'', last:'MORGAN', first:'Emma', fn:'Passenger', cabin:'723'},
+      {sn:'', last:'BROWN', first:'Robert', fn:'Passenger', cabin:'834'},
+      {sn:'', last:'BROWN', first:'Emma', fn:'Passenger', cabin:'834'},
+      {sn:'', last:'OKONKWO', first:'Gabriel', fn:'Passenger', cabin:'636'},
+      {sn:'', last:'OKONKWO', first:'Rita', fn:'Passenger', cabin:'636'},
+      {sn:'', last:'OKONKWO', first:'Mia', fn:'Passenger', cabin:'636'},
+      {sn:'', last:'TUOMINEN', first:'Henri', fn:'Passenger', cabin:'832'},
+      {sn:'', last:'LEHTONEN', first:'Oliver', fn:'Passenger', cabin:'717'},
+      {sn:'', last:'LEHTONEN', first:'Nora', fn:'Passenger', cabin:'717'},
+      {sn:'', last:'SILVA', first:'Marco', fn:'Passenger', cabin:'827'},
+      {sn:'', last:'SILVA', first:'Yuki', fn:'Passenger', cabin:'827'},
+      {sn:'', last:'ALVES', first:'Martin', fn:'Passenger', cabin:'637'},
+      {sn:'', last:'ALVES', first:'Elin', fn:'Passenger', cabin:'637'},
+      {sn:'', last:'MARTINEZ', first:'Marco', fn:'Passenger', cabin:'619'},
+      {sn:'', last:'MARTINEZ', first:'Sofia', fn:'Passenger', cabin:'619'},
+      {sn:'', last:'ADEYEMI', first:'Marco', fn:'Passenger', cabin:'836'},
+      {sn:'', last:'ADEYEMI', first:'Sophie', fn:'Passenger', cabin:'836'},
+      {sn:'', last:'HILTUNEN', first:'Martin', fn:'Passenger', cabin:'828'},
+      {sn:'', last:'JARVINEN', first:'Gabriel', fn:'Passenger', cabin:'837'},
+      {sn:'', last:'BIANCHI', first:'Erik', fn:'Passenger', cabin:'819'},
+      {sn:'', last:'BIANCHI', first:'Riitta', fn:'Passenger', cabin:'819'},
+      {sn:'', last:'MEYER', first:'Oliver', fn:'Passenger', cabin:'727'},
+      {sn:'', last:'MEYER', first:'Astrid', fn:'Passenger', cabin:'727'},
+      {sn:'', last:'SAARINEN', first:'Magnus', fn:'Passenger', cabin:'831'},
+      {sn:'', last:'SAARINEN', first:'Maria', fn:'Passenger', cabin:'831'},
+      {sn:'', last:'HAWKINS', first:'Mark', fn:'Passenger', cabin:'749'},
+      {sn:'', last:'HAWKINS', first:'Mary', fn:'Passenger', cabin:'749'},
+      {sn:'', last:'HAWKINS', first:'Léo', fn:'Passenger', cabin:'749'},
+      {sn:'', last:'KOSKINEN', first:'Ivan', fn:'Passenger', cabin:'639'},
+      {sn:'', last:'TUOMINEN', first:'Jonas', fn:'Passenger', cabin:'839'},
+      {sn:'', last:'TUOMINEN', first:'Ngozi', fn:'Passenger', cabin:'839'},
+      {sn:'', last:'BROWN', first:'Riitta', fn:'Passenger', cabin:'825'},
+      {sn:'', last:'IVANOVA', first:'Pavel', fn:'Passenger', cabin:'746'},
+      {sn:'', last:'LEHTO', first:'Diego', fn:'Passenger', cabin:'740'},
+      {sn:'', last:'LEHTO', first:'Sofia', fn:'Passenger', cabin:'740'},
+      {sn:'', last:'SMITH', first:'Ian', fn:'Passenger', cabin:'841'},
+      {sn:'', last:'SMITH', first:'Emma', fn:'Passenger', cabin:'841'},
+      {sn:'', last:'SMITH', first:'Tom', fn:'Passenger', cabin:'841'},
+      {sn:'', last:'ANDERSEN', first:'Simon', fn:'Passenger', cabin:'640'},
+      {sn:'', last:'ANDERSEN', first:'Diego', fn:'Passenger', cabin:'640'},
+      {sn:'', last:'THOMPSON', first:'Pavel', fn:'Passenger', cabin:'829'},
+      {sn:'', last:'THOMPSON', first:'Giulia', fn:'Passenger', cabin:'829'},
+      {sn:'', last:'THOMPSON', first:'Tom', fn:'Passenger', cabin:'829'},
+      {sn:'', last:'AALTO', first:'Michael', fn:'Passenger', cabin:'621'},
+      {sn:'', last:'AALTO', first:'Charlotte', fn:'Passenger', cabin:'621'},
+      {sn:'', last:'IVANOVA', first:'Simon', fn:'Passenger', cabin:'623'},
+      {sn:'', last:'HANSSON', first:'Gabriel', fn:'Passenger', cabin:'729'},
+      {sn:'', last:'BIANCHI', first:'Magnus', fn:'Passenger', cabin:'745'},
+      {sn:'', last:'MacDONALD', first:'Andrew', fn:'Passenger', cabin:'629'},
+      {sn:'', last:'MacDONALD', first:'Emma', fn:'Passenger', cabin:'629'},
+      {sn:'', last:'LARSEN', first:'Jack', fn:'Passenger', cabin:'742'},
+      {sn:'', last:'LARSEN', first:'Astrid', fn:'Passenger', cabin:'742'},
+      {sn:'', last:'LARSEN', first:'Nina', fn:'Passenger', cabin:'742'},
+      {sn:'', last:'HANSSON', first:'Otto', fn:'Passenger', cabin:'830'},
+      {sn:'', last:'HANSSON', first:'Mary', fn:'Passenger', cabin:'830'},
+      {sn:'', last:'HANSSON', first:'Marco', fn:'Passenger', cabin:'835'},
+      {sn:'', last:'HANSSON', first:'Anna', fn:'Passenger', cabin:'835'},
+      {sn:'', last:'NOVAK', first:'Ruth', fn:'Passenger', cabin:'751'},
+      {sn:'', last:'BAUER', first:'Isla', fn:'Passenger', cabin:'631'},
+      {sn:'', last:'MUELLER', first:'Charlotte', fn:'Passenger', cabin:'815'},
+    ] },
+  paxB: { id:'paxB', label:'PAX ASSEMBLY STATION B', loc:'Theatre', type:'pax', icon:'🧳',
+    persons: [
+      {sn:'', last:'KOSKINEN', first:'Robert', fn:'Passenger', cabin:'626'},
+      {sn:'', last:'SILVA', first:'Henry', fn:'Passenger', cabin:'602'},
+      {sn:'', last:'GARCIA', first:'Andrew', fn:'Passenger', cabin:'722'},
+      {sn:'', last:'GARCIA', first:'Rita', fn:'Passenger', cabin:'722'},
+      {sn:'', last:'GARCIA', first:'Léo', fn:'Passenger', cabin:'722'},
+      {sn:'', last:'HILTUNEN', first:'David', fn:'Passenger', cabin:'718'},
+      {sn:'', last:'HILTUNEN', first:'Colette', fn:'Passenger', cabin:'718'},
+      {sn:'', last:'MUELLER', first:'Charlotte', fn:'Passenger', cabin:'808'},
+      {sn:'', last:'VIRTANEN', first:'Michael', fn:'Passenger', cabin:'701'},
+      {sn:'', last:'SALO', first:'Lars', fn:'Passenger', cabin:'616'},
+      {sn:'', last:'SALO', first:'Eva', fn:'Passenger', cabin:'616'},
+      {sn:'', last:'SILVA', first:'Charlotte', fn:'Passenger', cabin:'709'},
+      {sn:'', last:'SILVA', first:'Giulia', fn:'Passenger', cabin:'709'},
+      {sn:'', last:'SILVA', first:'Léo', fn:'Passenger', cabin:'709'},
+      {sn:'', last:'HILTUNEN', first:'Ngozi', fn:'Passenger', cabin:'822'},
+      {sn:'', last:'LOPEZ', first:'David', fn:'Passenger', cabin:'716'},
+      {sn:'', last:'LOPEZ', first:'Linda', fn:'Passenger', cabin:'716'},
+      {sn:'', last:'JOHANSSON', first:'Thomas', fn:'Passenger', cabin:'807'},
+      {sn:'', last:'JOHANSSON', first:'Rita', fn:'Passenger', cabin:'807'},
+      {sn:'', last:'VUORI', first:'Jack', fn:'Passenger', cabin:'861'},
+      {sn:'', last:'SILVA', first:'Daniel', fn:'Passenger', cabin:'614'},
+      {sn:'', last:'SILVA', first:'Eva', fn:'Passenger', cabin:'614'},
+      {sn:'', last:'FERRARI', first:'Georgi', fn:'Passenger', cabin:'617'},
+      {sn:'', last:'FERRARI', first:'Freja', fn:'Passenger', cabin:'617'},
+      {sn:'', last:'WILSON', first:'Thomas', fn:'Passenger', cabin:'702'},
+      {sn:'', last:'WILSON', first:'Awa', fn:'Passenger', cabin:'702'},
+      {sn:'', last:'KOSTOVA', first:'Stefan', fn:'Passenger', cabin:'622'},
+      {sn:'', last:'SALO', first:'Nils', fn:'Passenger', cabin:'812'},
+      {sn:'', last:'SALO', first:'Astrid', fn:'Passenger', cabin:'812'},
+      {sn:'', last:'FERNANDEZ', first:'Karl', fn:'Passenger', cabin:'732'},
+      {sn:'', last:'FERNANDEZ', first:'Claire', fn:'Passenger', cabin:'732'},
+      {sn:'', last:'ANDERSEN', first:'Elena', fn:'Passenger', cabin:'708'},
+      {sn:'', last:'NIELSEN', first:'Bernard', fn:'Passenger', cabin:'818'},
+      {sn:'', last:'NIELSEN', first:'Giulia', fn:'Passenger', cabin:'818'},
+      {sn:'', last:'LEHTONEN', first:'Emma', fn:'Passenger', cabin:'705'},
+      {sn:'', last:'SILVA', first:'Mark', fn:'Passenger', cabin:'806'},
+      {sn:'', last:'SILVA', first:'Greta', fn:'Passenger', cabin:'806'},
+      {sn:'', last:'NIELSEN', first:'James', fn:'Passenger', cabin:'809'},
+      {sn:'', last:'NIELSEN', first:'Yuki', fn:'Passenger', cabin:'809'},
+      {sn:'', last:'MORGAN', first:'Ian', fn:'Passenger', cabin:'707'},
+      {sn:'', last:'MORGAN', first:'Kaisa', fn:'Passenger', cabin:'707'},
+      {sn:'', last:'THOMPSON', first:'Lars', fn:'Passenger', cabin:'620'},
+      {sn:'', last:'THOMPSON', first:'Petra', fn:'Passenger', cabin:'620'},
+      {sn:'', last:'JARVINEN', first:'Pirjo', fn:'Passenger', cabin:'634'},
+      {sn:'', last:'LAINE', first:'Karl', fn:'Passenger', cabin:'824'},
+      {sn:'', last:'LAINE', first:'Ingrid', fn:'Passenger', cabin:'824'},
+      {sn:'', last:'HEINONEN', first:'Diego', fn:'Passenger', cabin:'604'},
+      {sn:'', last:'HEINONEN', first:'Nora', fn:'Passenger', cabin:'604'},
+      {sn:'', last:'THOMPSON', first:'Henry', fn:'Passenger', cabin:'706'},
+      {sn:'', last:'THOMPSON', first:'Kaisa', fn:'Passenger', cabin:'706'},
+      {sn:'', last:'ANDERSEN', first:'Henry', fn:'Passenger', cabin:'736'},
+      {sn:'', last:'ANDERSEN', first:'Sara', fn:'Passenger', cabin:'736'},
+      {sn:'', last:'FERNANDEZ', first:'David', fn:'Passenger', cabin:'814'},
+      {sn:'', last:'SMITH', first:'Robert', fn:'Passenger', cabin:'615'},
+      {sn:'', last:'RUSSO', first:'Magnus', fn:'Passenger', cabin:'630'},
+      {sn:'', last:'RUSSO', first:'Emma', fn:'Passenger', cabin:'630'},
+      {sn:'', last:'OKONKWO', first:'Anders', fn:'Passenger', cabin:'712'},
+      {sn:'', last:'OKONKWO', first:'Petra', fn:'Passenger', cabin:'712'},
+      {sn:'', last:'BAUER', first:'Daniel', fn:'Passenger', cabin:'724'},
+      {sn:'', last:'BAUER', first:'Eva', fn:'Passenger', cabin:'724'},
+      {sn:'', last:'ROSSI', first:'Georgi', fn:'Passenger', cabin:'624'},
+      {sn:'', last:'ROSSI', first:'Eva', fn:'Passenger', cabin:'624'},
+      {sn:'', last:'ROSSI', first:'Nina', fn:'Passenger', cabin:'624'},
+      {sn:'', last:'ALVES', first:'Mark', fn:'Passenger', cabin:'726'},
+      {sn:'', last:'KALLIO', first:'Anders', fn:'Passenger', cabin:'810'},
+      {sn:'', last:'KALLIO', first:'Riitta', fn:'Passenger', cabin:'810'},
+      {sn:'', last:'KALLIO', first:'Mia', fn:'Passenger', cabin:'810'},
+      {sn:'', last:'ROSSATO', first:'Martin', fn:'Passenger', cabin:'802'},
+      {sn:'', last:'ROSSATO', first:'Greta', fn:'Passenger', cabin:'802'},
+      {sn:'', last:'ADEYEMI', first:'Maria', fn:'Passenger', cabin:'803'},
+      {sn:'', last:'JARVINEN', first:'Henri', fn:'Passenger', cabin:'801'},
+      {sn:'', last:'JARVINEN', first:'Riitta', fn:'Passenger', cabin:'801'},
+      {sn:'', last:'HAAVISTO', first:'Colette', fn:'Passenger', cabin:'714'},
+      {sn:'', last:'MAKI', first:'Klaus', fn:'Passenger', cabin:'632'},
+      {sn:'', last:'MUELLER', first:'Magnus', fn:'Passenger', cabin:'603'},
+      {sn:'', last:'ADEYEMI', first:'Mark', fn:'Passenger', cabin:'710'},
+      {sn:'', last:'ADEYEMI', first:'Valentina', fn:'Passenger', cabin:'710'},
+      {sn:'', last:'KALLIO', first:'Charlotte', fn:'Passenger', cabin:'610'},
+      {sn:'', last:'KALLIO', first:'Carmen', fn:'Passenger', cabin:'610'},
+      {sn:'', last:'MARTINEZ', first:'Andrew', fn:'Passenger', cabin:'728'},
+      {sn:'', last:'MARTINEZ', first:'Elena', fn:'Passenger', cabin:'728'},
+      {sn:'', last:'ANDERSSON', first:'Bernard', fn:'Passenger', cabin:'605'},
+      {sn:'', last:'ANDERSSON', first:'Sophie', fn:'Passenger', cabin:'605'},
+      {sn:'', last:'ROSSI', first:'Sophie', fn:'Passenger', cabin:'608'},
+      {sn:'', last:'YAMAMOTO', first:'Isla', fn:'Passenger', cabin:'816'},
+      {sn:'', last:'CLARK', first:'Paul', fn:'Passenger', cabin:'804'},
+      {sn:'', last:'CLARK', first:'Astrid', fn:'Passenger', cabin:'804'},
+      {sn:'', last:'YAMAMOTO', first:'Diego', fn:'Passenger', cabin:'703'},
+      {sn:'', last:'YAMAMOTO', first:'Freja', fn:'Passenger', cabin:'703'},
+      {sn:'', last:'DUPONT', first:'Tuula', fn:'Passenger', cabin:'730'},
+      {sn:'', last:'BERG', first:'Simon', fn:'Passenger', cabin:'820'},
+      {sn:'', last:'BERG', first:'Ngozi', fn:'Passenger', cabin:'820'},
+      {sn:'', last:'THOMPSON', first:'Thomas', fn:'Passenger', cabin:'704'},
+      {sn:'', last:'JOHANSSON', first:'Georgi', fn:'Passenger', cabin:'734'},
+      {sn:'', last:'JOHANSSON', first:'Giulia', fn:'Passenger', cabin:'734'},
+      {sn:'', last:'JOHANSSON', first:'Zoé', fn:'Passenger', cabin:'734'},
+      {sn:'', last:'LARSEN', first:'Gabriel', fn:'Passenger', cabin:'611'},
+      {sn:'', last:'LARSEN', first:'Rita', fn:'Passenger', cabin:'611'},
+      {sn:'', last:'SCHMIDT', first:'Daniel', fn:'Passenger', cabin:'618'},
+      {sn:'', last:'SCHMIDT', first:'Greta', fn:'Passenger', cabin:'618'},
+      {sn:'', last:'COSTA', first:'Petra', fn:'Passenger', cabin:'720'},
+      {sn:'', last:'VIRTANEN', first:'Ian', fn:'Passenger', cabin:'609'},
+      {sn:'', last:'VIRTANEN', first:'Kaisa', fn:'Passenger', cabin:'609'},
+      {sn:'', last:'ROSSATO', first:'Anders', fn:'Passenger', cabin:'738'},
+      {sn:'', last:'ROSSATO', first:'Nora', fn:'Passenger', cabin:'738'},
+      {sn:'', last:'ROSSATO', first:'Nina', fn:'Passenger', cabin:'738'},
+      {sn:'', last:'ROSSATO', first:'Michael', fn:'Passenger', cabin:'628'},
+      {sn:'', last:'ROSSATO', first:'Sophie', fn:'Passenger', cabin:'628'},
+      {sn:'', last:'MEYER', first:'Henry', fn:'Passenger', cabin:'601'},
+      {sn:'', last:'MEYER', first:'Sara', fn:'Passenger', cabin:'601'},
+      {sn:'', last:'JARVINEN', first:'Eva', fn:'Passenger', cabin:'606'},
+      {sn:'', last:'RANTANEN', first:'Camila', fn:'Passenger', cabin:'711'},
+      {sn:'', last:'ALVES', first:'Charlotte', fn:'Passenger', cabin:'805'},
+      {sn:'', last:'ALVES', first:'Claire', fn:'Passenger', cabin:'805'},
+      {sn:'', last:'GARCIA', first:'Kaisa', fn:'Passenger', cabin:'612'},
+      {sn:'', last:'SMITH', first:'Oliver', fn:'Passenger', cabin:'607'},
+      {sn:'', last:'SMITH', first:'Elin', fn:'Passenger', cabin:'607'},
+      {sn:'', last:'SMITH', first:'Nina', fn:'Passenger', cabin:'607'},
+      {sn:'', last:'LEHTONEN', first:'Greta', fn:'Passenger', cabin:'814'},
+      {sn:'', last:'ROSSI', first:'Robert', fn:'Passenger', cabin:'618'},
+      {sn:'', last:'THOMPSON', first:'Pavel', fn:'Passenger', cabin:'703'},
+      {sn:'', last:'LEHTONEN', first:'Julia', fn:'Passenger', cabin:'605'},
+      {sn:'', last:'OKONKWO', first:'Klaus', fn:'Passenger', cabin:'704'},
+      {sn:'', last:'PETROV', first:'Lars', fn:'Passenger', cabin:'724'},
+      {sn:'', last:'IVANOVA', first:'Anders', fn:'Passenger', cabin:'620'},
+    ] },
+
+  combinedA: { id:'combinedA', label:'PAX/CREW — ASSEMBLY STATION A', loc:'Atrium', icon:'🧩', combineOf:['crewA','paxA'] },
+  combinedB: { id:'combinedB', label:'PAX/CREW — ASSEMBLY STATION B', loc:'Muster Deck / Theatre', icon:'🧩', combineOf:['crewB','paxB'] },
+
+  teamADA: { id:'teamADA', label:'ADA TEAM', loc:'As assigned', type:'crew', icon:'🦽',
+    persons: [
+      {sn:'132', last:'RAMPERSAD', first:'Priya', fn:'ADA Team Leader', cabin:'C-132'},
+      {sn:'306', last:'EKSTROM', first:'Nils', fn:'ADA Escort', cabin:'C-306'},
+      {sn:'307', last:'FARIA', first:'Beatriz', fn:'ADA Escort', cabin:'C-307'},
+      {sn:'629', last:'NAKASONE', first:'Kenji', fn:'ADA Escort', cabin:'C-629'},
+      {sn:'630', last:'OBRADOVIC', first:'Mila', fn:'ADA Escort', cabin:'C-630'},
+      {sn:'920', last:'DELACROIX', first:'Julien', fn:'ADA Escort', cabin:'C-920'},
+      {sn:'921', last:'OTIENO', first:'Brian', fn:'ADA Escort', cabin:'C-921'},
+      {sn:'922', last:'WESTBROOK', first:'Claire', fn:'ADA Escort', cabin:'C-922'},
+    ] },
+  teamAdmin: { id:'teamAdmin', label:'ADMIN TEAM', loc:'Purser Office', type:'crew', icon:'🗂️',
+    persons: [
+      {sn:'303', last:'BENOIT', first:'Claire', fn:'Purser Staff', cabin:'C-303'},
+      {sn:'310', last:'WALSH', first:'Owen', fn:'Purser Staff', cabin:'C-310'},
+    ] },
+  teamCrowd: { id:'teamCrowd', label:'CROWD CONTROL TEAM', loc:'As assigned', type:'crew', icon:'🚧',
+    persons: [
+      {sn:'801', last:'MBEKI', first:'Thabo', fn:'Crowd Control Team Leader', cabin:'C-801'},
+      {sn:'304', last:'HALVORSEN', first:'Ida', fn:'Crowd Control', cabin:'C-304'},
+      {sn:'305', last:'RUIZ', first:'Mateo', fn:'Crowd Control', cabin:'C-305'},
+      {sn:'901', last:'PAPADOPOULOS', first:'Nikos', fn:'Crowd Control', cabin:'C-901'},
+      {sn:'902', last:'CERVANTES', first:'Lucia', fn:'Crowd Control', cabin:'C-902'}, // dual duty — also Stairway Guide on stairMVZ3, same person
+    ] },
+
+  stairMVZ12: { id:'stairMVZ12', label:'STAIRWAY GUIDES — MVZ 1/2', loc:'Stairwells — MVZ 1/2', type:'crew', icon:'🪜',
+    persons: [
+      {sn:'602', last:'CASTELLANOS', first:'Mateo', fn:'Zone Leader', cabin:'C-602'},
+      {sn:'603', last:'NGUYEN', first:'Linh', fn:'Zone Leader', cabin:'C-603'},
+      {sn:'604', last:'FISCHER', first:'Greta', fn:'Zone Leader', cabin:'C-604'},
+      {sn:'314', last:'THIBAULT', first:'Lea', fn:'Stairway Guide', cabin:'C-314'},
+      {sn:'402', last:'WOZNIAK', first:'Marek', fn:'Stairway Guide', cabin:'C-402'},
+      {sn:'408', last:'AHMADI', first:'Sara', fn:'Stairway Guide', cabin:'C-408'},
+      {sn:'410', last:'BERGSTROM', first:'Erik', fn:'Stairway Guide', cabin:'C-410'},
+      {sn:'414', last:'CALLAHAN', first:'Ryan', fn:'Stairway Guide', cabin:'C-414'},
+      {sn:'419', last:'NAKAGAWA', first:'Yui', fn:'Stairway Guide', cabin:'C-419'},
+      {sn:'420', last:'VILLANI', first:'Giorgio', fn:'Stairway Guide', cabin:'C-420'},
+      {sn:'424', last:'OKORO', first:'Ada', fn:'Stairway Guide', cabin:'C-424'},
+      {sn:'426', last:'LINDGREN', first:'Hanna', fn:'Stairway Guide', cabin:'C-426'},
+      {sn:'429', last:'ESPINOZA', first:'Mateo', fn:'Stairway Guide', cabin:'C-429'},
+      {sn:'433', last:'SVOBODA', first:'Petr', fn:'Stairway Guide', cabin:'C-433'},
+      {sn:'618', last:'MARCEAU', first:'Julie', fn:'Stairway Guide', cabin:'C-618'},
+      {sn:'619', last:'HADDAD', first:'Layla', fn:'Stairway Guide', cabin:'C-619'},
+      {sn:'622', last:'STRAUSS', first:'Otto', fn:'Stairway Guide', cabin:'C-622'},
+      {sn:'623', last:'FERREIRA', first:'Joana', fn:'Stairway Guide', cabin:'C-623'},
+      {sn:'707', last:'KOVALENKO', first:'Olena', fn:'Stairway Guide', cabin:'C-707'},
+      {sn:'708', last:'ONYANGO', first:'Wanjiru', fn:'Stairway Guide', cabin:'C-708'},
+      {sn:'711', last:'RASMUSSEN', first:'Emil', fn:'Stairway Guide', cabin:'C-711'},
+      {sn:'715', last:'TAKAHASHI', first:'Ren', fn:'Stairway Guide', cabin:'C-715'},
+      {sn:'724', last:'BOUCHER', first:'Camille', fn:'Stairway Guide', cabin:'C-724'},
+      {sn:'725', last:'GHIRARDI', first:'Marco', fn:'Stairway Guide', cabin:'C-725'},
+      {sn:'726', last:'NILSSON', first:'Astrid', fn:'Stairway Guide', cabin:'C-726'},
+      {sn:'802', last:'ABOU-CHAKRA', first:'Rania', fn:'Stairway Guide', cabin:'C-802'},
+      {sn:'805', last:'LINDSTROM', first:'Sven', fn:'Stairway Guide', cabin:'C-805'},
+      {sn:'809', last:'VASQUEZ', first:'Ana', fn:'Stairway Guide', cabin:'C-809'},
+      {sn:'812', last:'OKONJO', first:'Chidinma', fn:'Stairway Guide', cabin:'C-812'},
+      {sn:'911', last:'BREITENBACH', first:'Klaus', fn:'Stairway Guide', cabin:'C-911'},
+      {sn:'917', last:'SAKAMOTO', first:'Haruto', fn:'Stairway Guide', cabin:'C-917'},
+      {sn:'918', last:'DELACRUZ', first:'Miguel', fn:'Stairway Guide', cabin:'C-918'},
+    ] },
+  stairMVZ3: { id:'stairMVZ3', label:'STAIRWAY GUIDES — MVZ 3', loc:'Stairwells — MVZ 3', type:'crew', icon:'🪜',
+    persons: [
+      {sn:'702', last:'VILLEGAS', first:'Carlos', fn:'Zone Leader', cabin:'C-702'},
+      {sn:'703', last:'SOKOLOVA', first:'Irina', fn:'Zone Leader', cabin:'C-703'},
+      {sn:'704', last:'ABDULLAHI', first:'Samir', fn:'Zone Leader', cabin:'C-704'},
+      {sn:'318', last:'DESROSIERS', first:'Manon', fn:'Stairway Guide', cabin:'C-318'},
+      {sn:'403', last:'WHITFIELD', first:'Grace', fn:'Stairway Guide', cabin:'C-403'},
+      {sn:'409', last:'NAZARENKO', first:'Ivan', fn:'Stairway Guide', cabin:'C-409'},
+      {sn:'411', last:'KOFFI', first:'Abena', fn:'Stairway Guide', cabin:'C-411'},
+      {sn:'412', last:'LAMBRECHT', first:'Tobias', fn:'Stairway Guide', cabin:'C-412'},
+      {sn:'413', last:'YILDIRIM', first:'Elif', fn:'Stairway Guide', cabin:'C-413'},
+      {sn:'422', last:'OSTROWSKI', first:'Pawel', fn:'Stairway Guide', cabin:'C-422'},
+      {sn:'423', last:'BENEDETTI', first:'Chiara', fn:'Stairway Guide', cabin:'C-423'},
+      {sn:'425', last:'CHUKWU', first:'Ugo', fn:'Stairway Guide', cabin:'C-425'},
+      {sn:'428', last:'SANDOVAL', first:'Renata', fn:'Stairway Guide', cabin:'C-428'},
+      {sn:'431', last:'PRZYBYLSKI', first:'Marta', fn:'Stairway Guide', cabin:'C-431'},
+      {sn:'432', last:'MATSUURA', first:'Kaito', fn:'Stairway Guide', cabin:'C-432'},
+      {sn:'605', last:'AGYEMANG', first:'Kwabena', fn:'Stairway Guide', cabin:'C-605'},
+      {sn:'606', last:'KESSLER', first:'Nora', fn:'Stairway Guide', cabin:'C-606'},
+      {sn:'621', last:'VANTERPOOL', first:'Desmond', fn:'Stairway Guide', cabin:'C-621'},
+      {sn:'709', last:'BURATTI', first:'Alessia', fn:'Stairway Guide', cabin:'C-709'},
+      {sn:'712', last:'NKEMELU', first:'Amara', fn:'Stairway Guide', cabin:'C-712'},
+      {sn:'713', last:'GRUBER', first:'Felix', fn:'Stairway Guide', cabin:'C-713'},
+      {sn:'716', last:'AMARAL', first:'Ines', fn:'Stairway Guide', cabin:'C-716'},
+      {sn:'718', last:'TVERDOKHLIB', first:'Oksana', fn:'Stairway Guide', cabin:'C-718'},
+      {sn:'803', last:'QUANSAH', first:'Yaw', fn:'Stairway Guide', cabin:'C-803'},
+      {sn:'806', last:'MIKKELSEN', first:'Frida', fn:'Stairway Guide', cabin:'C-806'},
+      {sn:'807', last:'FAROOQI', first:'Hassan', fn:'Stairway Guide', cabin:'C-807'},
+      {sn:'902', last:'CERVANTES', first:'Lucia', fn:'Stairway Guide', cabin:'C-902'},
+      {sn:'903', last:'LINDQVIST', first:'Sven', fn:'Stairway Guide', cabin:'C-903'},
+      {sn:'904', last:'MORALES', first:'Ana', fn:'Stairway Guide', cabin:'C-904'},
+      {sn:'905', last:'HAAS', first:'Tobias', fn:'Stairway Guide', cabin:'C-905'},
+      {sn:'906', last:'NAKASHIMA', first:'Rin', fn:'Stairway Guide', cabin:'C-906'},
+      {sn:'907', last:"O'BRIEN", first:'Sean', fn:'Stairway Guide', cabin:'C-907'},
+      {sn:'908', last:'WEISZ', first:'Daniel', fn:'Stairway Guide', cabin:'C-908'},
+      {sn:'909', last:'CORDEIRO', first:'Teresa', fn:'Stairway Guide', cabin:'C-909'},
+      {sn:'910', last:'HRISTOV', first:'Ivo', fn:'Stairway Guide', cabin:'C-910'},
+      {sn:'912', last:'NAKAMOTO', first:'Yuna', fn:'Stairway Guide', cabin:'C-912'},
+      {sn:'916', last:'BELLINGER', first:'Oliver', fn:'Stairway Guide', cabin:'C-916'},
+    ] },
+  stairMVZ4: { id:'stairMVZ4', label:'STAIRWAY GUIDES — MVZ 4', loc:'Stairwells — MVZ 4', type:'crew', icon:'🪜',
+    persons: [
+      {sn:'404', last:'BENALI', first:'Yasmine', fn:'Zone Leader', cabin:'C-404'},
+      {sn:'406', last:'THORSEN', first:'Ingrid', fn:'Zone Leader', cabin:'C-406'},
+      {sn:'407', last:'MUTAMBA', first:'Joseph', fn:'Zone Leader', cabin:'C-407'},
+      {sn:'317', last:'BASTIEN', first:'Noemie', fn:'Stairway Guide', cabin:'C-317'},
+      {sn:'421', last:'WHITAKER', first:'Jordan', fn:'Stairway Guide', cabin:'C-421'},
+      {sn:'427', last:'KOVACIC', first:'Ivana', fn:'Stairway Guide', cabin:'C-427'},
+      {sn:'430', last:'ADEYINKA', first:'Tunde', fn:'Stairway Guide', cabin:'C-430'},
+      {sn:'607', last:'LORENZO', first:'Marco', fn:'Stairway Guide', cabin:'C-607'},
+      {sn:'613', last:'HAUGEN', first:'Silje', fn:'Stairway Guide', cabin:'C-613'},
+      {sn:'616', last:'PETROVA', first:'Dana', fn:'Stairway Guide', cabin:'C-616'},
+      {sn:'617', last:'NAKANO', first:'Kenta', fn:'Stairway Guide', cabin:'C-617'},
+      {sn:'620', last:'ESCOBAR', first:'Valeria', fn:'Stairway Guide', cabin:'C-620'},
+      {sn:'631', last:'DRAGOMIR', first:'Radu', fn:'Stairway Guide', cabin:'C-631'},
+      {sn:'632', last:'THORVALDSEN', first:'Kristin', fn:'Stairway Guide', cabin:'C-632'},
+      {sn:'710', last:'ZANETTI', first:'Luca', fn:'Stairway Guide', cabin:'C-710'},
+      {sn:'714', last:'RUOTSALAINEN', first:'Anniina', fn:'Stairway Guide', cabin:'C-714'},
+      {sn:'717', last:'CHUNG', first:'Wei', fn:'Stairway Guide', cabin:'C-717'},
+      {sn:'719', last:'VELASQUEZ', first:'Camila', fn:'Stairway Guide', cabin:'C-719'},
+      {sn:'720', last:'NDIAYE', first:'Fatou', fn:'Stairway Guide', cabin:'C-720'},
+      {sn:'727', last:'STOYANOV', first:'Georgi', fn:'Stairway Guide', cabin:'C-727'},
+      {sn:'804', last:'FERRANTE', first:'Bianca', fn:'Stairway Guide', cabin:'C-804'},
+      {sn:'808', last:'AKINTOLA', first:'Segun', fn:'Stairway Guide', cabin:'C-808'},
+      {sn:'810', last:'GUSTAFSSON', first:'Elin', fn:'Stairway Guide', cabin:'C-810'},
+      {sn:'811', last:'PACHECO', first:'Rafael', fn:'Stairway Guide', cabin:'C-811'},
+      {sn:'913', last:'WOJCIK', first:'Kasia', fn:'Stairway Guide', cabin:'C-913'},
+      {sn:'914', last:'TANIGUCHI', first:'Sora', fn:'Stairway Guide', cabin:'C-914'},
+      {sn:'915', last:'MBUYI', first:'Patrice', fn:'Stairway Guide', cabin:'C-915'},
+      {sn:'919', last:'HOLLINGSWORTH', first:'Emily', fn:'Stairway Guide', cabin:'C-919'},
+    ] },
+
+  crewSafetyPaxA: { id:'crewSafetyPaxA', label:'CREW SAFETY — PAX ASSEMBLY A', loc:'Atrium', type:'crew', icon:'🦺',
+    persons: [
+      {sn:'601', last:'LINDBERG', first:'Anna', fn:'Safety Watch Leader', cabin:'C-601'},
+      {sn:'608', last:'FALCAO', first:'Diego', fn:'Safety Watch Leader', cabin:'C-608'},
+      {sn:'309', last:'MONTEIRO', first:'Rafael', fn:'Safety Watch', cabin:'C-309'},
+      {sn:'313', last:'ASHWORTH', first:'Emily', fn:'Safety Watch', cabin:'C-313'},
+      {sn:'405', last:'KRISTIANSEN', first:'Mads', fn:'Safety Watch', cabin:'C-405'},
+      {sn:'503', last:'NABATANZI', first:'Joyce', fn:'Safety Watch', cabin:'C-503'},
+      {sn:'505', last:'CORREIA', first:'Paulo', fn:'Safety Watch', cabin:'C-505'},
+      {sn:'507', last:'WESTERGAARD', first:'Ida', fn:'Safety Watch', cabin:'C-507'},
+      {sn:'509', last:'ODUYA', first:'Brian', fn:'Safety Watch', cabin:'C-509'},
+    ] },
+  crewSafetyPaxB: { id:'crewSafetyPaxB', label:'CREW SAFETY — PAX ASSEMBLY B', loc:'Theatre', type:'crew', icon:'🦺',
+    persons: [
+      {sn:'501', last:'ALMADA', first:'Carlos', fn:'Safety Watch Leader', cabin:'C-501'},
+      {sn:'311', last:'FENWICK', first:'Holly', fn:'Safety Watch Leader', cabin:'C-311'},
+      {sn:'308', last:'SOLBERG', first:'Erik', fn:'Safety Watch', cabin:'C-308'},
+      {sn:'312', last:'ACHEBE', first:'Ijeoma', fn:'Safety Watch', cabin:'C-312'},
+      {sn:'502', last:'TREVISAN', first:'Marta', fn:'Safety Watch', cabin:'C-502'},
+      {sn:'504', last:'HOLGUIN', first:'Andres', fn:'Safety Watch', cabin:'C-504'},
+      {sn:'506', last:'RANTANEN', first:'Saara', fn:'Safety Watch', cabin:'C-506'},
+      {sn:'508', last:'BRISTOW', first:'Megan', fn:'Safety Watch', cabin:'C-508'},
+      {sn:'510', last:'VALENTE', first:'Bruno', fn:'Safety Watch', cabin:'C-510'},
+    ] },
+
+  /* Each lifeboat is TWO tabs: a CREW list (persons below are the crew NATIVE to this boat only —
+     PROVISIONAL placeholder names where nobody else already covers that safety number; anyone else
+     assigned here shows up dynamically once their status becomes this craftId, see
+     renderDynamicCrewSection()) and a companion "…Pax" tab (isPaxBoardingView, right after each
+     crew list) with no persons of its own — PAX from Assembly A can board EITHER LB01 or LB03, and
+     PAX from Assembly B can board EITHER LB02 or LB04 (paired boats), so the Pax tab is rendered
+     live from paxSource (paxA/paxB)'s persons, boarded individually via the Board LB.. button, which
+     just sets that person's normal check-in status to this craftId (applyStatus) — see
+     renderBoardingSection(). Using status (not a second list) is deliberate: a person only ever
+     lives on ONE list, so crewManifest/paxManifest never double-count someone as both "present" on
+     their original list AND "boarded" on a lifeboat.
+     Any list with a craftId (crew or Pax tab alike) gets the "+ Add" button — see
+     renderReassignBar()/openReassignPicker()/reassignPerson(). */
+  lifeboat1: { id:'lifeboat1', label:'LIFEBOAT 1 — CREW', loc:'Boat Deck — Stn 1', icon:'🛟',
+    craftId:'LB01',
+    persons: [
+      {sn:'109', last:'VOSS', first:'Elin', fn:'Lifeboat Crew', cabin:'C-109', type:'crew'},
+      {sn:'127', last:'CORVI', first:'Davide', fn:'Lifeboat Crew', cabin:'C-127', type:'crew'},
+      {sn:'133', last:'GALVAO', first:'Bruno', fn:'Lifeboat Crew', cabin:'C-133', type:'crew'},
+      {sn:'211', last:'VARGA', first:'Zsolt', fn:'Lifeboat Crew', cabin:'C-211', type:'crew'},
+      {sn:'221', last:'MENDEZ', first:'Rosa', fn:'Lifeboat Crew', cabin:'C-221', type:'crew'},
+      {sn:'315', last:'OKPARA', first:'Ify', fn:'Lifeboat Crew', cabin:'C-315', type:'crew'},
+      {sn:'615', last:'GRANT', first:'Fiona', fn:'Lifeboat Crew', cabin:'C-615', type:'crew'},
+      {sn:'625', last:'LINDHOLM', first:'Petra', fn:'Lifeboat Crew', cabin:'C-625', type:'crew'},
+      {sn:'701', last:'HORVAT', first:'Ana', fn:'Lifeboat Crew', cabin:'C-701', type:'crew'},
+      {sn:'705', last:'KAMANZI', first:'Eric', fn:'Lifeboat Crew', cabin:'C-705', type:'crew'},
+      {sn:'721', last:'DUBE', first:'Thandiwe', fn:'Lifeboat Crew', cabin:'C-721', type:'crew'},
+      {sn:'723', last:'LINDVALL', first:'Otto', fn:'Lifeboat Crew', cabin:'C-723', type:'crew'},
+      {sn:'923', last:'PERALTA', first:'Sofia', fn:'Lifeboat Crew (Additional)', cabin:'C-923', type:'crew'},
+      {sn:'925', last:'KOFI', first:'Ama', fn:'Lifeboat Crew (Additional)', cabin:'C-925', type:'crew'},
+    ] },
+  lifeboat1Pax: { id:'lifeboat1Pax', label:'LIFEBOAT 1 — PAX', loc:'Boat Deck — Stn 1', icon:'🧳',
+    craftId:'LB01', paxSource:'paxA', paxPair:['LB01','LB03'], isPaxBoardingView:true, persons: [] },
+
+  lifeboat2: { id:'lifeboat2', label:'LIFEBOAT 2 — CREW', loc:'Boat Deck — Stn 2', icon:'🛟',
+    craftId:'LB02',
+    persons: [
+      {sn:'122', last:'STRAND', first:'Ingrid', fn:'Lifeboat Crew', cabin:'C-122', type:'crew'},
+      {sn:'222', last:'HOLLAND', first:'Grace', fn:'Lifeboat Crew', cabin:'C-222', type:'crew'},
+      {sn:'319', last:'PACIOREK', first:'Anna', fn:'Lifeboat Crew', cabin:'C-319', type:'crew'},
+      {sn:'614', last:'IBARRA', first:'Luis', fn:'Lifeboat Crew', cabin:'C-614', type:'crew'},
+      {sn:'624', last:'OSEI', first:'Kwabena', fn:'Lifeboat Crew', cabin:'C-624', type:'crew'},
+      {sn:'722', last:'RAMOS', first:'Elena', fn:'Lifeboat Crew', cabin:'C-722', type:'crew'},
+      {sn:'924', last:'HAGEN', first:'Noah', fn:'Lifeboat Crew (Additional)', cabin:'C-924', type:'crew'},
+      {sn:'930', last:'DIOP', first:'Mamadou', fn:'Lifeboat Crew (Additional)', cabin:'C-930', type:'crew'},
+    ] },
+  lifeboat2Pax: { id:'lifeboat2Pax', label:'LIFEBOAT 2 — PAX', loc:'Boat Deck — Stn 2', icon:'🧳',
+    craftId:'LB02', paxSource:'paxB', paxPair:['LB02','LB04'], isPaxBoardingView:true, persons: [] },
+
+  lifeboat3: { id:'lifeboat3', label:'LIFEBOAT 3 — CREW', loc:'Boat Deck — Stn 3', icon:'🛟',
+    craftId:'LB03',
+    persons: [
+      {sn:'129', last:'ADEBAYO', first:'Femi', fn:'Lifeboat Crew', cabin:'C-129', type:'crew'},
+      {sn:'131', last:'ROSEN', first:'Talia', fn:'Lifeboat Crew', cabin:'C-131', type:'crew'},
+      {sn:'205', last:'ASHTON', first:'Cole', fn:'Lifeboat Crew', cabin:'C-205', type:'crew'},
+      {sn:'207', last:'LINDE', first:'Sven', fn:'Lifeboat Crew', cabin:'C-207', type:'crew'},
+      {sn:'209', last:'OKELLO', first:'Grace', fn:'Lifeboat Crew', cabin:'C-209', type:'crew'},
+      {sn:'217', last:'BRUUN', first:'Karsten', fn:'Lifeboat Crew', cabin:'C-217', type:'crew'},
+      {sn:'219', last:'KASPRZAK', first:'Wojciech', fn:'Lifeboat Crew', cabin:'C-219', type:'crew'},
+      {sn:'401', last:'VOGT', first:'Lena', fn:'Lifeboat Crew', cabin:'C-401', type:'crew'},
+      {sn:'415', last:'ASANTE', first:'Kwame', fn:'Lifeboat Crew', cabin:'C-415', type:'crew'},
+      {sn:'417', last:'DUARTE', first:'Diego', fn:'Lifeboat Crew', cabin:'C-417', type:'crew'},
+      {sn:'627', last:'WESTIN', first:'Nils', fn:'Lifeboat Crew', cabin:'C-627', type:'crew'},
+      {sn:'927', last:'WESTLUND', first:'Erik', fn:'Lifeboat Crew (Additional)', cabin:'C-927', type:'crew'},
+      {sn:'929', last:'HALLGREN', first:'Sara', fn:'Lifeboat Crew (Additional)', cabin:'C-929', type:'crew'},
+    ] },
+  lifeboat3Pax: { id:'lifeboat3Pax', label:'LIFEBOAT 3 — PAX', loc:'Boat Deck — Stn 3', icon:'🧳',
+    craftId:'LB03', paxSource:'paxA', paxPair:['LB01','LB03'], isPaxBoardingView:true, persons: [] },
+
+  lifeboat4: { id:'lifeboat4', label:'LIFEBOAT 4 — CREW', loc:'Boat Deck — Stn 4', icon:'🛟',
+    craftId:'LB04',
+    persons: [
+      {sn:'112', last:'AMADI', first:'Chidi', fn:'Lifeboat Crew', cabin:'C-112', type:'crew'},
+      {sn:'116', last:'BRANDT', first:'Sofia', fn:'Lifeboat Crew', cabin:'C-116', type:'crew'},
+      {sn:'118', last:'PALAZZO', first:'Marco', fn:'Lifeboat Crew', cabin:'C-118', type:'crew'},
+      {sn:'126', last:'MUKASA', first:'Grace', fn:'Lifeboat Crew', cabin:'C-126', type:'crew'},
+      {sn:'128', last:'HELLSTROM', first:'Maja', fn:'Lifeboat Crew', cabin:'C-128', type:'crew'},
+      {sn:'134', last:'WINTERS', first:'Nora', fn:'Lifeboat Crew', cabin:'C-134', type:'crew'},
+      {sn:'206', last:'PEREIRA', first:'Vitoria', fn:'Lifeboat Crew', cabin:'C-206', type:'crew'},
+      {sn:'208', last:'MACHIDA', first:'Rin', fn:'Lifeboat Crew', cabin:'C-208', type:'crew'},
+      {sn:'212', last:'NAKATA', first:'Yuto', fn:'Lifeboat Crew', cabin:'C-212', type:'crew'},
+      {sn:'216', last:'FONSECA', first:'Ines', fn:'Lifeboat Crew', cabin:'C-216', type:'crew'},
+      {sn:'218', last:'ADEOLA', first:'Bimpe', fn:'Lifeboat Crew', cabin:'C-218', type:'crew'},
+      {sn:'302', last:'TREMBLAY', first:'Marc', fn:'Lifeboat Crew', cabin:'C-302', type:'crew'},
+      {sn:'316', last:'LUNDGREN', first:'Axel', fn:'Lifeboat Crew', cabin:'C-316', type:'crew'},
+      {sn:'416', last:'MOLNAR', first:'Eszter', fn:'Lifeboat Crew', cabin:'C-416', type:'crew'},
+      {sn:'418', last:'SAWYER', first:'Holly', fn:'Lifeboat Crew', cabin:'C-418', type:'crew'},
+      {sn:'626', last:'CABRERA', first:'Mateo', fn:'Lifeboat Crew', cabin:'C-626', type:'crew'},
+      {sn:'628', last:'ADEBOLA', first:'Tola', fn:'Lifeboat Crew', cabin:'C-628', type:'crew'},
+      {sn:'706', last:'FALK', first:'Ida', fn:'Lifeboat Crew', cabin:'C-706', type:'crew'},
+      {sn:'926', last:'BRANDAO', first:'Rui', fn:'Lifeboat Crew (Additional)', cabin:'C-926', type:'crew'},
+      {sn:'928', last:'MUTISO', first:'Grace', fn:'Lifeboat Crew (Additional)', cabin:'C-928', type:'crew'},
+    ] },
+  lifeboat4Pax: { id:'lifeboat4Pax', label:'LIFEBOAT 4 — PAX', loc:'Boat Deck — Stn 4', icon:'🧳',
+    craftId:'LB04', paxSource:'paxB', paxPair:['LB02','LB04'], isPaxBoardingView:true, persons: [] },
+
+  rescueboat1: { id:'rescueboat1', label:'RESCUE BOAT 1', loc:'Boat Deck — Stn 1', type:'crew', icon:'🚤',
+    craftId:'RB01',
+    persons: [
+      {sn:'103', last:'BOUCHARD', first:'Pierre', fn:'Rescue Boat Coxswain', cabin:'C-103'},
+      {sn:'110', last:'ANDERSSON', first:'Lina', fn:'Rescue Boat 2nd in Command', cabin:'C-110'},
+    ] },
+  rescueboat2: { id:'rescueboat2', label:'RESCUE BOAT 2', loc:'Boat Deck — Stn 2', type:'crew', icon:'🚤',
+    craftId:'RB02',
+    persons: [
+      {sn:'102', last:'FERREIRA', first:'Bruno', fn:'Rescue Boat 2nd in Command', cabin:'C-102'},
+      {sn:'204', last:'EKLUND', first:'Sara', fn:'Rescue Boat Crew', cabin:'C-204'},
+    ] },
+
+  teamLB1Prep: { id:'teamLB1Prep', label:'LB 1 PREPARATION TEAM', loc:'Boat Deck — Stn 1', type:'crew', icon:'🧰',
+    persons: [
+      {sn:'113', last:'ALARCON', first:'Diego', fn:'LSA Prep Crew', cabin:'C-113'},
+      {sn:'121', last:'MYKKANEN', first:'Elias', fn:'LSA Prep Crew', cabin:'C-121'},
+      {sn:'213', last:'BRANNIGAN', first:'Ciara', fn:'LSA Prep Crew', cabin:'C-213'},
+    ] },
+  teamLB2Prep: { id:'teamLB2Prep', label:'LB 2 PREPARATION TEAM', loc:'Boat Deck — Stn 2', type:'crew', icon:'🧰',
+    persons: [
+      {sn:'114', last:'BARROSO', first:'Thiago', fn:'LSA Prep Crew', cabin:'C-114'},
+      {sn:'120', last:'MOREAU', first:'Yann', fn:'LSA Prep Crew', cabin:'C-120'},
+      {sn:'214', last:'SUNDQVIST', first:'Elin', fn:'LSA Prep Crew', cabin:'C-214'},
+    ] },
+  teamLR1Prep: { id:'teamLR1Prep', label:'LR 1 PREPARATION TEAM', loc:'Boat Deck — Stn 1', type:'crew', icon:'🧰',
+    persons: [
+      {sn:'609', last:'PALOMINO', first:'Andrea', fn:'LSA Prep Crew', cabin:'C-609'},
+      {sn:'611', last:'HEGGE', first:'Torbjorn', fn:'LSA Prep Crew', cabin:'C-611'},
+    ] },
+  teamLR2Prep: { id:'teamLR2Prep', label:'LR 2 PREPARATION TEAM', loc:'Boat Deck — Stn 2', type:'crew', icon:'🧰',
+    persons: [
+      {sn:'610', last:'CASTELLO', first:'Renzo', fn:'LSA Prep Crew', cabin:'C-610'},
+      {sn:'612', last:'ANANIA', first:'Sofia', fn:'LSA Prep Crew', cabin:'C-612'},
+    ] },
+  teamRBPrep: { id:'teamRBPrep', label:'RB PREPARATION TEAM', loc:'Boat Deck', type:'crew', icon:'🧰',
+    persons: [
+      {sn:'123', last:'DELVAUX', first:'Mathis', fn:'LSA Prep Crew', cabin:'C-123'},
+      {sn:'215', last:'MERCIER', first:'Julie', fn:'LSA Prep Crew', cabin:'C-215'},
+    ] },
+  teamPolarKits: { id:'teamPolarKits', label:'POLAR KITS TEAM', loc:'Store — Deck 3', type:'crew', icon:'❄️',
+    persons: [
+      {sn:'111', last:'CADENAS', first:'Rosa', fn:'Polar Kit Handler', cabin:'C-111'},
+      {sn:'117', last:'HUOTARI', first:'Ville', fn:'Polar Kit Handler', cabin:'C-117'},
+      {sn:'119', last:'AKINYEMI', first:'Bola', fn:'Polar Kit Handler', cabin:'C-119'},
+      {sn:'124', last:'SVENDSEN', first:'Karin', fn:'Polar Kit Handler', cabin:'C-124'},
+    ] },
+};
+Object.values(LISTS).forEach(l => { if (l.persons) l.persons.forEach((p,i) => { p.id = l.id + '_' + (p.sn || p.cabin + '_' + i); p.type = p.type || l.type; }); });
+
+/* combine-list helpers: a "combine" list has no persons of its own — it's a merged, read-through
+   view over other lists' persons/statuses (e.g. manifests, PAX/Crew combined station views).
+   Status changes made from a combine view are written back to the real source list. */
+function subListIds(listId) { return LISTS[listId].combineOf || [listId]; }
+function getListEntries(listId) {
+  const entries = subListIds(listId).flatMap(real => LISTS[real].persons.map(p => ({ p, real })));
+  const wantType = LISTS[listId].type;
+  // Mixed lists (e.g. lifeboatN) hold both crew and pax rows; a manifest that declares a type
+  // (crewManifest/paxManifest) only wants its own kind out of those shared sources.
+  return wantType ? entries.filter(({p}) => p.type === wantType) : entries;
+}
+function effectiveListIds(user) {
+  return new Set(user.lists.flatMap(id => subListIds(id)));
+}
+/* True when the current user can only VIEW listId (e.g. a Lifeboat Commander looking at another
+   lifeboat's roster) — present in readOnlyLists and not (also) in the editable lists array. */
+function isReadOnlyList(listId) {
+  const u = getUser(STATE.currentUserNumber);
+  if (!u) return false;
+  if ((u.lists || []).includes(listId)) return false;
+  return (u.readOnlyLists || []).includes(listId);
+}
+
+const USERS = [
+  {number:'301', role:'Evacuation Leader', color:'#8B1A1A',
+    lists:['crewManifest','paxManifest','teamADA','teamAdmin','stairMVZ12','stairMVZ3','stairMVZ4','crewA','crewB','paxA','paxB']},
+  {number:'302', role:'Assistant Evacuation Leader', color:'#B03A3A',
+    lists:['crewManifest','stairMVZ12','stairMVZ3','stairMVZ4','paxB']},
+  {number:'401', role:'Assistant Evacuation Leader', color:'#B03A3A',
+    lists:['crewManifest','stairMVZ12','stairMVZ3','stairMVZ4','paxB']},
+  {number:'602', role:'Zone 1/2 Leader', color:'#C97A2B', lists:['stairMVZ12']},
+  {number:'702', role:'Zone 3 Leader', color:'#C97A2B', lists:['stairMVZ3']},
+  {number:'404', role:'Zone 4 Leader', color:'#C97A2B', lists:['stairMVZ4']},
+  {number:'601', role:'Passenger Assembly Station A Leader', color:'#2E7D4F', lists:['crewSafetyPaxA','paxA']},
+  {number:'501', role:'Passenger Assembly Station B Leader', color:'#4CAF7D', lists:['crewSafetyPaxB','paxB']},
+  {number:'403', role:'Crew Assembly Station A Controller', color:'#1A3A5C',
+    lists:['crewA','lifeboat1','lifeboat1Pax','lifeboat3','lifeboat3Pax','rescueboat1']},
+  {number:'402', role:'Crew Assembly Station B Controller', color:'#2980B9',
+    lists:['crewB','lifeboat2','lifeboat2Pax','lifeboat4','lifeboat4Pax','rescueboat2']},
+  {number:'105', role:'Lifeboat 1 Commander', color:'#2E86AB',
+    lists:['lifeboat1','lifeboat1Pax'], readOnlyLists:['lifeboat2','lifeboat2Pax','lifeboat3','lifeboat3Pax','lifeboat4','lifeboat4Pax']},
+  {number:'106', role:'Lifeboat 2 Commander', color:'#3AA0C4',
+    lists:['lifeboat2','lifeboat2Pax'], readOnlyLists:['lifeboat1','lifeboat1Pax','lifeboat3','lifeboat3Pax','lifeboat4','lifeboat4Pax']},
+  {number:'107', role:'LSA Supervisor / Lifeboat 3 Commander', color:'#0E7C86',
+    lists:['teamLB1Prep','teamLB2Prep','teamLR1Prep','teamLR2Prep','teamRBPrep','teamPolarKits','lifeboat3','lifeboat3Pax'],
+    readOnlyLists:['lifeboat1','lifeboat1Pax','lifeboat2','lifeboat2Pax','lifeboat4','lifeboat4Pax']},
+  {number:'108', role:'Lifeboat 4 Commander', color:'#1F6E94',
+    lists:['lifeboat4','lifeboat4Pax'], readOnlyLists:['lifeboat1','lifeboat1Pax','lifeboat2','lifeboat2Pax','lifeboat3','lifeboat3Pax']},
+  {number:'132', role:'ADA Team Leader', color:'#6B4E8B', lists:['teamADA']},
+  {number:'801', role:'Crowd Control Team Leader', color:'#8B5E1A', lists:['teamCrowd']},
+  {number:'101', role:'MASTER', color:'#5CB8D6', lists: Object.keys(LISTS)},
+];
+
+const QUICK_MESSAGES = ['Zone checked ✅','Headcount complete ✅','Searching 🔎','Need backup 🆘','Person missing ⚠️','Copy that 👍'];
+
+/* ═══════════════════════════ STATE ═══════════════════════════ */
+
+const STORAGE_KEY = 'lcc_mustering_state_v1';
+const BUS_KEY = 'lcc_mustering_bus_v1';
+
+let STATE = null;
+
+function defaultState() {
+  const statuses = {};
+  Object.keys(LISTS).forEach(id => statuses[id] = {});
+  return {
+    theme: 'dark',
+    serverConfig: { host:'', port:'8765', token:'7007', enabled:false, backupHost:'', backupPort:'8765' },
+    liveData: false,
+    cachedRoster: null, // last live crew/PAX snapshot, kept in localStorage so it survives an offline reload
+    currentUserNumber: null,
+    currentListId: null,
+    statuses,
+    history: [],
+    chat: [],
+    notifications: [],
+    checklist: {}, // { itemId: { status:'ok'|'not_ok', note, ts, byUser } } — Evacuation Leader sign-off checklist
+    craftStatus: {}, // { craftId: 'standby'|'preparing'|'embarkation'|'ready'|'launched'|'not-available' } — mirrors Sentinel 3's AbandonModule craft status
+    craftStatusTs: {}, // { craftId: ts } — when craftStatus[craftId] was last set, local or remote; craftStatus itself has no per-entry timestamp, so this is what proximity sync compares to decide whether an imported status is newer (see applyProximitySyncPayload)
+    _lastRosterFingerprint: null, // JSON snapshot of the roster identity data last imported from Sentinel 3 — see importFromSentinel3's dirty-check
+  };
+}
+
+/* Re-applies the last live roster snapshot (if any) to LISTS.crewA/crewB/paxA/paxB, so a tablet that
+   was synced once and then goes offline (WiFi off, or the page reloaded while offline) still shows
+   the real crew/PAX lists instead of falling back to the built-in demo data. */
+function applyCachedRoster(s) {
+  if (s.cachedRoster) {
+    ['crewA', 'crewB', 'paxA', 'paxB'].forEach(id => {
+      if (Array.isArray(s.cachedRoster[id])) LISTS[id].persons = s.cachedRoster[id];
+    });
+  }
+  return s;
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return applyCachedRoster(Object.assign(defaultState(), JSON.parse(raw)));
+  } catch(e) {}
+  return seedDemoData(defaultState());
+}
+
+function applyNetworkConfigFromUrl(state) {
+  let params;
+  try {
+    params = new URLSearchParams(window.location.search || '');
+  } catch(e) {
+    return state;
+  }
+
+  const serverHost = (params.get('serverHost') || '').trim();
+  if (!serverHost) return state;
+
+  state.serverConfig.host = serverHost;
+
+  const serverPort = (params.get('serverPort') || '').trim();
+  if (serverPort) state.serverConfig.port = serverPort;
+
+  const token = (params.get('token') || '').trim();
+  if (token) state.serverConfig.token = token;
+
+  if (params.get('network') === '1') state.serverConfig.enabled = true;
+
+  return state;
+}
+
+function seedDemoData(s) {
+  const seed = [
+    ['crewA','105','missing'], ['crewA','101','present'], ['crewA','102','present'],
+    ['crewB','201','present'], ['crewB','107','missing'],
+    ['paxA', LISTS.paxA.persons[0].id, 'present'], ['paxA', LISTS.paxA.persons[1].id, 'present'],
+    ['paxB', LISTS.paxB.persons[2].id, 'missing'],
+  ];
+  seed.forEach(([listId, key, status]) => {
+    const p = LISTS[listId].persons.find(x => x.sn === key || x.id === key);
+    if (!p) return;
+    s.statuses[listId][p.id] = status;
+    s.history.push({ ts: Date.now() - Math.floor(Math.random()*600000), listId, personId:p.id,
+      name: fullName(p), sn: p.sn, from:'unknown', to:status, byUser: p.sn || '000', remote:false });
+  });
+  s.chat.push({ ts: Date.now()-500000, from:'301', txt:'Muster stations now open.', mine:false });
+  s.history.sort((a,b)=>b.ts-a.ts);
+  return s;
+}
+
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch(e) {}
+}
+
+function fullName(p) { return p.fullNameOverride || ((p.last||'').toUpperCase() + ' ' + (p.first||'')); }
+function getUser(number) { return USERS.find(u => u.number === number); }
+function fmtTime(ts) { const d = new Date(ts); return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+function fmtDateTime(ts) { const d = new Date(ts); return d.toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+function normalize(s) { return (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+
+/* ═══════════════════════════ SyncAdapter — mock bus (standalone) + real WebSocket (live) ═══════════════════════════
+   Two transports behind one interface (send/on/dispatch):
+   - mock-local: simulates a multi-tablet network via localStorage's `storage` event — tabs/windows
+     opening this same file share localStorage and see each other's messages. Always active as a
+     fallback so the app stays usable/testable without a server.
+   - live: a real WebSocket client to sentinel_server.py (same protocol as LCC Sentinel 3's own
+     NetworkModule — see AUTH/REQUEST_SYNC/FULL_STATE/STATE_SYNC/MUSTER_UPDATE/CHAT_MESSAGE below).
+     Enabled from Settings (host/port/token + the "live mode" switch). All Mustering tablets share
+     one PIN (server-side PROFILES['7007']); each tablet's own identity (safety number/role) rides
+     in payload.profile on AUTH, so the server's client list still shows who's who. */
+const SyncAdapter = {
+  mode: 'mock-local', // 'mock-local' | 'connecting' | 'live'
+  clientId: Math.random().toString(36).slice(2) + Date.now().toString(36),
+  handlers: {},
+  peers: {},
+  ws: null,
+  reconnectTimer: null,
+  // Primary/backup failover — mirrors LCC Sentinel 3's NetworkModule. Never persisted: every fresh
+  // page load retries the primary first. usingBackup alone decides which host/port connectLive()
+  // targets. unreachableSince marks WHEN the currently-targeted server started failing (cleared back
+  // to null the moment a connection actually opens — see _connectLiveAttempt's ws.onopen); once
+  // FAILOVER_TIMEOUT_MS has passed with no success in between, we flip — time-based rather than a
+  // fixed attempt count, so "1 minute" holds regardless of the retry cadence.
+  usingBackup: false,
+  unreachableSince: null,
+  FAILOVER_TIMEOUT_MS: 60000, // 1 minute
+  getActiveHost() { return this.usingBackup ? STATE.serverConfig.backupHost : STATE.serverConfig.host; },
+  getActivePort() { return (this.usingBackup ? STATE.serverConfig.backupPort : STATE.serverConfig.port) || 8765; },
+  noteConnectFailureAndMaybeFailover() {
+    const now = Date.now();
+    if (!this.unreachableSince) this.unreachableSince = now;
+    if (now - this.unreachableSince < this.FAILOVER_TIMEOUT_MS) return;
+    this.unreachableSince = now;
+    if (this.usingBackup) {
+      this.usingBackup = false;
+    } else if (STATE.serverConfig.backupHost) {
+      this.usingBackup = true;
+      showToast('Serveur principal injoignable depuis 1 min — bascule sur le serveur de secours');
+    }
+  },
+  init() {
+    window.addEventListener('storage', (e) => {
+      if (e.key !== BUS_KEY || !e.newValue) return;
+      try { this.dispatch(JSON.parse(e.newValue)); } catch(err) {}
+    });
+    this.send('presence', { online: true });
+    setInterval(() => this.send('presence', { online: true }), 15000);
+    setInterval(() => this.cleanupPeers(), 5000);
+    if (STATE.serverConfig.enabled && STATE.serverConfig.host) this.connectLive();
+  },
+
+  /* ── live WebSocket transport ── */
+  connectLive() {
+    if (!STATE.serverConfig.host) return;
+    clearTimeout(this.reconnectTimer);
+    this.mode = 'connecting';
+    renderNetBadge();
+    // location.protocol can't tell us the server's real scheme when this file is opened via file://
+    // (double-clicked from disk) instead of http(s)://host:8080/ — that always guessed plain ws://,
+    // which fails silently forever against sentinel_server.py's default HTTPS/wss mode. Try the
+    // guessed scheme first (fast path for the normal http(s):// case), then fall back to the other
+    // one if it never even manages to open.
+    const preferred = location.protocol === 'https:' ? 'wss' : 'ws';
+    this._connectLiveAttempt(preferred, preferred === 'wss' ? 'ws' : 'wss');
+  },
+
+  _connectLiveAttempt(protocol, fallbackProtocol) {
+    const url = `${protocol}://${this.getActiveHost()}:${this.getActivePort()}`;
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch(e) {
+      if (fallbackProtocol) { this._connectLiveAttempt(fallbackProtocol, null); return; }
+      this.mode = 'mock-local'; renderNetBadge(); this.noteConnectFailureAndMaybeFailover(); this.scheduleReconnect(); return;
+    }
+    this.ws = ws;
+    let hasOpened = false;
+    ws.onopen = () => {
+      hasOpened = true;
+      this.unreachableSince = null; // reached this server — stop the failover clock
+      const u = getUser(STATE.currentUserNumber);
+      ws.send(JSON.stringify({ type: 'AUTH', payload: { token: STATE.serverConfig.token || '7007',
+        profile: { name: u ? `${u.number} — ${u.role}` : 'Mustering', role: u ? u.role : 'Mustering', initials: STATE.currentUserNumber || 'MU' } } }));
+    };
+    ws.onmessage = (ev) => { try { this.dispatchLive(JSON.parse(ev.data)); } catch(err) {} };
+    ws.onclose = () => {
+      if (this.ws !== ws) return;
+      if (!hasOpened && fallbackProtocol) {
+        // Never managed to open with this scheme — almost always the wrong one. Retry once with
+        // the other scheme before treating it as a real disconnect.
+        this.ws = null;
+        this._connectLiveAttempt(fallbackProtocol, null);
+        return;
+      }
+      const wasLive = this.mode === 'live';
+      this.ws = null;
+      this.mode = 'mock-local';
+      renderNetBadge();
+      if (!hasOpened) this.noteConnectFailureAndMaybeFailover();
+      if (STATE.serverConfig.enabled) this.scheduleReconnect();
+      // Only the LIVE -> disconnected transition gets a popup — not every failed background retry,
+      // and not a tablet that was never connected in the first place (standalone demo mode).
+      if (wasLive) {
+        showToast('Connexion perdue — mode déconnecté');
+        showAppModal({
+          title: '🔌 Connexion perdue',
+          body: `La connexion au serveur LCC Sentinel 3 a été coupée. La tablette continue de fonctionner en <strong>mode déconnecté</strong> — vos pointages restent enregistrés localement, mais ne sont plus synchronisés tant que la connexion n'est pas rétablie. Une reconnexion automatique est déjà tentée en arrière-plan.`,
+          confirmText: '🔄 Réessayer maintenant',
+          cancelText: '✓ Continuer déconnecté',
+          onConfirm: () => SyncAdapter.connectLive(),
+        });
+      }
+    };
+    ws.onerror = () => {};
+  },
+  disconnectLive() {
+    clearTimeout(this.reconnectTimer);
+    if (this.ws) { const ws = this.ws; this.ws = null; try { ws.close(); } catch(e) {} }
+    this.mode = 'mock-local';
+    renderNetBadge();
+  },
+  scheduleReconnect() {
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => { if (STATE.serverConfig.enabled) this.connectLive(); }, 5000);
+  },
+  dispatchLive(msg) {
+    switch (msg.type) {
+      case 'AUTH_OK':
+        this.mode = 'live';
+        renderNetBadge();
+        showToast(this.usingBackup ? 'Connected to BACKUP server' : 'Connected to LCC Sentinel 3 server');
+        this.ws.send(JSON.stringify({ type: 'REQUEST_SYNC' }));
+        break;
+      case 'AUTH_FAIL':
+        this.mode = 'mock-local';
+        renderNetBadge();
+        showToast('Server connection refused: ' + ((msg.payload && msg.payload.reason) || 'invalid token'));
+        break;
+      case 'FULL_STATE':
+      case 'STATE_SYNC':
+        importFromSentinel3(msg.payload && msg.payload.snapshot);
+        break;
+      case 'MUSTER_UPDATE': {
+        // Wire type is shared for both checkin and craft-status messages (see SyncAdapter.send's
+        // wireType map) — re-split back into the two LOCAL event types by payload.kind, same as the
+        // mock-local bus already does natively. Without this, craft_status_update (Sentinel 3's
+        // lifeboat status dropdown, or another tablet's Commander setting status) always fell through
+        // to the checkin_update handler, which expects listId/personId and silently no-ops on a
+        // craftId/status payload — so live-mode craft status never actually propagated.
+        const localType = (msg.payload && msg.payload.kind === 'craft_status') ? 'craft_status_update' : 'checkin_update';
+        this.dispatch({ type: localType, payload: msg.payload, from: msg.user, clientId: 'srv:' + (msg.user || Math.random()) });
+        break;
+      }
+      case 'CHAT_MESSAGE':
+        this.dispatch({ type: 'chat_message', payload: msg.payload, from: msg.user, clientId: 'srv:' + (msg.user || Math.random()) });
+        break;
+    }
+  },
+
+  send(type, payload) {
+    const msg = { type, payload, from: STATE.currentUserNumber || null, clientId: this.clientId, ts: Date.now(), nonce: Math.random().toString(36).slice(2) };
+    if (this.mode === 'live' && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const wireType = { checkin_update: 'MUSTER_UPDATE', craft_status_update: 'MUSTER_UPDATE', chat_message: 'CHAT_MESSAGE' }[type] || ('MUSTERING_' + type.toUpperCase());
+      try { this.ws.send(JSON.stringify({ type: wireType, payload, user: STATE.currentUserNumber || null, ts: Date.now() })); } catch(e) {}
+      return;
+    }
+    try { localStorage.setItem(BUS_KEY, JSON.stringify(msg)); } catch(e) {}
+  },
+  on(type, handler) { (this.handlers[type] = this.handlers[type] || []).push(handler); },
+  dispatch(msg) {
+    // Distinct by device (clientId), not just by user: two tablets could in theory be
+    // logged in under the same safety number.
+    if (msg.clientId && msg.clientId === this.clientId) return;
+    if (msg.type === 'presence' && msg.clientId) { this.peers[msg.clientId] = { number: msg.from, ts: Date.now() }; renderNetPop(); renderNetBadge(); if (STATE.currentUserNumber) broadcastReadiness(); }
+    if (msg.type === 'presence_leave' && msg.clientId) { delete this.peers[msg.clientId]; renderNetPop(); renderNetBadge(); if (STATE.currentUserNumber) broadcastReadiness(); }
+    (this.handlers[msg.type] || []).forEach(h => h(msg));
+  },
+  cleanupPeers() {
+    const now = Date.now();
+    let changed = false;
+    Object.keys(this.peers).forEach(k => { if (now - this.peers[k].ts > 40000) { delete this.peers[k]; changed = true; } });
+    renderNetPop();
+    renderNetBadge();
+    if (changed && STATE.currentUserNumber) broadcastReadiness();
+  },
+};
+
+function renderNetBadge() {
+  const badge = document.getElementById('netBadge');
+  const txt = document.getElementById('netTxt');
+  badge.classList.remove('online');
+  if (STATE.serverConfig.enabled) {
+    const activeAddr = `${SyncAdapter.getActiveHost()}:${SyncAdapter.getActivePort()}`;
+    const backupTag = SyncAdapter.usingBackup ? ' · BACKUP' : '';
+    if (SyncAdapter.mode === 'live') {
+      badge.classList.add('online');
+      txt.innerHTML = `LIVE${backupTag}<small>${activeAddr}${STATE.liveData ? ' · roster loaded' : ''}</small>`;
+    } else if (SyncAdapter.mode === 'connecting') {
+      txt.innerHTML = `CONNECTING${backupTag}<small>${activeAddr}</small>`;
+    } else {
+      const cached = STATE.cachedRoster ? ` · roster from ${fmtTime(STATE.cachedRoster.savedAt)}` : '';
+      txt.innerHTML = `OFFLINE<small>Retrying — ${activeAddr}${cached}</small>`;
+    }
+    return;
+  }
+  const n = Object.keys(SyncAdapter.peers).length;
+  badge.classList.toggle('online', n > 0);
+  txt.innerHTML = n > 0
+    ? `SYNCED<small>${n} tablet${n>1?'s':''} on local bus</small>`
+    : `STANDALONE<small>Local demo</small>`;
+}
+
+/* ═══════════════════════════ IMPORT FROM SENTINEL 3 ═══════════════════════════
+   Rebuilds crewA/crewB/paxA/paxB (and therefore the crewManifest/paxManifest/combinedA/combinedB
+   views, which read through to these) from a live snapshot.muster.assemblies + snapshot.lists
+   payload — the same shape NetworkModule.buildStateSnapshot() already sends in FULL_STATE/STATE_SYNC.
+   Existing local statuses/history are kept: person ids are derived from safetyNumber/cabin, which
+   stay stable across reconnects, so a re-import doesn't orphan work already done on the tablet.
+
+   This is the ROSTER (identity data — names/cabins/who's-on-which-list) sync path only. It's meant
+   to fire once initially and then only when the roster itself actually changes (e.g. the bridge PC
+   re-imports a new crew/PAX list) — NOT on every one of Sentinel 3's periodic broadcasts, which fire
+   for ANY unrelated change anywhere in the app (a Fire toggle, a Polar count...). Per-person
+   status/check-in sync is a separate, already-immediate path (checkin_update, sent the instant
+   anyone toggles someone) and isn't affected by any of this. */
+function importFromSentinel3(snapshot) {
+  if (!snapshot || !snapshot.lists || !snapshot.muster) return;
+  const crew = snapshot.lists.crew || [];
+  const pax = snapshot.lists.pax || [];
+  const assemblies = snapshot.muster.assemblies || {};
+  const checkedIn = snapshot.muster.checkedIn || {};
+
+  // Dirty-check: skip the whole rebuild (and the UI refresh that goes with it) unless the roster
+  // content actually differs from what's already loaded. Without this, importFromSentinel3 used to
+  // run on every one of Sentinel 3's periodic snapshots — several times a minute — and each run
+  // called switchList() internally, which resets the search box / active filter / scroll position,
+  // so the tablet appeared to "jump back to the main tab" constantly during real use.
+  const rosterFingerprint = JSON.stringify({
+    crewA: assemblies.crewA && assemblies.crewA.roster,
+    crewB: assemblies.crewB && assemblies.crewB.roster,
+    paxA: assemblies.paxA && assemblies.paxA.cabins,
+    paxB: assemblies.paxB && assemblies.paxB.cabins,
+    crew, pax,
+  });
+  if (rosterFingerprint === STATE._lastRosterFingerprint) return;
+  STATE._lastRosterFingerprint = rosterFingerprint;
+
+  const crewBySn = {};
+  crew.forEach(c => { if (c.safetyNumber) crewBySn[c.safetyNumber] = c; });
+  const paxByCabin = {};
+  pax.forEach(p => { if (p.cabin) (paxByCabin[p.cabin] = paxByCabin[p.cabin] || []).push(p); });
+
+  function toCrewPerson(c) {
+    return { sn: c.safetyNumber || '', fullNameOverride: c.name || c.safetyNumber, fn: c.rank || c.dept || 'Crew', cabin: c.cabin || '', type: 'crew' };
+  }
+  function toPaxPerson(p) {
+    return { sn: '', fullNameOverride: p.name || ('Cabin ' + p.cabin), fn: 'Passenger', cabin: p.cabin || '', type: 'pax' };
+  }
+
+  function fillFromRoster(listId, safetyNumbers) {
+    const list = LISTS[listId];
+    list.persons = (safetyNumbers || []).map(sn => crewBySn[sn]).filter(Boolean).map(toCrewPerson);
+    list.persons.forEach((p, i) => { p.id = listId + '_' + (p.sn || (p.cabin + '_' + i)); });
+  }
+  function fillFromCabins(listId, cabins) {
+    const list = LISTS[listId];
+    list.persons = (cabins || []).flatMap(cab => paxByCabin[cab] || []).map(toPaxPerson);
+    list.persons.forEach((p, i) => { p.id = listId + '_' + (p.sn || (p.cabin + '_' + i)); });
+  }
+
+  if (assemblies.crewA) fillFromRoster('crewA', assemblies.crewA.roster);
+  if (assemblies.crewB) fillFromRoster('crewB', assemblies.crewB.roster);
+  if (assemblies.paxA) fillFromCabins('paxA', assemblies.paxA.cabins);
+  if (assemblies.paxB) fillFromCabins('paxB', assemblies.paxB.cabins);
+
+  // Seed presence from Sentinel 3's own checked-in state, but never clobber a status already set locally.
+  ['crewA', 'crewB'].forEach(listId => {
+    STATE.statuses[listId] = STATE.statuses[listId] || {};
+    LISTS[listId].persons.forEach(p => {
+      if (STATE.statuses[listId][p.id] === undefined && p.sn && checkedIn[p.sn]) STATE.statuses[listId][p.id] = 'present';
+    });
+  });
+
+  STATE.liveData = true;
+  STATE.cachedRoster = {
+    crewA: LISTS.crewA.persons, crewB: LISTS.crewB.persons,
+    paxA: LISTS.paxA.persons, paxB: LISTS.paxB.persons,
+    savedAt: Date.now(),
+  };
+  saveState();
+  renderNetBadge();
+  // Refresh WITHOUT touching navigation: renderAppForUser()/switchList() reset the search box,
+  // active filter and scroll position — fine at login (already called once from init()), but not
+  // here. Just update the tab badges, and re-render the currently open list's rows in place if it's
+  // one of the lists that actually changed.
+  if (STATE.currentUserNumber) {
+    updateAllTabBadges();
+    const affected = ['crewA', 'crewB', 'paxA', 'paxB', 'crewManifest', 'paxManifest', 'combinedA', 'combinedB'];
+    if (affected.includes(STATE.currentListId)) renderList();
+  }
+  showToast(`Live roster loaded: ${crew.length} crew, ${pax.length} PAX`);
+}
+
+function requestSyncNow() {
+  if (SyncAdapter.mode === 'live' && SyncAdapter.ws && SyncAdapter.ws.readyState === WebSocket.OPEN) {
+    try { SyncAdapter.ws.send(JSON.stringify({ type: 'REQUEST_SYNC' })); } catch(e) {}
+    showToast('Requesting latest rosters…');
+  } else {
+    showToast('Not connected — enable live mode in Settings first.');
+  }
+}
+
+/* Manual, file-based backup of the crew/PAX rosters — independent of localStorage, so it survives
+   a browser data reset, not just an app restart. "Download" saves to the tablet's Downloads folder;
+   "Load" restores from that file, e.g. onto a tablet that never connected to the server. */
+function downloadRoster() {
+  const data = STATE.cachedRoster || {
+    crewA: LISTS.crewA.persons, crewB: LISTS.crewB.persons,
+    paxA: LISTS.paxA.persons, paxB: LISTS.paxB.persons,
+    savedAt: Date.now(),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'lcc-mustering-rosters-' + new Date(data.savedAt).toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Rosters downloaded');
+}
+
+function loadRosterFromFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); } catch(e) { showToast('Could not read that file'); return; }
+    const hasAny = ['crewA', 'crewB', 'paxA', 'paxB'].some(id => Array.isArray(data[id]));
+    if (!hasAny) { showToast('Invalid roster file'); return; }
+    ['crewA', 'crewB', 'paxA', 'paxB'].forEach(id => { if (Array.isArray(data[id])) LISTS[id].persons = data[id]; });
+    STATE.cachedRoster = {
+      crewA: LISTS.crewA.persons, crewB: LISTS.crewB.persons,
+      paxA: LISTS.paxA.persons, paxB: LISTS.paxB.persons,
+      savedAt: data.savedAt || Date.now(),
+    };
+    STATE.liveData = true;
+    saveState();
+    if (STATE.currentUserNumber) renderAppForUser();
+    renderSettings();
+    showToast('Rosters loaded from file');
+  };
+  reader.readAsText(file);
+}
+
+/* ═══════════════════════════ PROXIMITY SYNC (no server / no WiFi needed) ═══════════════════════════
+   For when the server or the ship's WiFi is down but two tablets are physically near each other:
+   export a small JSON file and hand it to the other tablet via Android's native Share sheet (Quick
+   Share/Nearby — Bluetooth for discovery, WiFi Direct for the transfer itself, works with zero
+   internet or WiFi AP) or just by picking it up from Downloads. Covers every list status (so every
+   list feeding LCC Sentinel 3's Fire/Muster/Abandon pages — teams, zones, assemblies, lifeboat/
+   rescue rosters are ALL just entries in STATE.statuses/history, there's no separate per-page data),
+   plus lifeboat/rescue craft status (Abandon page) and the evacuation checklist. There's no separate
+   "Polar" list here — the only polar-related list is teamPolarKits (Polar Kit prep team), which is
+   a Fire-page team and is already covered as part of the normal statuses/history sync.
+
+   No new merge algorithm: on import, history entries are REPLAYED in chronological order through
+   the exact same statuses/history update a live checkin_update message would do — a staleness guard
+   (compare against the newest locally-known ts for that same person/craft/checklist item) skips
+   anything older than what's already known, so importing the same file twice, or an old file after
+   the tablet reconnected to the server, can't clobber newer work with stale data. */
+
+async function exportProximitySync() {
+  const data = {
+    kind: 'lcc-mustering-proximity-sync',
+    version: 1,
+    exportedAt: Date.now(),
+    exportedBy: STATE.currentUserNumber || null,
+    history: STATE.history.slice(0, 500),
+    craftStatus: STATE.craftStatus,
+    craftStatusTs: STATE.craftStatusTs || {},
+    checklist: STATE.checklist,
+  };
+  const filename = 'lcc-mustering-sync-' + new Date(data.exportedAt).toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json';
+  const file = new File([JSON.stringify(data)], filename, { type: 'application/json' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'LCC Sentinel Mustering — sync', text: 'Fichier de synchronisation proximité' });
+      showToast('Sync file shared');
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // user closed the share sheet — not an error
+      // fall through to plain download below
+    }
+  }
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Sync file downloaded — share it via Quick Share/Nearby, or hand-carry it');
+}
+
+function importProximitySyncFromFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); } catch(e) { showToast('Could not read that file'); return; }
+    if (!data || data.kind !== 'lcc-mustering-proximity-sync' || !Array.isArray(data.history)) {
+      showToast('Invalid sync file');
+      return;
+    }
+    const result = applyProximitySyncPayload(data);
+    saveState();
+    if (STATE.currentUserNumber) renderAppForUser();
+    renderNetBadge();
+    showToast(`Sync imported: ${result.applied} update(s) applied, ${result.skipped} already up to date`);
+  };
+  reader.readAsText(file);
+}
+
+function applyProximitySyncPayload(data) {
+  let applied = 0, skipped = 0;
+
+  // 1) List statuses — replay history oldest-first, staleness-guarded per listId+personId.
+  const localTs = {};
+  STATE.history.forEach(h => {
+    const key = h.listId + '|' + h.personId;
+    if (!localTs[key] || h.ts > localTs[key]) localTs[key] = h.ts;
+  });
+  const existingKeys = new Set(STATE.history.map(h => h.listId + '|' + h.personId + '|' + h.ts + '|' + h.to));
+  const incoming = data.history.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  incoming.forEach(entry => {
+    if (!entry || !entry.listId || !entry.personId || !STATE.statuses[entry.listId]) return;
+    const key = entry.listId + '|' + entry.personId;
+    if (localTs[key] && entry.ts <= localTs[key]) { skipped++; return; }
+    const dupKey = entry.listId + '|' + entry.personId + '|' + entry.ts + '|' + entry.to;
+    if (existingKeys.has(dupKey)) { skipped++; return; }
+    STATE.statuses[entry.listId][entry.personId] = entry.to;
+    localTs[key] = entry.ts;
+    STATE.history.unshift(Object.assign({}, entry, { remote: true, viaProximity: true }));
+    applied++;
+  });
+  if (STATE.history.length > 500) STATE.history.length = 500;
+
+  // 2) Lifeboat/rescue craft status (Abandon page) — no per-entry ts on craftStatus itself, compare
+  // against the companion craftStatusTs tracker instead (see setCraftStatus / its remote handler).
+  if (data.craftStatus && typeof data.craftStatus === 'object') {
+    if (!STATE.craftStatusTs) STATE.craftStatusTs = {};
+    Object.entries(data.craftStatus).forEach(([craftId, status]) => {
+      const incomingTs = (data.craftStatusTs && data.craftStatusTs[craftId]) || data.exportedAt || 0;
+      const localCraftTs = STATE.craftStatusTs[craftId] || 0;
+      if (incomingTs <= localCraftTs) { skipped++; return; }
+      STATE.craftStatus[craftId] = status;
+      STATE.craftStatusTs[craftId] = incomingTs;
+      applied++;
+    });
+  }
+
+  // 3) Evacuation checklist — each item already carries its own ts.
+  if (data.checklist && typeof data.checklist === 'object') {
+    Object.entries(data.checklist).forEach(([itemId, item]) => {
+      if (!item || typeof item !== 'object') return;
+      const local = STATE.checklist[itemId];
+      if (local && local.ts && item.ts && item.ts <= local.ts) { skipped++; return; }
+      STATE.checklist[itemId] = item;
+      applied++;
+    });
+  }
+
+  return { applied, skipped };
+}
+
+/* ═══════════════════════════ RENDER: LOGIN ═══════════════════════════ */
+
+function renderLogin() {
+  const grid = document.getElementById('loginGrid');
+  grid.innerHTML = USERS.map(u => `
+    <button class="login-btn" data-num="${u.number}">
+      <div class="login-avatar" style="background:linear-gradient(135deg, ${u.color}55, ${u.color})">${u.number.slice(0,2)}</div>
+      <div class="login-number">${u.number}</div>
+      <div class="login-role">${u.role}</div>
+    </button>`).join('');
+  grid.querySelectorAll('.login-btn').forEach(btn => btn.addEventListener('click', () => selectUser(btn.dataset.num)));
+}
+
+function selectUser(number) {
+  STATE.currentUserNumber = number;
+  const u = getUser(number);
+  STATE.currentListId = u.lists[0];
+  saveState();
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('appShell').classList.remove('hidden');
+  SyncAdapter.send('presence', { online: true });
+  broadcastReadiness();
+  renderAppForUser();
+}
+
+function logout() {
+  SyncAdapter.send('presence_leave', {});
+  STATE.currentUserNumber = null;
+  saveState();
+  closeAllPanels();
+  document.getElementById('appShell').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+}
+
+/* ═══════════════════════════ RENDER: APP SHELL ═══════════════════════════ */
+
+function renderAppForUser() {
+  const u = getUser(STATE.currentUserNumber);
+  document.getElementById('headerUserAvatar').style.background = u.color;
+  document.getElementById('headerUserAvatar').textContent = u.number.slice(0,2);
+  document.getElementById('headerUserNum').textContent = u.number;
+  document.getElementById('headerUserRole').textContent = u.role;
+  document.getElementById('btnChecklist').classList.toggle('hidden', u.number !== '301');
+
+  const allTabs = [...u.lists, ...(u.readOnlyLists || [])];
+
+  const tabs = document.getElementById('headerTabs');
+  tabs.innerHTML = allTabs.map(listId => {
+    const l = LISTS[listId];
+    const ro = !u.lists.includes(listId);
+    return `<button class="tab-btn" data-list="${listId}"><span>${l.icon}</span><span>${l.label}${ro ? ' 👁' : ''}</span><span class="badge-missing hidden" data-missing-for="${listId}"></span></button>`;
+  }).join('');
+  tabs.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchList(btn.dataset.list)));
+  updateTabsScrollHint();
+
+  const switcherBody = document.getElementById('listSwitcherBody');
+  switcherBody.innerHTML = allTabs.map(listId => {
+    const l = LISTS[listId];
+    const ro = !u.lists.includes(listId);
+    return `<div class="switcher-row" data-list="${listId}">
+      <span class="ic">${l.icon}</span>
+      <span class="lbl">${l.label}${ro ? ' 👁' : ''}</span>
+      <span class="badge-missing hidden" data-switcher-missing-for="${listId}"></span>
+    </div>`;
+  }).join('');
+  switcherBody.querySelectorAll('.switcher-row').forEach(row => row.addEventListener('click', () => {
+    switchList(row.dataset.list);
+    closeAllPanels();
+  }));
+
+  if (!allTabs.includes(STATE.currentListId)) STATE.currentListId = u.lists[0];
+  switchList(STATE.currentListId);
+  updateAllTabBadges();
+  renderNotifDot();
+  renderChatDot();
+  renderChecklistDot();
+}
+
+function updateTabsScrollHint() {
+  const wrap = document.getElementById('headerTabsWrap');
+  const el = document.getElementById('headerTabs');
+  wrap.classList.toggle('scroll-left', el.scrollLeft > 4);
+  wrap.classList.toggle('scroll-right', el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+}
+
+function switchList(listId) {
+  STATE.currentListId = listId;
+  saveState();
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const active = b.dataset.list === listId;
+    b.classList.toggle('active', active);
+    if (active) b.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  });
+  document.querySelectorAll('.switcher-row').forEach(row => row.classList.toggle('active', row.dataset.list === listId));
+  const l = LISTS[listId];
+  document.querySelector('#listSwitcherBtn .ic').textContent = l.icon;
+  document.getElementById('listSwitcherLabel').textContent = l.label;
+  document.getElementById('searchInput').value = '';
+  document.getElementById('clearSearch').style.display = 'none';
+  currentFilter = 'all';
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.f === 'all'));
+  activeRangeTab = null;
+  renderList();
+}
+
+/* ═══════════════════════════ RENDER: LIST ═══════════════════════════ */
+
+let currentFilter = 'all';
+let listViewMode = 'complete'; // 'complete' | 'compact'
+let activeRangeTab = null;     // selected hundred-bucket start, Complete mode only
+
+function bucketStart(p) {
+  const n = parseInt(p.type === 'pax' ? p.cabin : p.sn, 10);
+  return isNaN(n) ? -1 : Math.floor(n / 100) * 100;
+}
+
+function computeCounts(listId) {
+  let present=0, missing=0, unknown=0, boarded=0, ashore=0;
+  const entries = getListEntries(listId);
+  entries.forEach(({p, real}) => {
+    const s = (STATE.statuses[real] || {})[p.id] || 'unknown';
+    if (s === 'present') present++;
+    else if (s === 'missing') missing++;
+    else if (s === 'ashore') ashore++;
+    else if (isCraftStatus(s)) boarded++;
+    else unknown++;
+  });
+  return { total: entries.length, present, missing, unknown, boarded, ashore };
+}
+
+/* ═══════════════════════════ READINESS (feeds LCC Sentinel 3 — MUSTER / ABANDON pages) ═══════════════════════════
+   These are the derived signals that LCC Sentinel 3's Muster and Abandon pages need once this app is
+   wired to sentinel_server.py: per-zone "leader in place" / "guides in position", and per-station
+   "leader in place" / "safety watch in place" / "list completed". Two different notions of "done":
+     - allPresent()      -> everyone on the list has been physically checked PRESENT (used for guide
+                             coverage: a zone isn't manned until its guides are actually standing at post).
+                             a `total: 0` list (guides/roles not yet defined) counts as NOT satisfied.
+                             use isFullyAccounted() for the "everyone processed" muster-complete sense.
+     - isFullyAccounted() -> everyone has been checked off one way or another (present OR missing),
+                              i.e. muster-complete for that roster, whether or not everyone made it.
+   "Leader/role in place" is read off SyncAdapter.peers (+ the local device itself): a role is "in
+   place" when a tablet is actively logged in under that safety number. In mock mode this only spans
+   tabs of the same browser; once SyncAdapter is a real WebSocket client this becomes true fleet-wide
+   presence, which is exactly the signal the Muster/Abandon pages want. */
+function allPresent(listId) {
+  const c = computeCounts(listId);
+  return c.total > 0 && c.present === c.total;
+}
+function isFullyAccounted(listId) {
+  const c = computeCounts(listId);
+  return c.total > 0 && c.unknown === 0;
+}
+function isUserOnline(number) {
+  if (STATE.currentUserNumber === number) return true;
+  return Object.values(SyncAdapter.peers).some(p => p.number === number);
+}
+
+const ZONES = [
+  { id:'z12', label:'Zone 1/2', leaderNumber:'602', guidesListId:'stairMVZ12' },
+  { id:'z3',  label:'Zone 3',   leaderNumber:'702', guidesListId:'stairMVZ3' },
+  { id:'z4',  label:'Zone 4',   leaderNumber:'404', guidesListId:'stairMVZ4' },
+];
+const STATIONS = [
+  { id:'stnA', label:'Assembly Station A', crewLeaderNumber:'403', paxLeaderNumber:'601', safetyListId:'crewSafetyPaxA', crewListId:'crewA', paxListId:'paxA' },
+  { id:'stnB', label:'Assembly Station B', crewLeaderNumber:'402', paxLeaderNumber:'501', safetyListId:'crewSafetyPaxB', crewListId:'crewB', paxListId:'paxB' },
+];
+/* Abandon-ship stage: same "leader in place" + "list completed" pattern, one per lifeboat, for the
+   ABANDON page's boarding tracker. commanderNumber is the tablet login; manifestListId is the
+   PAX/crew boarding manifest that commander accounts for during embarkation. */
+const LIFEBOATS = [
+  { id:'lb1', label:'Lifeboat 1', commanderNumber:'105', manifestListId:'lifeboat1' },
+  { id:'lb2', label:'Lifeboat 2', commanderNumber:'106', manifestListId:'lifeboat2' },
+  { id:'lb3', label:'Lifeboat 3', commanderNumber:'107', manifestListId:'lifeboat3' },
+  { id:'lb4', label:'Lifeboat 4', commanderNumber:'108', manifestListId:'lifeboat4' },
+];
+
+function computeReadiness() {
+  return {
+    zones: ZONES.map(z => ({
+      id: z.id, label: z.label,
+      leaderInPlace: isUserOnline(z.leaderNumber),
+      guidesInPosition: allPresent(z.guidesListId),
+    })),
+    stations: STATIONS.map(s => ({
+      id: s.id, label: s.label,
+      crewLeaderInPlace: isUserOnline(s.crewLeaderNumber),
+      paxLeaderInPlace: isUserOnline(s.paxLeaderNumber),
+      safetyWatchInPlace: allPresent(s.safetyListId),
+      crewListCompleted: isFullyAccounted(s.crewListId),
+      paxListCompleted: isFullyAccounted(s.paxListId),
+    })),
+    lifeboats: LIFEBOATS.map(b => ({
+      id: b.id, label: b.label,
+      commanderInPlace: isUserOnline(b.commanderNumber),
+      manifestCompleted: isFullyAccounted(b.manifestListId),
+    })),
+  };
+}
+
+function broadcastReadiness() {
+  SyncAdapter.send('readiness_update', computeReadiness());
+}
+
+/* ═══════════════════════════ EVACUATION CHECKLIST (301 — Evacuation Leader) ═══════════════════════════ */
+
+function hintFromBool(ok, label) {
+  return { ok, detail: ok ? `${label} online` : `${label} not detected online` };
+}
+function hintAllPresent(listId) {
+  const c = computeCounts(listId);
+  const ok = c.total > 0 && c.present === c.total;
+  return { ok, detail: `${c.present}/${c.total} present` };
+}
+function hintStarted(listId) {
+  const c = computeCounts(listId);
+  const checked = c.present + c.missing;
+  const ok = c.total > 0 && checked > 0;
+  return { ok, detail: `${checked}/${c.total} checked in` };
+}
+function hintComplete(listId) {
+  const c = computeCounts(listId);
+  const ok = c.total > 0 && c.unknown === 0;
+  return { ok, detail: ok ? `${c.total}/${c.total} accounted (${c.missing} missing)` : `${c.unknown} still unverified` };
+}
+
+const CHECKLIST = [
+  { id: 'r1', title: 'Report 1 — All Zone Leaders In Position', items: [
+    { id: 'r1_z12', label: 'Zone Leader 1/2 in position', hint: () => hintFromBool(isUserOnline('602'), 'Zone Leader 1/2 (602)') },
+    { id: 'r1_z3',  label: 'Zone Leader 3 in position',   hint: () => hintFromBool(isUserOnline('702'), 'Zone Leader 3 (702)') },
+    { id: 'r1_z4',  label: 'Zone Leader 4 in position',   hint: () => hintFromBool(isUserOnline('404'), 'Zone Leader 4 (404)') },
+  ] },
+  { id: 'r2', title: 'Report 2 — All Crew In Position', items: [
+    { id: 'r2_z12', label: 'Zone 1/2 — crew in position', hint: () => hintAllPresent('stairMVZ12') },
+    { id: 'r2_z3',  label: 'Zone 3 — crew in position',   hint: () => hintAllPresent('stairMVZ3') },
+    { id: 'r2_z4',  label: 'Zone 4 — crew in position',   hint: () => hintAllPresent('stairMVZ4') },
+    { id: 'r2_a',   label: 'Assembly Station A — crew in position', hint: () => hintStarted('crewA') },
+    { id: 'r2_b',   label: 'Assembly Station B — crew in position', hint: () => hintStarted('crewB') },
+  ] },
+  { id: 'r3', title: 'Report 3 — All Zones Evacuated', items: [
+    { id: 'r3_z12', label: 'Zone 1/2 evacuated', hint: null },
+    { id: 'r3_z3',  label: 'Zone 3 evacuated',   hint: null },
+    { id: 'r3_z4',  label: 'Zone 4 evacuated',   hint: null },
+  ] },
+  { id: 'r4', title: 'Report 4 — PAX Assembly Station Complete', items: [
+    { id: 'r4_a', label: 'Assembly Station A — PAX complete', hint: () => hintComplete('paxA') },
+    { id: 'r4_b', label: 'Assembly Station B — PAX complete', hint: () => hintComplete('paxB') },
+  ] },
+  { id: 'r5', title: 'Report 5 — Crew Assembly Station Complete', items: [
+    { id: 'r5_a', label: 'Crew Assembly Station A complete', hint: () => hintComplete('crewA') },
+    { id: 'r5_b', label: 'Crew Assembly Station B complete', hint: () => hintComplete('crewB') },
+  ] },
+  { id: 'r6', title: 'Report 6 — Ready For Abandon', items: [
+    { id: 'r6_ready', label: 'Assembly A & B ready for abandon', hint: null },
+  ] },
+];
+
+function checklistItemLabel(itemId) {
+  for (const section of CHECKLIST) {
+    const item = section.items.find(i => i.id === itemId);
+    if (item) return item.label;
+  }
+  return itemId;
+}
+
+function setChecklistItem(itemId, status, note) {
+  STATE.checklist[itemId] = { status, note: note || '', ts: Date.now(), byUser: STATE.currentUserNumber };
+  saveState();
+  renderChecklist();
+  renderChecklistDot();
+  SyncAdapter.send('checklist_update', { itemId, entry: STATE.checklist[itemId] });
+  if (status === 'not_ok') pushNotification(`⚠️ Checklist: ${checklistItemLabel(itemId)} — not OK${note ? ' — ' + note : ''}`);
+}
+
+SyncAdapter.on('checklist_update', (msg) => {
+  const { itemId, entry } = msg.payload || {};
+  if (!itemId || !entry) return;
+  STATE.checklist[itemId] = entry;
+  saveState();
+  renderChecklistDot();
+  const panel = document.getElementById('panelChecklist');
+  if (panel && panel.classList.contains('show')) renderChecklist();
+});
+
+function renderChecklistDot() {
+  const notOkCount = Object.values(STATE.checklist).filter(e => e.status === 'not_ok').length;
+  const dot = document.getElementById('checklistDot');
+  if (!dot) return;
+  if (notOkCount > 0) { dot.textContent = notOkCount; dot.classList.remove('hidden'); }
+  else dot.classList.add('hidden');
+}
+
+function renderChecklist() {
+  let okCount = 0, total = 0;
+  const html = CHECKLIST.map(section => {
+    const itemsHtml = section.items.map(item => {
+      total++;
+      const state = STATE.checklist[item.id];
+      const status = state ? state.status : 'pending';
+      if (status === 'ok') okCount++;
+      const hint = item.hint ? item.hint() : null;
+      return `
+      <div class="checklist-item">
+        <div class="ci-row">
+          <div class="ci-label">${item.label}${hint ? `<div class="ci-hint ${hint.ok ? 'good' : 'bad'}">${hint.ok ? '✓' : '⚠'} ${hint.detail}</div>` : ''}</div>
+          <div class="ci-actions">
+            <button class="ci-btn ok ${status === 'ok' ? 'on' : ''}" data-item="${item.id}" data-status="ok">✓ OK</button>
+            <button class="ci-btn notok ${status === 'not_ok' ? 'on' : ''}" data-item="${item.id}" data-status="not_ok">✕ Not OK</button>
+          </div>
+        </div>
+        ${status === 'not_ok' ? `<textarea class="ci-note" data-note-for="${item.id}" placeholder="Note missing persons / reason…">${escapeHtml((state && state.note) || '')}</textarea>` : ''}
+        ${state ? `<div class="ci-meta">${status === 'ok' ? 'Confirmed OK' : 'Reported not OK'} — ${fmtDateTime(state.ts)} by ${state.byUser}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `<div class="checklist-section"><h4>${section.title}</h4>${itemsHtml}</div>`;
+  }).join('');
+
+  document.getElementById('checklistProgress').textContent = `${okCount}/${total} confirmed OK`;
+  const body = document.getElementById('checklistBody');
+  body.innerHTML = html;
+  body.querySelectorAll('[data-status]').forEach(btn => btn.addEventListener('click', () => {
+    const itemId = btn.dataset.item;
+    const requested = btn.dataset.status;
+    const cur = STATE.checklist[itemId];
+    const curStatus = cur ? cur.status : 'pending';
+    const next = curStatus === requested ? 'pending' : requested;
+    setChecklistItem(itemId, next, cur ? cur.note : '');
+  }));
+  body.querySelectorAll('[data-note-for]').forEach(ta => ta.addEventListener('change', (e) => {
+    const itemId = ta.dataset.noteFor;
+    const cur = STATE.checklist[itemId];
+    setChecklistItem(itemId, cur ? cur.status : 'not_ok', e.target.value);
+  }));
+}
+
+function updateAllTabBadges() {
+  const u = getUser(STATE.currentUserNumber);
+  u.lists.forEach(listId => {
+    const c = computeCounts(listId);
+    [`[data-missing-for="${listId}"]`, `[data-switcher-missing-for="${listId}"]`].forEach(sel => {
+      const el = document.querySelector(sel);
+      if (!el) return;
+      if (c.missing > 0) { el.textContent = c.missing; el.classList.remove('hidden'); }
+      else el.classList.add('hidden');
+    });
+  });
+  const curBadge = document.getElementById('listSwitcherBadge');
+  if (curBadge) {
+    const c = computeCounts(STATE.currentListId);
+    if (c.missing > 0) { curBadge.textContent = c.missing; curBadge.classList.remove('hidden'); }
+    else curBadge.classList.add('hidden');
+  }
+  updateTabsScrollHint();
+}
+
+function renderList() {
+  const listId = STATE.currentListId;
+  const list = LISTS[listId];
+  document.getElementById('listTitle').textContent = list.icon + ' ' + list.label;
+  document.getElementById('listLoc').textContent = 'Muster station: ' + list.loc;
+
+  if (list.isPaxBoardingView) {
+    document.getElementById('searchRow').classList.add('hidden');
+    document.getElementById('filterChips').classList.add('hidden');
+    document.getElementById('rangeTabs').classList.add('hidden');
+    document.getElementById('rangeTabs').innerHTML = '';
+    document.getElementById('personList').innerHTML = '';
+    document.getElementById('summaryBar').innerHTML = '';
+    document.getElementById('boardingSection').classList.add('primary-view');
+    renderCraftStatusBar(listId);
+    renderBoardingSection(listId);
+    renderReassignBar(listId);
+    updateAllTabBadges();
+    return;
+  }
+  document.getElementById('filterChips').classList.remove('hidden');
+  document.getElementById('boardingSection').classList.remove('primary-view');
+  document.getElementById('searchRow').classList.remove('hidden');
+
+  const q = normalize(document.getElementById('searchInput').value.trim());
+  let entries = getListEntries(listId);
+  entries.sort((a, b) => {
+    const ba = bucketStart(a.p), bb = bucketStart(b.p);
+    if (ba !== bb) return ba - bb;
+    return (a.p.sn || a.p.cabin || '').localeCompare(b.p.sn || b.p.cabin || '', undefined, { numeric: true });
+  });
+
+  entries = entries.filter(({p, real}) => {
+    const s = (STATE.statuses[real]||{})[p.id] || 'unknown';
+    if (currentFilter === 'boarded' && !isCraftStatus(s)) return false;
+    else if (currentFilter !== 'all' && currentFilter !== 'boarded' && s !== currentFilter) return false;
+    if (!q) return true;
+    const hay = normalize([p.last, p.first, p.cabin, p.sn, p.fn].join(' '));
+    return hay.includes(q);
+  });
+
+  // Group by hundreds: safety number for crew, cabin number for PAX (per entry, so mixed lists work too).
+  const groups = new Map();
+  entries.forEach(entry => {
+    const g = bucketStart(entry.p);
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(entry);
+  });
+  const sortedBuckets = Array.from(groups.keys()).sort((a, b) => a - b);
+  const rangeLabel = g => g < 0 ? '—' : (g + '-' + (g + 99));
+
+  const container = document.getElementById('personList');
+  const tabsEl = document.getElementById('rangeTabs');
+  const readOnly = isReadOnlyList(listId);
+
+  if (!entries.length) {
+    tabsEl.classList.add('hidden');
+    tabsEl.innerHTML = '';
+    container.innerHTML = `<div class="empty-state"><div class="big">🔍</div>No results for this search/filter.</div>`;
+    renderSummary(listId);
+    updateAllTabBadges();
+    renderBoardingSection(listId);
+    renderCraftStatusBar(listId);
+    renderReassignBar(listId);
+    return;
+  }
+
+  if (listViewMode === 'compact') {
+    tabsEl.classList.add('hidden');
+    tabsEl.innerHTML = '';
+    container.innerHTML = sortedBuckets.map(g => {
+      const chips = groups.get(g).map(({p, real}) => {
+        const s = (STATE.statuses[real]||{})[p.id] || 'unknown';
+        const num = p.type === 'pax' ? (p.cabin || '—') : (p.sn || '—');
+        return `<button class="compact-chip ${statusRowClass(s, real)}" data-pid="${p.id}" data-list="${real}" title="${fullName(p)} — ${statusLabel(s)}">${num}</button>`;
+      }).join('');
+      return `<div class="compact-group-head"><span class="lbl">${rangeLabel(g)}</span><div class="line"></div></div><div class="compact-chips">${chips}</div>`;
+    }).join('');
+    if (!readOnly) container.querySelectorAll('.compact-chip').forEach(btn => btn.addEventListener('click', () => cycleStatus(btn.dataset.list, btn.dataset.pid)));
+    else container.querySelectorAll('.compact-chip').forEach(btn => { btn.style.cursor = 'default'; btn.style.opacity = '.75'; });
+  } else {
+    tabsEl.classList.remove('hidden');
+    if (!sortedBuckets.includes(activeRangeTab)) activeRangeTab = sortedBuckets[0];
+    tabsEl.innerHTML = sortedBuckets.map(g =>
+      `<button class="range-tab-btn ${g === activeRangeTab ? 'active' : ''}" data-range="${g}">${rangeLabel(g)} (${groups.get(g).length})</button>`
+    ).join('');
+    tabsEl.querySelectorAll('[data-range]').forEach(btn => btn.addEventListener('click', () => {
+      activeRangeTab = parseInt(btn.dataset.range, 10);
+      renderList();
+    }));
+
+    const shown = groups.get(activeRangeTab) || [];
+    const isManifestView = listId === 'crewManifest' || listId === 'paxManifest';
+    container.innerHTML = shown.map(({p, real}) => {
+      const s = (STATE.statuses[real]||{})[p.id] || 'unknown';
+      // On the combined MANIFEST view, several source lists of different tiers get mixed together —
+      // spell out which one a plain "present" came from (same "why absent is normal" idea as
+      // Sentinel 3's manifest); on a single-source list every row is the same tier, so the hint would
+      // just be noise there.
+      const extraStatus = (s === 'ashore' || isCraftStatus(s)) ? ` · <b>${statusLabel(s)}</b>`
+        : (s === 'present' && isManifestView) ? ` · <b>${tierLabel(tierForList(real))}</b>` : '';
+      const craftIds = p.type === 'pax'
+        ? (real === 'paxA' ? ['LB01','LB03'] : real === 'paxB' ? ['LB02','LB04'] : [])
+        : ['LB01','LB02','LB03','LB04'];
+      const craftSelect = (isManifestView && craftIds.length) ? `
+          <select class="craft-assign" data-pid="${p.id}" data-list="${real}" style="height:38px;padding:0 8px;font-size:12px;border-radius:999px;background:var(--oe-navy-mid);border:1px solid var(--oe-navy-border);color:var(--oe-cream-dim)">
+            <option value="">🛟 Lifeboat…</option>
+            ${craftIds.map(cid => `<option value="${cid}" ${s===cid?'selected':''}>${CRAFT_LABELS[cid]}</option>`).join('')}
+          </select>` : '';
+      return `
+      <div class="person-row ${statusRowClass(s, real)}" data-pid="${p.id}" data-list="${real}">
+        <div class="person-num">${p.sn || '—'}<small>${p.type === 'crew' ? 'safety#' : 'cabin ' + p.cabin}</small></div>
+        <div class="person-id">
+          <div class="nm">${fullName(p)}</div>
+          <div class="meta">${p.fn}${p.type==='crew' ? ' · Cab. ' + p.cabin : ''}${extraStatus}</div>
+        </div>
+        <div class="person-actions">
+          <button class="hist-btn" data-hist="${p.id}" title="History">🕒</button>
+          ${readOnly ? `<span class="hint" style="align-self:center">${statusLabel(s)}</span>` : `
+          <button class="status-btn present ${s==='present'?'on':''}" data-set="present" data-pid="${p.id}" data-list="${real}">✓ Present</button>
+          <button class="status-btn missing ${s==='missing'?'on':''}" data-set="missing" data-pid="${p.id}" data-list="${real}">✕ Missing</button>
+          <button class="status-btn ashore ${s==='ashore'?'on':''}" data-set="ashore" data-pid="${p.id}" data-list="${real}">🏝️ Ashore</button>
+          ${craftSelect}`}
+        </div>
+      </div>`;
+    }).join('');
+    if (!readOnly) {
+      container.querySelectorAll('[data-set]').forEach(btn => btn.addEventListener('click', () => setStatus(btn.dataset.list, btn.dataset.pid, btn.dataset.set)));
+      container.querySelectorAll('.craft-assign').forEach(sel => sel.addEventListener('change', () => {
+        applyStatus(sel.dataset.list, sel.dataset.pid, sel.value || 'present');
+        renderList();
+      }));
+    }
+    container.querySelectorAll('[data-hist]').forEach(btn => btn.addEventListener('click', () => openHistoryFor(btn.dataset.hist)));
+  }
+
+  renderSummary(listId);
+  updateAllTabBadges();
+  renderBoardingSection(listId);
+  renderCraftStatusBar(listId);
+  renderReassignBar(listId);
+}
+
+function renderSummary(listId) {
+  listId = listId || STATE.currentListId;
+  const c = computeCounts(listId);
+  const pct = c.total ? (c.present / c.total * 100) : 0;
+  const pctM = c.total ? (c.missing / c.total * 100) : 0;
+  document.getElementById('summaryBar').innerHTML = `
+    <div class="summary-stat"><b>${c.total}</b><span>Total</span></div>
+    <div class="summary-stat present"><b>${c.present}</b><span>Present</span></div>
+    <div class="summary-stat missing"><b>${c.missing}</b><span>Missing</span></div>
+    <div class="summary-stat craft"><b>${c.boarded}</b><span>Boarded</span></div>
+    <div class="summary-stat ashore-stat"><b>${c.ashore}</b><span>Ashore</span></div>
+    <div class="summary-stat unknown"><b>${c.unknown}</b><span>Unverified</span></div>
+    <div class="progress-track"><div class="seg-present" style="width:${pct}%"></div><div class="seg-missing" style="width:${pctM}%"></div></div>`;
+}
+
+function applyStatus(listId, personId, to) {
+  const list = LISTS[listId];
+  const person = list.persons.find(p => p.id === personId);
+  if (!person) return;
+  const from = STATE.statuses[listId][personId] || 'unknown';
+  if (from === to) return;
+  STATE.statuses[listId][personId] = to;
+
+  const entry = { kind:'checkin', ts: Date.now(), listId, personId, name: fullName(person), sn: person.sn, cabin: person.cabin, from, to, byUser: STATE.currentUserNumber, remote:false };
+  STATE.history.unshift(entry);
+  if (STATE.history.length > 500) STATE.history.length = 500;
+  saveState();
+
+  SyncAdapter.send('checkin_update', entry);
+  broadcastReadiness();
+  if (to === 'missing') pushNotification(`⚠️ Missing: ${fullName(person)} — ${list.label}`);
+  else if (to === 'present') showToast(`${fullName(person)} marked present`);
+  else if (to === 'ashore') pushNotification(`🏝️ Ashore: ${fullName(person)} — ${list.label}`);
+  else if (isCraftStatus(to)) showToast(`${fullName(person)} boarded ${CRAFT_LABELS[to]}`);
+}
+
+/* Complete-mode buttons: explicit target, toggles back to unknown if already set. */
+function setStatus(listId, personId, requested) {
+  const from = STATE.statuses[listId][personId] || 'unknown';
+  applyStatus(listId, personId, from === requested ? 'unknown' : requested);
+  renderList();
+}
+
+/* Compact-mode single chip: cycles unknown → present → missing → unknown. */
+const STATUS_CYCLE = { unknown: 'present', present: 'missing', missing: 'unknown' };
+function cycleStatus(listId, personId) {
+  const from = STATE.statuses[listId][personId] || 'unknown';
+  // ashore / boarded-a-craft aren't part of the quick cycle — cycling out of them goes to 'present'
+  applyStatus(listId, personId, STATUS_CYCLE[from] || 'present');
+  renderList();
+}
+
+/* remote checkin from another "tablet" (mock bus) */
+SyncAdapter.on('checkin_update', (msg) => {
+  const e = msg.payload;
+  if (!LISTS[e.listId]) return;
+  STATE.statuses[e.listId][e.personId] = e.to;
+  STATE.history.unshift(Object.assign({}, e, { remote:true, byUser: msg.from || e.byUser }));
+  if (STATE.history.length > 500) STATE.history.length = 500;
+  saveState();
+  if (STATE.currentListId === e.listId) renderList(); else updateAllTabBadges();
+  pushNotification(`🔄 Update received (${msg.from || '?'}): ${e.name} → ${statusLabel(e.to)}`);
+});
+
+/* Craft ids a status can be set to, beyond present/missing/unknown/ashore — mirrors Sentinel 3's
+   AbandonModule.craft ids exactly, so "boarded on X" is a single source of truth (see
+   applyStatus()/reassignPerson()) instead of a second, separately-tracked list membership. */
+const CRAFT_LABELS = { LB01:'Lifeboat 1', LB02:'Lifeboat 2', LB03:'Lifeboat 3', LB04:'Lifeboat 4', RB01:'Rescue Boat 1', RB02:'Rescue Boat 2' };
+function isCraftStatus(s) { return !!CRAFT_LABELS[s]; }
+function statusLabel(s) {
+  if (s === 'present') return 'Present';
+  if (s === 'missing') return 'Missing';
+  if (s === 'ashore') return 'Ashore';
+  if (isCraftStatus(s)) return CRAFT_LABELS[s];
+  return 'Unverified';
+}
+
+/* Ship-wide colour code, shared with LCC Sentinel 3 (see MusterModule.getCrewMemberDisplayStatus
+   there) — same 8 tiers, same hex values, so green/violet/etc. always mean the same thing on both
+   apps. Sentinel 3 derives its tiers from several parallel per-person dicts (zone presence, assembly
+   presence, craft, Polar…) tracked simultaneously for the SAME person; Mustering has no such
+   multi-dict model — each person lives on exactly ONE list (their home list, see the "single home
+   list per person" rule) with a single flat status. So here the tier comes from WHICH underlying
+   list that single status was set on: a zone/stairway list or a Fire-page prep/support team list
+   (teamLB1Prep, teamPolarKits, teamADA…) is the 1st count; an Assembly Station list is the 2nd count;
+   a lifeboat/rescue boat list (or a status reassigned to a craft id) is the boarding count. Sentinel
+   3's Polar Abandon tiers (on ice / present in TEAM) have no Mustering list equivalent — nothing here
+   syncs that page — so they simply don't appear; everything else lines up. */
+const MUSTER_FIRST_COUNT_LISTS = new Set([
+  'stairMVZ12', 'stairMVZ3', 'stairMVZ4',
+  'teamADA', 'teamAdmin', 'teamCrowd',
+  'teamLB1Prep', 'teamLB2Prep', 'teamLR1Prep', 'teamLR2Prep', 'teamRBPrep', 'teamPolarKits',
+]);
+const MUSTER_SECOND_COUNT_LISTS = new Set(['crewA', 'crewB', 'paxA', 'paxB', 'crewSafetyPaxA', 'crewSafetyPaxB']);
+const MUSTER_CRAFT_HOME_LISTS = new Set(['lifeboat1', 'lifeboat2', 'lifeboat3', 'lifeboat4', 'rescueboat1', 'rescueboat2']);
+
+function tierForList(listId) {
+  if (MUSTER_CRAFT_HOME_LISTS.has(listId)) return 'craft';
+  if (MUSTER_FIRST_COUNT_LISTS.has(listId)) return 'firstcount';
+  return 'assembly'; // crewA/crewB/paxA/paxB/crewSafetyPaxA/B and anything else not explicitly classified
+}
+function tierLabel(tier) {
+  return tier === 'firstcount' ? '1st count' : tier === 'craft' ? 'Boarded' : 'Assembly';
+}
+function statusRowClass(s, listId) {
+  if (isCraftStatus(s)) return 'st-craft';
+  if (s === 'present') return 'st-' + tierForList(listId);
+  return 'st-' + s;
+}
+
+/* ═══════════════════════════ LIFEBOAT PAX BOARDING ═══════════════════════════
+   PAX present at Assembly A can board EITHER LB01 or LB03; PAX present at Assembly B can board
+   EITHER LB02 or LB04 (paired boats — see lifeboat1..4.paxPair). "Boarded" is just the person's
+   normal check-in status set to that craftId (applyStatus) — the SAME status shown on
+   crewManifest/paxManifest, so nobody is ever counted twice (once "present" + once "boarded"). */
+
+function findPersonById(id) {
+  for (const l of Object.values(LISTS)) {
+    if (!l.persons) continue;
+    const p = l.persons.find(x => x.id === id);
+    if (p) return p;
+  }
+  return null;
+}
+
+/* Anyone assigned to this CREW craft from elsewhere (their status === this craftId, but their home
+   list is a different one) — the counterpart to renderBoardingSection's pax view, for crew. Kept in
+   the same #boardingSection element since a list is either a crew tab or a pax tab, never both. */
+function renderDynamicCrewSection(listId) {
+  const list = LISTS[listId];
+  const section = document.getElementById('boardingSection');
+  const craftId = list.craftId;
+  const readOnly = isReadOnlyList(listId);
+  const dynamicCrew = [];
+  Object.values(LISTS).forEach(l => {
+    if (!l.persons || l.id === listId) return;
+    l.persons.forEach(p => {
+      if (p.type !== 'crew') return; // PAX boarding shows up on the craft's Pax tab, not here
+      const s = (STATE.statuses[l.id] || {})[p.id] || 'unknown';
+      if (s === craftId) dynamicCrew.push({ p, real: l.id });
+    });
+  });
+  if (!dynamicCrew.length) { section.classList.add('hidden'); section.innerHTML = ''; return; }
+  section.classList.remove('hidden');
+  const rows = dynamicCrew.map(({ p, real }) => `
+    <div class="person-row st-craft">
+      <div class="person-num">${p.sn || '—'}<small>safety#</small></div>
+      <div class="person-id">
+        <div class="nm">${fullName(p)}</div>
+        <div class="meta">${p.fn} · from ${LISTS[real].label}</div>
+      </div>
+      <div class="person-actions">
+        ${readOnly ? '' : `<button class="status-btn missing" data-unassign="${p.id}" data-list="${real}">✕ Remove from ${craftId}</button>`}
+      </div>
+    </div>`).join('');
+  section.innerHTML = `
+    <div style="margin:10px 0;padding:6px 0;font-size:13px;color:var(--oe-cream-dim)"><b style="color:var(--oe-cream)">${dynamicCrew.length}</b> crew assigned here from elsewhere</div>
+    <div class="person-list">${rows}</div>`;
+  if (!readOnly) section.querySelectorAll('[data-unassign]').forEach(btn => btn.addEventListener('click', () => {
+    applyStatus(btn.dataset.list, btn.dataset.unassign, 'present');
+    renderList();
+  }));
+}
+
+function renderBoardingSection(listId) {
+  const list = LISTS[listId];
+  const section = document.getElementById('boardingSection');
+  if (list && list.craftId && !list.paxSource) { renderDynamicCrewSection(listId); return; }
+  if (!list || !list.paxSource) { section.classList.add('hidden'); section.innerHTML = ''; return; }
+  section.classList.remove('hidden');
+
+  const readOnly = isReadOnlyList(listId);
+  const paxStatuses = STATE.statuses[list.paxSource] || {};
+  const [craftA, craftB] = list.paxPair;
+  // Relevant = still waiting at the assembly station (present) or already boarded on this pair —
+  // people not yet checked in ('unknown'), marked missing, or ashore don't belong on a boarding list.
+  const relevant = LISTS[list.paxSource].persons.filter(p => {
+    const s = paxStatuses[p.id] || 'unknown';
+    return s === 'present' || s === craftA || s === craftB;
+  });
+  const boardedTotal = relevant.filter(p => (paxStatuses[p.id] || '') === craftA || (paxStatuses[p.id] || '') === craftB).length;
+  const waitingTotal = relevant.length - boardedTotal;
+  const stationLabel = list.paxSource === 'paxA' ? 'A' : 'B';
+
+  const banner = `
+    <div style="margin:10px 0;padding:10px 12px;border-radius:10px;border:1px solid ${waitingTotal === 0 ? 'var(--status-ok)' : 'var(--status-danger)'};background:${waitingTotal === 0 ? 'rgba(39,174,96,.1)' : 'rgba(231,76,60,.12)'};font-size:13px">
+      <b>${craftA} + ${craftB} boarding</b> — ${boardedTotal} boarded
+      ${waitingTotal === 0 ? '' : `<div style="color:var(--status-danger);margin-top:4px">⚠️ ${waitingTotal} present at Assembly ${stationLabel} not yet boarded on ${craftA} or ${craftB}.</div>`}
+    </div>`;
+
+  if (listViewMode === 'compact') {
+    const chips = relevant.map(p => {
+      const s = paxStatuses[p.id] || 'unknown';
+      const boardedHere = s === list.craftId;
+      const boardedSibling = isCraftStatus(s) && s !== list.craftId;
+      const cls = boardedHere ? 'st-craft' : '';
+      return `<button class="compact-chip ${cls}" style="${boardedSibling ? 'opacity:.5' : ''}" data-board="${p.id}" ${boardedSibling ? 'disabled' : ''} title="${fullName(p)} — ${boardedHere ? 'Boarded ' + list.craftId : boardedSibling ? 'On ' + s : 'Waiting'}">${p.cabin || '—'}</button>`;
+    }).join('');
+    section.innerHTML = banner + `<div class="compact-chips" style="padding:10px 0">${chips || `<div class="empty-state">No PAX present or boarded from Assembly ${stationLabel} yet.</div>`}</div>`;
+  } else {
+    const rows = relevant.map(p => {
+      const s = paxStatuses[p.id] || 'unknown';
+      const boardedHere = s === list.craftId;
+      const boardedSibling = isCraftStatus(s) && s !== list.craftId;
+      return `
+      <div class="person-row ${boardedHere ? 'st-craft' : ''}" style="${boardedSibling ? 'opacity:.5' : ''}">
+        <div class="person-num">${p.cabin || '—'}<small>cabin</small></div>
+        <div class="person-id">
+          <div class="nm">${fullName(p)}</div>
+          <div class="meta">Assembly ${stationLabel}${boardedSibling ? ' · already on ' + CRAFT_LABELS[s] : ''}</div>
+        </div>
+        <div class="person-actions">
+          ${readOnly ? `<span class="hint">${boardedHere ? '✓ Boarded ' + list.craftId : boardedSibling ? 'On ' + s : 'Waiting'}</span>` : `
+          <button class="status-btn present ${boardedHere ? 'on' : ''}" data-board="${p.id}" ${boardedSibling ? 'disabled' : ''}>
+            ${boardedHere ? '✓ Boarded ' + list.craftId : 'Board ' + list.craftId}
+          </button>`}
+        </div>
+      </div>`;
+    }).join('');
+    section.innerHTML = banner + `<div class="person-list" style="flex:none;overflow:visible">${rows || `<div class="empty-state">No PAX present or boarded from Assembly ${stationLabel} yet.</div>`}</div>`;
+  }
+
+  if (!readOnly) section.querySelectorAll('[data-board]:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pid = btn.dataset.board;
+      const cur = paxStatuses[pid] || 'unknown';
+      applyStatus(list.paxSource, pid, cur === list.craftId ? 'present' : list.craftId);
+      renderList();
+    });
+  });
+}
+
+/* ═══════════════════════════ CRAFT STATUS (Lifeboat/Rescue boat commander) ═══════════════════════════
+   Mirrors Sentinel 3's AbandonModule craft status (standby/preparing/embarkation/ready/launched/
+   not-available). Shown on any list that declares a craftId (lifeboat1..4, rescueboat1..2). */
+
+const CRAFT_STATUSES = [
+  { v:'standby', label:'Standby' },
+  { v:'preparing', label:'Preparing' },
+  { v:'embarkation', label:'Embarking' },
+  { v:'ready', label:'Ready' },
+  { v:'launched', label:'Launched' },
+  { v:'not-available', label:'Not available' },
+];
+
+function getCraftStatusStyle(status) {
+  if (status === 'ready' || status === 'launched') return 'background:rgba(76,175,80,0.22);color:#eaffea;border-color:#4CAF50';
+  if (status === 'not-available') return 'background:rgba(231,76,60,0.22);color:#ffe5e5;border-color:#e74c3c';
+  if (status === 'preparing' || status === 'embarkation') return 'background:rgba(243,156,18,0.18);color:#fff0d6;border-color:rgba(243,156,18,0.7)';
+  return '';
+}
+
+function setCraftStatus(craftId, status) {
+  STATE.craftStatus[craftId] = status;
+  if (!STATE.craftStatusTs) STATE.craftStatusTs = {};
+  STATE.craftStatusTs[craftId] = Date.now();
+  saveState();
+  SyncAdapter.send('craft_status_update', { kind:'craft_status', ts: Date.now(), craftId, status, byUser: STATE.currentUserNumber });
+  showToast(`${craftId} status → ${status.toUpperCase()}`);
+  renderList();
+}
+
+SyncAdapter.on('craft_status_update', (msg) => {
+  const e = msg.payload;
+  if (!e || !e.craftId) return;
+  STATE.craftStatus[e.craftId] = e.status;
+  if (!STATE.craftStatusTs) STATE.craftStatusTs = {};
+  STATE.craftStatusTs[e.craftId] = e.ts || Date.now();
+  saveState();
+  const cur = LISTS[STATE.currentListId];
+  if (cur && cur.craftId === e.craftId) renderList();
+});
+
+function renderCraftStatusBar(listId) {
+  const list = LISTS[listId];
+  const bar = document.getElementById('craftStatusBar');
+  if (!list || !list.craftId) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+  bar.classList.remove('hidden');
+  const readOnly = isReadOnlyList(listId);
+  const status = STATE.craftStatus[list.craftId] || 'standby';
+  if (readOnly) {
+    bar.innerHTML = `
+      <div style="margin:10px 0;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <b style="font-size:12px">${list.craftId} status:</b>
+        <span style="padding:6px 10px;border-radius:6px;font-size:12px;${getCraftStatusStyle(status)}">${(CRAFT_STATUSES.find(s=>s.v===status)||{}).label || status}</span>
+      </div>`;
+    return;
+  }
+  bar.innerHTML = `
+    <div style="margin:10px 0;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:12px">${list.craftId} status:</b>
+      <select id="craftStatusSelect" style="padding:6px 8px;border-radius:6px;font-size:12px;${getCraftStatusStyle(status)}">
+        ${CRAFT_STATUSES.map(s => `<option value="${s.v}" ${s.v===status?'selected':''}>${s.label}</option>`).join('')}
+      </select>
+    </div>`;
+  document.getElementById('craftStatusSelect').addEventListener('change', (e) => setCraftStatus(list.craftId, e.target.value));
+}
+
+/* ═══════════════════════════ REASSIGN (Lifeboat Commander: add any crew/PAX to my boat) ═══════════════════════════
+   Covers boat-unavailable redistribution, wrong-boat corrections, medical staff following a
+   patient, etc. This is a STATUS change, not a list move: the person stays on their real home list
+   (wherever that is) and their check-in status is simply set to this craftId — see the big comment
+   above lifeboat1 for why (avoids double-counting on crewManifest/paxManifest). Syncs for free via
+   applyStatus()'s normal checkin_update — no separate message type needed. */
+
+let reassignTarget = null;
+
+function renderReassignBar(listId) {
+  const list = LISTS[listId];
+  const bar = document.getElementById('reassignBar');
+  const readOnly = isReadOnlyList(listId);
+  const canReassign = !readOnly && !!list.craftId;
+  if (!canReassign) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+  bar.classList.remove('hidden');
+  const label = list.isPaxBoardingView ? '+ Add PAX to this lifeboat' : '+ Add crew to this boat';
+  bar.innerHTML = `<button class="btn btn-ghost" id="reassignOpenBtn" style="margin:8px 0">${label}</button>`;
+  document.getElementById('reassignOpenBtn').addEventListener('click', () => openReassignPicker(listId));
+}
+
+function getReassignCandidates(targetListId) {
+  const list = LISTS[targetListId];
+  const craftId = list.craftId;
+  const isPax = !!list.isPaxBoardingView;
+  const sourceManifest = isPax ? 'paxManifest' : 'crewManifest';
+  return getListEntries(sourceManifest).filter(({p, real}) => {
+    const s = (STATE.statuses[real] || {})[p.id] || 'unknown';
+    return s !== craftId;
+  }).map(({p}) => p);
+}
+
+function openReassignPicker(targetListId) {
+  reassignTarget = targetListId;
+  document.getElementById('reassignTitle').textContent = 'Add to ' + LISTS[targetListId].label;
+  const search = document.getElementById('reassignSearch');
+  search.value = '';
+  search.oninput = (e) => renderReassignResults(e.target.value);
+  renderReassignResults('');
+  openPanel('panelReassign');
+}
+
+function renderReassignResults(query) {
+  const q = normalize(query.trim());
+  const candidates = getReassignCandidates(reassignTarget).filter(p => {
+    if (!q) return true;
+    return normalize([p.last, p.first, p.cabin, p.sn, p.fn].join(' ')).includes(q);
+  }).slice(0, 80);
+  const body = document.getElementById('reassignResults');
+  if (!candidates.length) {
+    body.innerHTML = `<div class="empty-state">No match.</div>`;
+    return;
+  }
+  body.innerHTML = candidates.map(p => `
+    <div class="person-row">
+      <div class="person-num">${p.sn || p.cabin || '—'}<small>${p.type === 'crew' ? 'safety#' : 'cabin'}</small></div>
+      <div class="person-id">
+        <div class="nm">${fullName(p)}</div>
+        <div class="meta">${p.fn || ''}</div>
+      </div>
+      <div class="person-actions">
+        <button class="status-btn present" data-add="${p.id}">+ Add</button>
+      </div>
+    </div>`).join('');
+  body.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => reassignPerson(btn.dataset.add, reassignTarget)));
+}
+
+function findPersonListId(personId) {
+  for (const l of Object.values(LISTS)) {
+    if (l.persons && l.persons.some(x => x.id === personId)) return l.id;
+  }
+  return null;
+}
+
+function reassignPerson(personId, targetListId) {
+  const craftId = LISTS[targetListId].craftId;
+  if (!craftId) return;
+  const homeListId = findPersonListId(personId);
+  if (!homeListId) return;
+  applyStatus(homeListId, personId, craftId);
+  closeAllPanels();
+  renderList();
+  updateAllTabBadges();
+}
+
+/* ═══════════════════════════ HISTORY PANEL ═══════════════════════════ */
+
+function openHistoryFor(personId) {
+  let name = '';
+  Object.values(LISTS).forEach(l => { const p = l.persons.find(x=>x.id===personId); if (p) name = fullName(p); });
+  document.getElementById('histTitle').textContent = 'History — ' + name;
+  renderHistoryBody(STATE.history.filter(h => h.personId === personId));
+  openPanel('panelHistory');
+}
+
+function openGlobalHistory() {
+  document.getElementById('histTitle').textContent = 'History — All changes';
+  const u = getUser(STATE.currentUserNumber);
+  const allowed = effectiveListIds(u);
+  renderHistoryBody(STATE.history.filter(h => allowed.has(h.listId)).slice(0, 100));
+  openPanel('panelHistory');
+}
+
+function renderHistoryBody(entries) {
+  const body = document.getElementById('histBody');
+  if (!entries.length) { body.innerHTML = `<div class="empty-state"><div class="big">🕒</div>No changes recorded.</div>`; return; }
+  body.innerHTML = entries.map(h => `
+    <div class="hist-entry to-${h.to}">
+      <div class="ic">${h.to==='present'?'✓':h.to==='missing'?'✕':'—'}</div>
+      <div class="body">
+        <div class="line1">${h.name} — ${statusLabel(h.from)} → <b>${statusLabel(h.to)}</b>${h.remote?'<span class="tag-remote">Remote</span>':''}</div>
+        <div class="line2">${fmtDateTime(h.ts)} · ${LISTS[h.listId] ? LISTS[h.listId].label : h.listId} · by ${h.byUser || '—'}</div>
+      </div>
+    </div>`).join('');
+}
+
+/* ═══════════════════════════ CHAT PANEL ═══════════════════════════ */
+
+let chatUnread = 0;
+
+function renderChatQuick() {
+  document.getElementById('chatQuick').innerHTML = QUICK_MESSAGES.map(m => `<button data-q="${m}">${m}</button>`).join('');
+  document.querySelectorAll('#chatQuick [data-q]').forEach(b => b.addEventListener('click', () => sendChat(b.dataset.q)));
+}
+
+function renderChat() {
+  const box = document.getElementById('chatMsgs');
+  box.innerHTML = STATE.chat.map(m => `
+    <div class="chat-bubble ${m.from === STATE.currentUserNumber ? 'mine' : ''}">
+      <div class="from">${m.from || '?'}${m.from===STATE.currentUserNumber?' (me)':''}</div>
+      <div class="txt">${escapeHtml(m.txt || '')}</div>
+      <div class="time">${fmtTime(m.ts)}</div>
+    </div>`).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function sendChat(text) {
+  text = (text || '').trim();
+  if (!text) return;
+  const msg = { ts: Date.now(), from: STATE.currentUserNumber, txt: text };
+  STATE.chat.push(msg);
+  if (STATE.chat.length > 300) STATE.chat.shift();
+  saveState();
+  renderChat();
+  SyncAdapter.send('chat_message', msg);
+  document.getElementById('chatInput').value = '';
+}
+
+SyncAdapter.on('chat_message', (msg) => {
+  // Sentinel 3 sends {text}, not {txt}/{from} — pushing msg.payload verbatim used to store an
+  // entry renderChat()/escapeHtml() couldn't read, throwing on the very next chat render (ours
+  // or theirs) and silently blocking every chat send after that until reload. Normalize here so
+  // any sender's shape lands as this tablet's own {ts,from,txt}.
+  const p = msg.payload || {};
+  const normalized = {
+    ts: p.ts || msg.ts || Date.now(),
+    from: p.from || msg.from || msg.user || '?',
+    txt: p.txt || p.text || '',
+  };
+  STATE.chat.push(normalized);
+  if (STATE.chat.length > 300) STATE.chat.shift();
+  saveState();
+  if (!document.getElementById('panelChat').classList.contains('show')) {
+    chatUnread++; renderChatDot();
+  } else renderChat();
+  pushNotification(`💬 ${normalized.from}: ${normalized.txt}`);
+});
+
+function renderChatDot() {
+  const dot = document.getElementById('chatDot');
+  if (chatUnread > 0) { dot.textContent = chatUnread; dot.classList.remove('hidden'); }
+  else dot.classList.add('hidden');
+}
+
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ═══════════════════════════ NOTIFICATIONS ═══════════════════════════ */
+
+function pushNotification(text) {
+  STATE.notifications.unshift({ ts: Date.now(), text, read: false });
+  if (STATE.notifications.length > 200) STATE.notifications.length = 200;
+  saveState();
+  renderNotifDot();
+  if (document.getElementById('panelNotif').classList.contains('show')) renderNotifBody();
+}
+
+function renderNotifDot() {
+  const n = STATE.notifications.filter(x => !x.read).length;
+  const dot = document.getElementById('notifDot');
+  if (n > 0) { dot.textContent = n > 99 ? '99+' : n; dot.classList.remove('hidden'); }
+  else dot.classList.add('hidden');
+}
+
+function renderNotifBody() {
+  const body = document.getElementById('notifBody');
+  if (!STATE.notifications.length) { body.innerHTML = `<div class="empty-state"><div class="big">🔔</div>No notifications.</div>`; return; }
+  body.innerHTML = STATE.notifications.map(n => `
+    <div class="hist-entry ${n.read?'':'to-missing'}"><div class="ic">🔔</div>
+      <div class="body"><div class="line1">${n.text}</div><div class="line2">${fmtDateTime(n.ts)}</div></div>
+    </div>`).join('');
+  STATE.notifications.forEach(n => n.read = true);
+  saveState();
+  renderNotifDot();
+}
+
+/* ═══════════════════════════ TOASTS ═══════════════════════════ */
+
+function showToast(text) {
+  const stack = document.getElementById('toastStack');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = text;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 2700);
+}
+
+/* Minimal reusable two-choice modal (confirm/cancel), styled to match the app rather than a native
+   browser confirm() — used for the disconnect notice below, reusable for future needs. */
+function showAppModal({ title, body, confirmText, cancelText, onConfirm, onCancel }) {
+  const overlay = document.createElement('div');
+  overlay.className = 'app-modal-overlay';
+  overlay.innerHTML = `
+    <div class="app-modal">
+      <h3>${title}</h3>
+      <p>${body}</p>
+      <div class="app-modal-actions">
+        <button class="btn-block primary" id="appModalConfirm">${confirmText || 'OK'}</button>
+        <button class="btn-block" id="appModalCancel">${cancelText || 'Cancel'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#appModalConfirm').addEventListener('click', () => { overlay.remove(); if (onConfirm) onConfirm(); });
+  overlay.querySelector('#appModalCancel').addEventListener('click', () => { overlay.remove(); if (onCancel) onCancel(); });
+}
+
+/* ═══════════════════════════ PANELS (side + popover) ═══════════════════════════ */
+
+function openPanel(id) {
+  closeAllPanels();
+  document.getElementById(id).classList.add('show');
+  document.getElementById('backdrop').classList.add('show');
+}
+function closeAllPanels() {
+  document.querySelectorAll('.side-panel').forEach(p => p.classList.remove('show'));
+  document.getElementById('backdrop').classList.remove('show');
+  document.getElementById('netPop').classList.remove('show');
+}
+
+/* ═══════════════════════════ NETWORK POPOVER ═══════════════════════════ */
+
+function renderNetPop() {
+  const statusEl = document.getElementById('netPopStatus');
+  const cachedNote = STATE.cachedRoster ? ` Showing crew/PAX rosters last synced ${fmtDateTime(STATE.cachedRoster.savedAt)}.` : '';
+  if (STATE.serverConfig.enabled) {
+    statusEl.textContent = SyncAdapter.mode === 'live'
+      ? `Connected to LCC Sentinel 3 at ${STATE.serverConfig.host}:${STATE.serverConfig.port}.${STATE.liveData ? ' Crew/PAX rosters loaded live.' : ''}`
+      : SyncAdapter.mode === 'connecting'
+      ? `Connecting to ${STATE.serverConfig.host}:${STATE.serverConfig.port}…${cachedNote}`
+      : `Live mode is on but not connected — retrying ${STATE.serverConfig.host}:${STATE.serverConfig.port}.${cachedNote}`;
+  } else {
+    statusEl.textContent = 'Standalone mode — no connection to the LCC Sentinel 3 server. Multi-tablet sync demo simulated locally (open this file in another tab to test).' + cachedNote;
+  }
+  const list = document.getElementById('peerList');
+  const peers = Object.values(SyncAdapter.peers);
+  if (!peers.length) {
+    list.innerHTML = `<div class="hint">No other tablet detected. Open this file in another tab/window to simulate a second tablet.</div>`;
+  } else {
+    list.innerHTML = peers.map(peer => {
+      const u = peer.number ? getUser(peer.number) : null;
+      const label = u ? `${peer.number} — ${u.role}` : (peer.number || 'Unidentified user');
+      return `<div class="peer-row"><span class="led"></span>${label}</div>`;
+    }).join('');
+  }
+}
+
+/* ═══════════════════════════ SETTINGS ═══════════════════════════ */
+
+function renderSettings() {
+  const u = getUser(STATE.currentUserNumber);
+  document.getElementById('setUserLabel').textContent = `${u.number} — ${u.role}`;
+  document.getElementById('setUserLists').innerHTML = u.lists.map(id => `<span class="assigned-list-chip">${LISTS[id].icon} ${LISTS[id].label}</span>`).join('');
+  document.getElementById('themeToggle').checked = STATE.theme === 'light';
+  document.getElementById('cfgHost').value = STATE.serverConfig.host;
+  document.getElementById('cfgPort').value = STATE.serverConfig.port;
+  document.getElementById('cfgToken').value = STATE.serverConfig.token;
+  document.getElementById('cfgEnabled').checked = !!STATE.serverConfig.enabled;
+  document.getElementById('cfgBackupHost').value = STATE.serverConfig.backupHost || '';
+  document.getElementById('cfgBackupPort').value = STATE.serverConfig.backupPort || '';
+  document.getElementById('fullscreenToggle').checked = isFullscreen();
+  document.getElementById('rosterCacheHint').textContent = STATE.cachedRoster
+    ? `Rosters last synced ${fmtDateTime(STATE.cachedRoster.savedAt)} — available offline on this device.`
+    : 'No roster loaded yet — showing built-in demo data.';
+}
+
+function applyTheme() {
+  document.body.setAttribute('data-theme', STATE.theme);
+}
+
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+function setFullscreen(on) {
+  const el = document.documentElement;
+  if (on) {
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (req) req.call(el).catch(() => {});
+  } else {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document).catch(() => {});
+  }
+}
+
+/* ═══════════════════════════ INIT / EVENTS ═══════════════════════════ */
+
+function init() {
+  STATE = applyNetworkConfigFromUrl(loadState());
+  saveState();
+  applyTheme();
+  SyncAdapter.init();
+  renderNetBadge();
+  renderLogin();
+  renderChatQuick();
+
+  document.getElementById('headerTabs').addEventListener('scroll', updateTabsScrollHint, { passive: true });
+  window.addEventListener('resize', updateTabsScrollHint);
+  document.getElementById('tabsScrollLeft').addEventListener('click', () => {
+    document.getElementById('headerTabs').scrollBy({ left: -220, behavior: 'smooth' });
+  });
+  document.getElementById('tabsScrollRight').addEventListener('click', () => {
+    document.getElementById('headerTabs').scrollBy({ left: 220, behavior: 'smooth' });
+  });
+
+  document.getElementById('searchInput').addEventListener('input', (e) => {
+    document.getElementById('clearSearch').style.display = e.target.value ? 'flex' : 'none';
+    renderList();
+  });
+  document.getElementById('clearSearch').addEventListener('click', () => {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('clearSearch').style.display = 'none';
+    renderList();
+  });
+  document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
+    currentFilter = chip.dataset.f;
+    document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
+    renderList();
+  }));
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.addEventListener('click', () => {
+    listViewMode = btn.dataset.mode;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b === btn));
+    renderList();
+  }));
+
+  document.getElementById('headerUserBtn').addEventListener('click', logout);
+  document.getElementById('btnSwitchUser').addEventListener('click', logout);
+  document.getElementById('listSwitcherBtn').addEventListener('click', () => openPanel('panelListSwitcher'));
+
+  document.getElementById('btnChecklist').addEventListener('click', () => { renderChecklist(); openPanel('panelChecklist'); });
+  document.getElementById('btnHistory').addEventListener('click', openGlobalHistory);
+  document.getElementById('btnChat').addEventListener('click', () => { chatUnread = 0; renderChatDot(); renderChat(); openPanel('panelChat'); });
+  document.getElementById('btnNotif').addEventListener('click', () => { renderNotifBody(); openPanel('panelNotif'); });
+  document.getElementById('btnSettings').addEventListener('click', () => { renderSettings(); openPanel('panelSettings'); });
+
+  document.getElementById('netBadge').addEventListener('click', (e) => {
+    e.stopPropagation();
+    renderNetPop();
+    document.getElementById('netPop').classList.toggle('show');
+  });
+  document.getElementById('btnOpenSettingsFromNet').addEventListener('click', () => { document.getElementById('netPop').classList.remove('show'); renderSettings(); openPanel('panelSettings'); });
+
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeAllPanels));
+  document.getElementById('backdrop').addEventListener('click', closeAllPanels);
+
+  document.getElementById('chatSend').addEventListener('click', () => sendChat(document.getElementById('chatInput').value));
+  document.getElementById('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(e.target.value); });
+
+  document.getElementById('themeToggle').addEventListener('change', (e) => { STATE.theme = e.target.checked ? 'light' : 'dark'; saveState(); applyTheme(); });
+
+  document.getElementById('fullscreenToggle').addEventListener('change', (e) => setFullscreen(e.target.checked));
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => {
+    const cb = document.getElementById('fullscreenToggle');
+    if (cb) cb.checked = isFullscreen();
+  }));
+
+  document.getElementById('btnSaveCfg').addEventListener('click', () => {
+    STATE.serverConfig = {
+      host: document.getElementById('cfgHost').value.trim(),
+      port: document.getElementById('cfgPort').value.trim() || '8765',
+      token: document.getElementById('cfgToken').value.trim(),
+      enabled: document.getElementById('cfgEnabled').checked,
+      backupHost: document.getElementById('cfgBackupHost').value.trim(),
+      backupPort: document.getElementById('cfgBackupPort').value.trim() || '8765',
+    };
+    saveState();
+    SyncAdapter.usingBackup = false;
+    SyncAdapter.unreachableSince = null;
+    if (STATE.serverConfig.enabled && STATE.serverConfig.host) {
+      SyncAdapter.connectLive();
+      showToast('Connecting to LCC Sentinel 3 server…');
+    } else {
+      SyncAdapter.disconnectLive();
+      showToast('Configuration saved — standalone mode');
+    }
+  });
+
+  document.getElementById('btnRequestSync').addEventListener('click', requestSyncNow);
+  document.getElementById('btnDownloadRoster').addEventListener('click', downloadRoster);
+  document.getElementById('btnLoadRoster').addEventListener('click', () => document.getElementById('rosterFileInput').click());
+  document.getElementById('rosterFileInput').addEventListener('change', (e) => {
+    loadRosterFromFile(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  const btnInstallApp = document.getElementById('btnInstallApp');
+  if (btnInstallApp) btnInstallApp.addEventListener('click', installApp);
+
+  document.getElementById('btnExportProximitySync').addEventListener('click', exportProximitySync);
+  document.getElementById('btnExportProximitySyncFromNet').addEventListener('click', exportProximitySync);
+  document.getElementById('btnImportProximitySync').addEventListener('click', () => document.getElementById('proximitySyncFileInput').click());
+  document.getElementById('proximitySyncFileInput').addEventListener('change', (e) => {
+    importProximitySyncFromFile(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  document.getElementById('btnResetDemo').addEventListener('click', () => {
+    if (!confirm('Reset all demo data on this device?')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    STATE = seedDemoData(defaultState());
+    saveState();
+    closeAllPanels();
+    document.getElementById('appShell').classList.add('hidden');
+    document.getElementById('loginScreen').classList.remove('hidden');
+    showToast('Demo data reset');
+  });
+
+  document.addEventListener('click', (e) => {
+    const pop = document.getElementById('netPop');
+    if (pop.classList.contains('show') && !pop.contains(e.target) && e.target.id !== 'netBadge' && !document.getElementById('netBadge').contains(e.target)) {
+      pop.classList.remove('show');
+    }
+  });
+
+  if (STATE.currentUserNumber && getUser(STATE.currentUserNumber)) {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('appShell').classList.remove('hidden');
+    renderAppForUser();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./sw-mustering.js').then(function(reg) {
+      console.log('[SW] Registered, scope:', reg.scope);
+      // See LCC sentinel 3.html's identical comment — a tablet can sit on this page for a long
+      // shift without a fresh navigation, and that's the only time the browser re-checks sw-mustering.js
+      // on its own otherwise (plus a background check roughly every 24h).
+      setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+    }).catch(function(err) {
+      console.warn('[SW] Registration failed:', err);
+    });
+
+    // sw-mustering.js calls self.skipWaiting()+clients.claim() unconditionally (see its 'install'
+    // handler), so a new version takes over the moment it finishes installing — 'controllerchange'
+    // is that moment. Only prompt on a REAL update (a controller already existed before), not on
+    // this tablet's very first install.
+    let hadControllerAtLoad = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      if (hadControllerAtLoad) {
+        showAppModal({
+          title: '🔄 Mise à jour disponible',
+          body: 'Une nouvelle version de LCC Sentinel Mustering a été installée en arrière-plan. Recharger pour l\'utiliser — vos pointages et votre configuration restent enregistrés.',
+          confirmText: 'RECHARGER MAINTENANT',
+          cancelText: 'Plus tard',
+          onConfirm: () => window.location.reload(),
+        });
+      }
+      hadControllerAtLoad = true;
+    });
+  });
+}
+
+/* ═══════════════════════════ PWA INSTALL PROMPT ═══════════════════════════
+   "Add to Home screen" from Chrome's own menu ALWAYS just drops a bookmark shortcut on Android — it
+   is NOT the same thing as a real PWA install (own icon, standalone window, no browser chrome). The
+   real install only happens through the `beforeinstallprompt` flow below, which Chrome only fires
+   when it considers the page installable (valid manifest + registered service worker + served over
+   a TRUSTED origin — see sentinel_server.py's startup banner about accepting the HTTPS certificate
+   on BOTH ports). Exposing an explicit in-app button here is more reliable than hunting for the
+   right wording in Chrome's menu, and its mere presence/absence is a useful diagnostic: if it never
+   appears, Chrome hasn't recognized the page as installable yet — almost always the HTTPS/certificate
+   step, not a manifest problem. */
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const btn = document.getElementById('btnInstallApp');
+  const hint = document.getElementById('installAppHint');
+  if (btn) btn.classList.remove('hidden');
+  if (hint) hint.textContent = 'Installation disponible — cliquez pour installer une vraie app (pas juste un raccourci).';
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  const btn = document.getElementById('btnInstallApp');
+  if (btn) btn.classList.add('hidden');
+  showToast('Application installée ✓');
+});
+function installApp() {
+  if (!deferredInstallPrompt) {
+    showToast("Installation indisponible pour le moment — voir le certificat HTTPS dans les réglages du serveur");
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then((choice) => {
+    if (choice.outcome === 'accepted') showToast('Application installée ✓');
+    deferredInstallPrompt = null;
+    const btn = document.getElementById('btnInstallApp');
+    if (btn) btn.classList.add('hidden');
+  });
+}
+</script>
+</body>
+</html>
