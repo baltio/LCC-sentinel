@@ -26,6 +26,7 @@
 
 import argparse
 import asyncio
+from collections import defaultdict
 import json
 import logging
 import socket
@@ -33,7 +34,7 @@ import ssl
 import sys
 import threading
 from datetime import datetime, timezone
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 # stdout/stderr default to the Windows console codepage (cp1252 on a French
@@ -112,6 +113,25 @@ state_dirty = False
 client_counter = 0
 log = logging.getLogger('sentinel')
 
+HANDSHAKE_NOISE_PATTERNS = (
+    'opening handshake failed',
+    'connection rejected (426 Upgrade Required)',
+    'did not receive a valid HTTP request',
+    'InvalidUpgrade: invalid Connection header: keep-alive',
+    'connection closed while reading HTTP request line',
+)
+handshake_noise_stats = {'total': 0, 'byPattern': defaultdict(int)}
+
+disconnect_diag = {
+    'startedAt': now_iso() if 'now_iso' in globals() else None,
+    'total': 0,
+    'auth': 0,
+    'noAuth': 0,
+    'byIp': defaultdict(lambda: {'count': 0, 'totalDuration': 0.0, 'auth': 0, 'noAuth': 0}),
+    'causes': defaultdict(int),
+}
+DIAG_REPORT_INTERVAL = 300
+
 # ── Sync serveur-a-serveur (principal <-> secours) ──────────────────────────────
 PEER_HOST = None
 PEER_PORT = 8765
@@ -138,7 +158,93 @@ def get_local_ip():
     return '127.0.0.1'
 
 def now_iso():
-    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    # Millisecond resolution matters: this timestamp becomes shared_snapshot_meta['updatedAt'],
+    # which clients compare against their own per-field "last touched" clocks to decide whether
+    # to keep a local edit or accept an incoming one (see LCC sentinel 3's / LCC OSC's
+    # mergeTeamArray). With whole-second resolution (the previous %S-only format), two different
+    # stations' edits landing within the same wall-clock second got IDENTICAL timestamps — found
+    # via a 5-station simultaneous-conflicting-edit stress test: a station would correctly accept
+    # one edit, then a second broadcast sharing that same one-second timestamp would immediately
+    # overwrite it again (touched > incoming uses strict "greater than", so a tie doesn't protect
+    # the value that was *just* accepted), silently reverting a live edit to stale/blank data.
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+
+if disconnect_diag.get('startedAt') is None:
+    disconnect_diag['startedAt'] = now_iso()
+
+
+class HandshakeNoiseFilter(logging.Filter):
+    """Filtre les erreurs de handshake WS non-actionnables (HTTP probe/scans sur port WS)."""
+
+    def filter(self, record):
+        msg = record.getMessage()
+        for pattern in HANDSHAKE_NOISE_PATTERNS:
+            if pattern in msg:
+                handshake_noise_stats['total'] += 1
+                handshake_noise_stats['byPattern'][pattern] += 1
+                return False
+        return True
+
+
+def classify_disconnect_cause(info: dict, close_code):
+    ctx = (info or {}).get('close_context')
+    if ctx:
+        return ctx
+    if close_code is None:
+        return 'transport_closed'
+    return f'ws_close_{close_code}'
+
+
+def register_disconnect(ip: str, duration_s: float, cause: str, is_auth: bool):
+    disconnect_diag['total'] += 1
+    if is_auth:
+        disconnect_diag['auth'] += 1
+    else:
+        disconnect_diag['noAuth'] += 1
+
+    bucket = disconnect_diag['byIp'][ip or 'unknown']
+    bucket['count'] += 1
+    bucket['totalDuration'] += max(0.0, float(duration_s or 0.0))
+    if is_auth:
+        bucket['auth'] += 1
+    else:
+        bucket['noAuth'] += 1
+
+    disconnect_diag['causes'][cause or 'unknown'] += 1
+
+
+def log_diagnostic_report():
+    total = disconnect_diag['total']
+    if total == 0:
+        log.info('[DIAG] Aucun evenement deconnexion depuis le demarrage')
+        return
+
+    by_ip = disconnect_diag['byIp']
+    ip_items = sorted(by_ip.items(), key=lambda item: item[1]['count'], reverse=True)
+    top_ips = []
+    for ip, stats in ip_items[:5]:
+        avg = (stats['totalDuration'] / stats['count']) if stats['count'] else 0.0
+        top_ips.append(f'{ip}: {stats["count"]} deconn., avg {avg:.1f}s')
+
+    causes = disconnect_diag['causes']
+    cause_items = sorted(causes.items(), key=lambda item: item[1], reverse=True)
+    top_causes = ', '.join(f'{name}={count}' for name, count in cause_items[:6]) or 'n/a'
+
+    noise_total = handshake_noise_stats['total']
+    noise_suffix = f' | handshake-noise supprime: {noise_total}' if noise_total else ''
+    log.info(
+        f'[DIAG] Deconnexions: total={total}, auth={disconnect_diag["auth"]}, '
+        f'non-auth={disconnect_diag["noAuth"]}{noise_suffix}'
+    )
+    if top_ips:
+        log.info(f'[DIAG] Top IPs: {" | ".join(top_ips)}')
+    log.info(f'[DIAG] Causes: {top_causes}')
+
+
+async def diagnostic_report_loop():
+    while True:
+        await asyncio.sleep(DIAG_REPORT_INTERVAL)
+        log_diagnostic_report()
 
 def mark_state_dirty():
     global state_dirty
@@ -236,7 +342,17 @@ async def push_state_to_peer():
                 ssl_ctx.verify_mode = ssl.CERT_NONE  # certificat auto-signe, propre a chaque serveur
             async with websockets.connect(url, ssl=ssl_ctx, open_timeout=5) as peer_ws:
                 await peer_ws.send(json.dumps({'type': 'AUTH', 'payload': {'token': '0000', 'profile': {}}}))
-                reply = json.loads(await asyncio.wait_for(peer_ws.recv(), timeout=5))
+                # The peer's AUTH handler broadcasts CLIENT_LIST to every authenticated client
+                # (itself included) BEFORE replying AUTH_OK to the one that just authenticated — a
+                # single recv() here used to grab that CLIENT_LIST instead and misread it as a
+                # rejection, silently aborting the push every single time (found via a dedicated
+                # peer-sync test: the backup server never once received a pushed snapshot). Drain
+                # messages until the real AUTH_OK/AUTH_FAIL shows up, or give up after a few tries.
+                reply = {}
+                for _ in range(5):
+                    reply = json.loads(await asyncio.wait_for(peer_ws.recv(), timeout=5))
+                    if reply.get('type') in ('AUTH_OK', 'AUTH_FAIL'):
+                        break
                 if reply.get('type') != 'AUTH_OK':
                     log.warning(f'[PEER-SYNC] Authentification refusee par {url}: {reply.get("payload")}')
                     return
@@ -282,6 +398,7 @@ async def handler(ws, path='/'):
     global client_counter
     client_counter += 1
     cid = f'C{client_counter:03d}'
+    connected_at = datetime.now(timezone.utc)
     peer = getattr(ws, 'remote_address', None)
     ip   = peer[0] if peer else 'unknown'
 
@@ -305,6 +422,34 @@ async def handler(ws, path='/'):
 
                 if token in PROFILES:
                     prof = PROFILES[token]
+
+                    # ── Anti-doublon de poste ──────────────────────────────────────
+                    # Un seul user par profil a la fois (un seul Bridge, un seul OSC, ...).
+                    # Exemptions : '0000' (lien de secours serveur<->serveur, pas un poste
+                    # humain) et '7007' (Mustering — plusieurs tablettes partagent
+                    # volontairement le meme PIN, voir commentaire sur PROFILES ci-dessus).
+                    if token not in ('0000', '7007'):
+                        dup_ws, dup_info = None, None
+                        for other_ws, other_info in clients.items():
+                            if other_ws is ws:
+                                continue
+                            if other_info.get('authenticated') and other_info.get('profileId') == prof['id']:
+                                dup_ws, dup_info = other_ws, other_info
+                                break
+                        if dup_info:
+                            reason = (f"Poste deja connecte : {dup_info.get('name', prof['name'])} "
+                                      f"({dup_info.get('ip', '?')}) utilise deja ce profil.")
+                            clients[ws]['close_context'] = 'auth_fail_duplicate'
+                            await send_to(ws, {
+                                'type': 'AUTH_FAIL',
+                                'payload': {'reason': reason, 'duplicate': True},
+                                'ts': now_iso(),
+                            })
+                            log.warning(f"[KO] AUTH DUPLICATE: {cid} ({ip}) profil '{prof['id']}' deja utilise par "
+                                        f"{dup_info.get('clientId')} ({dup_info.get('ip')})")
+                            await ws.close(code=4002, reason='auth-duplicate')
+                            return
+
                     display_name = profile_data.get('name') or prof['name']
                     role         = profile_data.get('role') or prof['role']
                     initials     = profile_data.get('initials') or prof['initials']
@@ -331,13 +476,14 @@ async def handler(ws, path='/'):
                     log.info(f'[OK] AUTH: {display_name} / {role} ({cid}) - {ip}')
 
                 else:
+                    clients[ws]['close_context'] = 'auth_fail_empty_token' if not token else 'auth_fail_invalid_token'
                     await send_to(ws, {
                         'type': 'AUTH_FAIL',
                         'payload': {'reason': 'Token invalide — verifier le profil ou le mot de passe'},
                         'ts': now_iso(),
                     })
                     log.warning(f'[KO] AUTH FAIL: {cid} token={repr(token[:30])}')
-                    await ws.close()
+                    await ws.close(code=4001, reason='auth-fail')
                     return
 
             elif not info.get('authenticated'):
@@ -360,7 +506,14 @@ async def handler(ws, path='/'):
                     shared_snapshot = snapshot
                     shared_snapshot_meta = {'updatedBy': cid, 'updatedAt': now_iso()}
                     mark_state_dirty()
-                    save_persistent_state()
+                    # NOT an immediate save_persistent_state() here: STATE_SYNC arrives from every
+                    # connected client roughly every 5s, and a synchronous disk write
+                    # (STATE_FILE.write_text) blocks this single asyncio event loop for every other
+                    # client's message processing (including their HEARTBEAT_ACK) while it runs. With
+                    # several stations syncing at once that adds up to frequent stalls felt by
+                    # everyone. mark_state_dirty() + the periodic autosave_loop (every
+                    # AUTOSAVE_INTERVAL=5s, one write regardless of client count) already guarantees
+                    # the same worst-case data-loss window on an ungraceful shutdown.
                     await broadcast({
                         'type': 'FULL_STATE',
                         'payload': build_full_state_payload(),
@@ -415,12 +568,21 @@ async def handler(ws, path='/'):
     except websockets.exceptions.ConnectionClosedError:
         pass
     except Exception as e:
+        if ws in clients and not clients[ws].get('close_context'):
+            clients[ws]['close_context'] = 'server_exception'
         log.error(f'[ERR] {cid}: {e}')
     finally:
-        clients.pop(ws, None)
+        info = clients.pop(ws, None) or {}
         client_list = get_client_list()
         await broadcast({'type': 'CLIENT_LIST', 'payload': client_list, 'ts': now_iso()})
-        log.info(f'[-] Deconnexion {cid}')
+        close_code = getattr(ws, 'close_code', None)
+        close_reason = getattr(ws, 'close_reason', None) or ''
+        duration_s = (datetime.now(timezone.utc) - connected_at).total_seconds()
+        auth_flag = 'auth' if info.get('authenticated') else 'no-auth'
+        cause = classify_disconnect_cause(info, close_code)
+        register_disconnect(ip=info.get('ip') or ip, duration_s=duration_s, cause=cause, is_auth=bool(info.get('authenticated')))
+        reason_suffix = f" reason={close_reason!r}" if close_reason else ''
+        log.info(f'[-] Deconnexion {cid} ({auth_flag}, code={close_code}, cause={cause}, duree={duration_s:.1f}s){reason_suffix}')
 
 # ── Certificat SSL auto-signé ────────────────────────────────────────────────
 
@@ -451,8 +613,8 @@ def generate_self_signed_cert(local_ip):
             .issuer_name(issuer)
             .public_key(key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(dt.datetime.utcnow())
-            .not_valid_after(dt.datetime.utcnow() + dt.timedelta(days=3650))
+            .not_valid_before(dt.datetime.now(dt.UTC))
+            .not_valid_after(dt.datetime.now(dt.UTC) + dt.timedelta(days=3650))
             .add_extension(x509.SubjectAlternativeName(san_list), critical=False)
             .sign(key, hashes.SHA256())
         )
@@ -566,7 +728,12 @@ def start_http_server(use_https=False):
             self.send_response(404)
             self.end_headers()
 
-    server = HTTPServer((HOST, HTTP_PORT), SilentHandler)
+    # ThreadingHTTPServer (not the plain HTTPServer) — several tablets can hit the app shell /
+    # crew+spaces data files / plan images at once (e.g. right after a reboot, or several crew
+    # opening the PWA around the same moment), and the plain single-threaded HTTPServer serves
+    # one request at a time: every OTHER tablet's request just queues behind whichever transfer
+    # is already in flight, which reads as a random, unexplained hang/timeout to that user.
+    server = ThreadingHTTPServer((HOST, HTTP_PORT), SilentHandler)
     if use_https:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
@@ -576,8 +743,26 @@ def start_http_server(use_https=False):
     return server
 
 
+def _quiet_asyncio_exception_handler(loop, context):
+    """Windows' ProactorEventLoop logs a full traceback from its own internal socket-teardown
+    callback (_call_connection_lost -> sock.shutdown()) whenever a client's TCP connection is
+    already gone by the time the loop gets around to closing it — completely normal when several
+    tablets drop at once (Wi-Fi AP reboot, power blip, everyone logging off together at shift end;
+    reproduced with a 12-client simultaneous-disconnect load test). It's not a crash and every
+    other client stays fully served, but the scary traceback is easy to mistake for the server
+    dying if someone is watching the console. Downgrade this one known-benign case to a one-line
+    debug log; anything else still goes through asyncio's normal (louder) default handling.
+    """
+    exc = context.get('exception')
+    if isinstance(exc, ConnectionResetError):
+        log.debug(f'[NET] Connexion deja fermee cote client (nettoyage normal): {exc}')
+        return
+    loop.default_exception_handler(context)
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 async def main():
+    asyncio.get_running_loop().set_exception_handler(_quiet_asyncio_exception_handler)
     local_ip = get_local_ip()
 
     logging.basicConfig(
@@ -585,6 +770,15 @@ async def main():
         format='%(asctime)s  %(message)s',
         datefmt='%H:%M:%S',
     )
+    handshake_filter = HandshakeNoiseFilter()
+    root_logger = logging.getLogger()
+    for handler_obj in root_logger.handlers:
+        handler_obj.addFilter(handshake_filter)
+
+    # Plusieurs erreurs de handshake sont du bruit normal (probe HTTP sur port WS).
+    # On garde quand meme les logs sentinel utiles via notre logger applicatif.
+    logging.getLogger('websockets.server').setLevel(logging.INFO)
+    logging.getLogger('websockets.asyncio.server').setLevel(logging.INFO)
 
     restored = load_persistent_state()
 
@@ -661,6 +855,7 @@ async def main():
     async with websockets.serve(handler, HOST, PORT, ssl=ws_ssl):
         autosave_task = asyncio.create_task(autosave_loop())
         peer_task = asyncio.create_task(peer_sync_loop()) if PEER_HOST else None
+        diag_task = asyncio.create_task(diagnostic_report_loop())
         if PEER_HOST:
             log.info(f'[PEER-SYNC] Actif vers {PEER_HOST}:{PEER_PORT} toutes les {PEER_INTERVAL}s')
         print(f'\n  Serveur actif - en attente de connexions...\n')
@@ -670,6 +865,8 @@ async def main():
             autosave_task.cancel()
             if peer_task:
                 peer_task.cancel()
+            diag_task.cancel()
+            log_diagnostic_report()
             save_persistent_state(force=True)
             http_server.shutdown()
 
