@@ -1,0 +1,3080 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<!-- user-scalable=no / maximum-scale=1.0 are intentional here, not an oversight: this is a
+     fixed-layout tablet kiosk app for the OSC station, and an accidental pinch-zoom mid-incident
+     would distort the touch UI (buttons drifting under fingers) at exactly the wrong moment.
+     Linters (webhint's viewport hint) flag this as an accessibility concern (WCAG 1.4.4 — users
+     who need to zoom can't), which is a fair point in general, but doesn't apply well to a
+     purpose-built kiosk device operated by trained crew rather than the public. Same choice as
+     LCC sentinel 3 — revisit if this ever runs on a general-purpose/BYOD device instead of a
+     dedicated tablet. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>LCC OSC</title>
+<meta name="theme-color" content="#06111F">
+<link rel="manifest" href="manifest-osc.json">
+<link rel="icon" href="assets/img/general/LOGO_CC_RGBv2.ico">
+<link rel="apple-touch-icon" href="assets/img/general/icon-192.png">
+<style>
+/* ============================================================
+   LCC OSC — On-Scene Coordinator tablet companion to LCC Sentinel 3
+   Single self-contained file. Shares network protocol + PIN (3003)
+   with sentinel_server.py so team/fire-sit/medical/plans state stays
+   live-synced with LCC Sentinel 3 and the other Sentinel stations.
+   ============================================================ */
+:root{
+  --oe-navy:#06111F; --oe-navy-mid:#0B1A2E; --oe-navy-light:#112640; --oe-navy-border:#1A3A5C;
+  --ui-scale:1; --font-scale:1;
+  --oe-gold:#5CB8D6; --oe-gold-light:#8DD5ED; --oe-gold-dim:#367A94;
+  --oe-cream:#E4EEF4; --oe-cream-dim:#8BA5B8; --oe-white:#FFFFFF;
+  --fire-primary:#8B1A1A; --fire-light:#C0392B; --fire-glow:rgba(139,26,26,0.3);
+  --medical-primary:#8B0000; --medical-light:#D32F2F; --medical-glow:rgba(211,47,47,0.3);
+  --protect-light:#BB86FC;
+  --status-ok:#27AE60; --status-warn:#F39C12; --status-danger:#E74C3C; --status-info:#2980B9; --status-inactive:#4A5568;
+  --font-display:'Barlow Condensed','Arial Narrow',Impact,sans-serif;
+  --font-ui:'Barlow',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
+  --font-mono:'JetBrains Mono','Consolas','Courier New',monospace;
+  --sp-xs:4px; --sp-sm:8px; --sp-md:16px; --sp-lg:24px; --sp-xl:32px;
+  --radius-sm:4px; --radius-md:8px; --radius-lg:12px; --radius-xl:20px;
+  --transition-fast:150ms ease; --transition-mid:300ms ease;
+  --shadow-gold:0 0 20px rgba(92,184,214,0.25); --shadow-card:0 4px 24px rgba(0,0,0,0.5); --shadow-deep:0 8px 40px rgba(0,0,0,0.7);
+  --sidebar-width:64px; --header-height:52px;
+}
+:root[data-theme="light"]{
+  --oe-navy:#EEF3F7; --oe-navy-mid:#FFFFFF; --oe-navy-light:#F5F8FA; --oe-navy-border:#C7D6E0;
+  --oe-gold:#0F6E93; --oe-gold-light:#128AB8; --oe-gold-dim:#0B4E68;
+  --oe-cream:#0E2233; --oe-cream-dim:#4C6478; --oe-white:#0E2233;
+  --shadow-card:0 4px 18px rgba(15,60,90,0.12); --shadow-deep:0 8px 30px rgba(15,60,90,0.18);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;overscroll-behavior:none;}
+body{
+  background:var(--oe-navy); color:var(--oe-cream); font-family:var(--font-ui);
+  overflow:hidden; -webkit-user-select:none; user-select:none; font-size:calc(16px * var(--font-scale));
+}
+#ui-shell{
+  position:fixed; inset:0; overflow:hidden; transform:scale(var(--ui-scale)); transform-origin:top left;
+  width:calc(100% / var(--ui-scale)); height:calc(100% / var(--ui-scale));
+}
+.display-scale-btn{padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--oe-cream-dim);font-size:11px;font-weight:700;cursor:pointer;min-width:52px;text-align:center;}
+.display-scale-btn.active{background:rgba(92,184,214,0.16);border-color:rgba(92,184,214,0.4);color:var(--oe-gold);}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--oe-navy-border);border-radius:4px;}
+button,input,select,textarea{font-family:var(--font-ui);}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+@keyframes blink{50%{opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Splash ── */
+#splash-screen{position:fixed;inset:0;background:var(--oe-navy);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transition:opacity .5s ease;}
+#splash-screen .splash-icon{width:84px;height:84px;object-fit:contain;filter:drop-shadow(0 0 20px rgba(92,184,214,0.35));}
+#splash-screen .splash-title{font-family:var(--font-display);font-size:30px;font-weight:700;letter-spacing:0.12em;color:var(--oe-gold);}
+#splash-screen .splash-sub{font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:var(--oe-cream-dim);}
+.splash-spinner{width:26px;height:26px;border-radius:50%;border:3px solid rgba(92,184,214,0.2);border-top-color:var(--oe-gold);animation:spin 0.8s linear infinite;margin-top:8px;}
+
+/* ── Login (PIN) ── */
+.login-overlay{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%, var(--oe-navy-light), var(--oe-navy));z-index:9000;display:none;align-items:center;justify-content:center;}
+.login-overlay.show{display:flex;}
+.login-card{width:min(380px,88vw);background:var(--oe-navy-mid);border:1px solid var(--oe-navy-border);border-radius:var(--radius-xl);box-shadow:var(--shadow-deep);padding:28px 24px;text-align:center;}
+.login-title{font-family:var(--font-display);font-size:26px;font-weight:700;color:var(--oe-gold);letter-spacing:0.08em;}
+.login-role{margin-top:2px;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--fire-light);font-weight:700;}
+.login-pin-dots{display:flex;gap:12px;justify-content:center;margin:22px 0 14px;}
+.login-pin-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--oe-navy-border);transition:all .15s;}
+.login-pin-dot.filled{background:var(--oe-gold);border-color:var(--oe-gold);}
+.login-pin-dot.err{border-color:var(--status-danger);background:var(--status-danger);}
+#login-error{min-height:16px;font-size:11px;color:var(--status-danger);font-weight:700;letter-spacing:0.05em;margin-bottom:6px;}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.pin-key{min-height:64px;border-radius:var(--radius-md);border:1px solid var(--oe-navy-border);background:rgba(255,255,255,0.04);color:var(--oe-cream);font-size:22px;font-weight:700;cursor:pointer;transition:all .1s;}
+.pin-key:active{background:rgba(92,184,214,0.18);transform:scale(0.96);}
+.pin-key.wide{font-size:13px;letter-spacing:0.08em;color:var(--oe-cream-dim);}
+.login-hint{margin-top:16px;font-size:9px;color:var(--oe-cream-dim);letter-spacing:0.05em;}
+
+/* ── App shell ── */
+#app{position:fixed;inset:0;display:none;flex-direction:column;opacity:0;transition:opacity .4s ease;}
+#app.visible{display:flex;opacity:1;}
+.app-header{
+  height:var(--header-height);flex-shrink:0;display:flex;align-items:center;gap:10px;padding:0 10px;
+  background:linear-gradient(180deg,var(--oe-navy-mid),var(--oe-navy));border-bottom:1px solid rgba(92,184,214,0.15);
+  z-index:60;
+}
+.header-brand{display:flex;align-items:center;gap:7px;flex-shrink:0;}
+.header-brand img{height:26px;width:26px;object-fit:contain;}
+.header-brand-text{font-family:var(--font-display);font-weight:700;font-size:15px;letter-spacing:0.08em;color:var(--oe-gold);}
+.header-clock{font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--oe-cream);margin-left:auto;text-align:right;}
+.header-date{font-size:8px;color:var(--oe-cream-dim);text-align:right;letter-spacing:0.05em;}
+.header-network{display:flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);cursor:pointer;flex-shrink:0;}
+.network-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.network-dot.anim{animation:pulse 1.2s ease-in-out infinite;}
+.net-label{font-size:9px;font-weight:700;letter-spacing:0.04em;white-space:nowrap;color:var(--oe-cream-dim);}
+.header-icon-btn{width:38px;height:38px;border-radius:var(--radius-md);border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);color:var(--oe-cream);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;position:relative;font-size:16px;}
+.header-icon-btn:active{background:rgba(92,184,214,0.18);}
+.notif-badge{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--status-danger);color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+.header-profile{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 4px;border-radius:999px;background:rgba(231,76,60,0.12);border:1px solid rgba(231,76,60,0.35);flex-shrink:0;cursor:pointer;}
+.profile-avatar{width:28px;height:28px;border-radius:50%;background:var(--fire-light);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;}
+.profile-role{font-size:9px;font-weight:700;color:var(--fire-light);letter-spacing:0.05em;}
+
+.app-body{flex:1;display:flex;overflow:hidden;}
+.app-sidebar{width:var(--sidebar-width);flex-shrink:0;background:linear-gradient(180deg,var(--oe-navy-mid),var(--oe-navy));border-right:1px solid rgba(92,184,214,0.15);display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:3px;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;}
+.app-sidebar::-webkit-scrollbar{display:none;}
+.sidebar-item{width:52px;height:50px;border-radius:var(--radius-md);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;border:1px solid transparent;flex-shrink:0;}
+.sidebar-item:active{background:rgba(92,184,214,0.15);}
+.sidebar-item.active{background:rgba(92,184,214,0.14);border-color:rgba(92,184,214,0.35);}
+.sidebar-item .si-ico{font-size:17px;line-height:1;}
+.sidebar-item .si-lbl{font-size:6.4px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:var(--oe-cream-dim);text-align:center;line-height:1.05;}
+.sidebar-item.active .si-lbl,.sidebar-item.active .si-ico{color:var(--oe-gold);}
+.sidebar-divider{width:30px;height:1px;background:rgba(92,184,214,0.18);margin:4px 0;flex-shrink:0;}
+.sidebar-spacer{flex:1;}
+
+.page-container{flex:1;overflow:hidden;position:relative;display:flex;flex-direction:column;}
+.page{display:none;width:100%;height:100%;overflow-y:auto;padding:10px;flex-direction:column;gap:10px;animation:fadeIn .25s ease;}
+.page.active{display:flex;}
+
+/* ── Shared components ── */
+.card{background:var(--oe-navy-mid);border:1px solid var(--oe-navy-border);border-radius:var(--radius-md);padding:var(--sp-md);box-shadow:var(--shadow-card);}
+.sec-hdr{font-size:12px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--oe-gold);padding:2px 0 6px;border-bottom:1px solid rgba(92,184,214,0.15);margin-bottom:8px;}
+.page-title-row{display:flex;align-items:center;gap:10px;padding:2px 2px 0;flex-shrink:0;}
+.page-title-ico{font-size:26px;}
+.page-title{font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:0.03em;}
+.page-sub{font-size:10px;color:var(--oe-cream-dim);letter-spacing:0.04em;}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;min-height:44px;}
+.btn-gold{background:linear-gradient(135deg,var(--oe-gold),var(--oe-gold-dim));color:#06111F;}
+.btn-ghost{background:rgba(255,255,255,0.06);color:var(--oe-cream);border:1px solid rgba(255,255,255,0.12);}
+.btn-danger{background:var(--fire-primary);color:#fff;}
+.btn-block{width:100%;}
+
+.sit-field{margin-bottom:10px;}
+.sit-label{font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--oe-gold-dim);margin-bottom:3px;display:block;}
+.sit-row{display:flex;align-items:center;gap:6px;}
+.sit-ts{font-family:var(--font-mono);font-size:9px;color:var(--oe-gold-dim);margin-left:auto;}
+.sit-value{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:9px 11px;font-size:14px;color:var(--oe-cream);min-height:20px;}
+.sit-value.empty{color:var(--oe-cream-dim);font-style:italic;}
+.sit-input{background:rgba(255,255,255,0.05);border:1px solid var(--oe-navy-border);border-radius:6px;color:var(--oe-cream);font-size:14px;padding:9px 11px;width:100%;outline:none;}
+.sit-input:focus{border-color:var(--oe-gold-dim);}
+
+/* Fire/Protection team card (large, single-card page) */
+.team-page-card-shell{display:flex;flex:1;min-height:0;}
+.team-page-card-shell > .ftc{flex:1;min-height:0;}
+.ftc{background:var(--oe-navy-mid);border:1px solid var(--oe-navy-border);border-radius:var(--radius-lg);padding:14px;display:flex;flex-direction:column;gap:10px;border-left:5px solid var(--oe-navy-border);min-height:0;}
+.ftc.ptc{background:rgba(187,134,252,0.06);}
+.ftc-member-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+.ftc-member-grid.two-cols{grid-template-columns:repeat(2,minmax(0,1fr));}
+.ftc-member-btn{min-height:56px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);color:var(--oe-cream-dim);font-size:13px;font-weight:700;text-align:center;cursor:pointer;}
+.ftc-member-btn.on-ok{background:rgba(39,174,96,0.2);color:var(--status-ok);border-color:var(--status-ok);}
+.ftc-member-btn.on-missing{background:rgba(231,76,60,0.2);color:var(--status-danger);border-color:var(--status-danger);}
+.ftc-status-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.ftc-status-row.pt{grid-template-columns:repeat(3,1fr);}
+.ftc-btn{min-height:58px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);color:var(--oe-cream-dim);font-size:14px;font-weight:800;letter-spacing:0.04em;cursor:pointer;}
+.ftc-btn.act-standby{background:rgba(39,174,96,0.22);color:var(--status-ok);border-color:var(--status-ok);}
+.ftc-btn.act-o2{background:rgba(230,126,34,0.22);color:#E67E22;border-color:#E67E22;}
+.ftc-btn.act-active{background:rgba(41,128,185,0.22);color:#5DADE2;border-color:#2980B9;}
+.ftc-btn.act-purple{background:rgba(187,134,252,0.22);color:#BB86FC;border-color:#BB86FC;}
+.ftc-btn.act-casualty{background:rgba(192,57,43,0.22);color:#E74C3C;border-color:#C0392B;}
+.ftc-pressure-section{display:flex;flex-direction:column;gap:8px;padding:10px;background:rgba(0,0,0,0.18);border-radius:10px;}
+.ftc-pressure-title{font-size:10px;font-weight:800;letter-spacing:0.08em;color:var(--oe-gold-dim);text-transform:uppercase;}
+.pressure-member-header{display:flex;align-items:center;gap:8px;}
+.pressure-member-lbl{font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--oe-cream-dim);}
+.pressure-val-badge{font-family:var(--font-mono);font-size:18px;font-weight:800;margin-left:auto;}
+.pressure-unit{font-size:10px;color:var(--oe-cream-dim);}
+.pressure-slider{width:100%;height:10px;-webkit-appearance:none;appearance:none;border-radius:5px;outline:none;background:linear-gradient(to right,var(--pslider-fill,#22c55e) var(--pslider-pct,0%),rgba(255,255,255,0.08) var(--pslider-pct,0%));}
+.pressure-slider::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;cursor:pointer;border:3px solid var(--pslider-fill,#22c55e);}
+.ftc-o2{display:none;text-align:center;padding:8px;background:rgba(230,126,34,0.08);border:1px solid rgba(230,126,34,0.25);border-radius:8px;}
+.ftc-o2.show{display:block;}
+.ftc-o2-time{font-family:var(--font-mono);font-size:22px;font-weight:800;}
+.ftc-o2-time.safe{color:var(--status-ok);}
+.ftc-o2-time.caution{color:var(--status-warn);animation:pulse 1.5s ease-in-out infinite;}
+.ftc-o2-time.danger{color:var(--status-danger);animation:blink .5s step-end infinite;}
+.ftc-loc{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:var(--oe-cream);font-size:14px;padding:9px 10px;outline:none;}
+.ftc-note{flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:var(--oe-cream);font-size:13px;padding:8px 10px;resize:none;height:44px;outline:none;font-family:var(--font-ui);}
+.ftc-log-btn{padding:0 12px;min-height:44px;background:rgba(92,184,214,0.1);border:1px solid rgba(92,184,214,0.28);border-radius:8px;color:var(--oe-gold);font-size:12px;font-weight:800;cursor:pointer;}
+.ftc-loc-picker{min-height:50px;padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;font-size:12px;letter-spacing:0.03em;}
+.ftc-loc-picker .ico{font-size:16px;line-height:1;}
+.ftc-hist{display:flex;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto;}
+.ftc-hi{font-size:12px;color:var(--oe-cream-dim);padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);line-height:1.35;}
+.ftc-ht{font-family:var(--font-mono);color:var(--oe-gold-dim);margin-right:6px;font-size:11px;}
+
+/* Team roster (Meeting Point) */
+.team-row{display:flex;flex-direction:column;gap:5px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);}
+.team-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.team-name{font-size:13px;font-weight:800;flex:1;}
+.team-btns{display:flex;gap:5px;}
+.tbtn{padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:transparent;font-size:11px;font-weight:800;cursor:pointer;color:var(--oe-cream-dim);min-height:38px;}
+.tbtn.on-ok{background:rgba(39,174,96,0.2);color:var(--status-ok);border-color:var(--status-ok);}
+.tbtn.on-missing{background:rgba(231,76,60,0.2);color:var(--status-danger);border-color:var(--status-danger);}
+.team-missing{display:flex;flex-wrap:wrap;gap:5px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.06);}
+.missing-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(231,76,60,0.12);border:1px solid rgba(231,76,60,0.3);border-radius:999px;font-size:10px;color:var(--status-danger);}
+.missing-chip button{background:none;border:none;color:var(--status-danger);font-size:13px;cursor:pointer;padding:0;line-height:1;}
+
+/* Evacuation zone grid */
+.evac-zone-list{display:flex;flex-wrap:wrap;gap:6px;}
+.evac-zone-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);font-size:11px;font-weight:700;}
+.evac-zone-chip.st-evacuated{background:rgba(39,174,96,0.2);border-color:rgba(39,174,96,0.5);color:#bff2ce;}
+.evac-zone-chip.st-in-progress{background:rgba(192,57,43,0.2);border-color:rgba(192,57,43,0.5);color:#ffb0a7;}
+.evac-zone-grid{display:flex;flex-direction:column;gap:6px;}
+.evac-zone-grid-head,.evac-zone-grid-row{display:grid;grid-template-columns:64px repeat(4,minmax(0,1fr));gap:6px;align-items:center;}
+.evac-zone-grid-label{color:var(--oe-gold-dim);font-size:10px;font-weight:800;text-transform:uppercase;text-align:center;}
+.evac-zone-deck{font-family:var(--font-mono);font-size:11px;font-weight:800;}
+.evac-zone-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:52px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--oe-cream-dim);font-size:10px;font-weight:800;cursor:pointer;}
+.evac-zone-btn.state-evacuated{background:rgba(25,130,70,0.34);border-color:rgba(39,174,96,0.82);color:#f3fff7;text-shadow:0 1px 0 rgba(8,32,18,0.45);}
+.evac-zone-btn.state-in-progress{background:rgba(176,44,34,0.34);border-color:rgba(231,76,60,0.82);color:#fff4f1;text-shadow:0 1px 0 rgba(48,10,6,0.45);}
+
+/* Medical */
+.victim-list{display:flex;flex-direction:column;gap:6px;}
+.victim-card-mini{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);border-left-width:4px;cursor:pointer;background:rgba(255,255,255,0.02);}
+.victim-card-mini.active{background:rgba(92,184,214,0.1);}
+.victim-card-mini.t1{border-left-color:#E74C3C;} .victim-card-mini.t2{border-left-color:#F39C12;}
+.victim-card-mini.t3{border-left-color:#F1C40F;} .victim-card-mini.t4{border-left-color:#7f8c8d;}
+.triage-badge{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex-shrink:0;}
+.triage-T1{background:#E74C3C;} .triage-T2{background:#F39C12;} .triage-T3{background:#F1C40F;color:#333;} .triage-T4{background:#7f8c8d;}
+.condition-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+.condition-btn{padding:9px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);color:var(--oe-cream-dim);font-size:12px;font-weight:700;cursor:pointer;}
+.condition-btn.selected{background:rgba(92,184,214,0.2);color:var(--oe-gold);border-color:var(--oe-gold-dim);}
+.condition-btn.sel-danger{background:rgba(231,76,60,0.22);color:var(--status-danger);border-color:var(--status-danger);}
+.injury-list{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+.injury-item{display:flex;align-items:center;gap:6px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);font-size:11px;cursor:pointer;}
+.injury-item.selected{background:rgba(211,47,47,0.18);border-color:var(--medical-light);}
+
+/* Plans */
+.plans-toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.plans-toolbar select{background:rgba(255,255,255,0.05);border:1px solid var(--oe-navy-border);border-radius:8px;color:var(--oe-cream);font-size:13px;padding:8px 10px;min-height:42px;}
+.plan-deck-tabs{display:flex;gap:5px;flex-wrap:wrap;}
+.plan-deck-tabs .deck-btn{min-height:34px;padding:0 10px;border-radius:7px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.04);color:var(--oe-cream-dim);font-size:11px;font-weight:800;letter-spacing:0.03em;cursor:pointer;}
+.plan-deck-tabs .deck-btn.active{background:rgba(92,184,214,0.2);border-color:rgba(92,184,214,0.5);color:var(--oe-gold-light);}
+.plan-viewer{flex:1;min-height:280px;border-radius:10px;border:1px solid var(--oe-navy-border);background:#0c1620;position:relative;overflow:hidden;touch-action:none;}
+.plan-viewer canvas{position:absolute;top:0;left:0;}
+.plan-controls{position:absolute;bottom:8px;right:8px;display:flex;gap:5px;z-index:5;}
+.plan-ctrl{width:36px;height:36px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(10,22,40,0.9);color:var(--oe-cream);font-size:16px;cursor:pointer;}
+.plan-ctrl:active{transform:scale(0.97);}
+.plan-zone-chip{position:absolute;top:8px;left:8px;z-index:5;background:rgba(10,22,40,0.9);border:1px solid rgba(92,184,214,0.35);border-radius:6px;padding:5px 10px;font-size:11px;color:var(--oe-cream-dim);max-width:70%;}
+.plan-zones-source{font-size:10px;color:var(--oe-cream-dim);padding:2px 2px 0;}
+.plan-status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.plan-status-btn{padding:9px 6px;border-radius:8px;border:1px solid var(--oe-navy-border);background:rgba(255,255,255,0.03);color:var(--oe-cream-dim);font-size:11px;font-weight:800;cursor:pointer;}
+.plan-status-btn.active{color:#fff;border-color:rgba(255,255,255,0.5);}
+.plan-status-btn.status-ras.active{background:rgba(190,190,190,0.35);}
+.plan-status-btn.status-smoke.active{background:rgba(240,145,58,0.5);}
+.plan-status-btn.status-fire.active{background:rgba(224,64,64,0.55);}
+.plan-status-btn.status-water.active{background:rgba(68,138,255,0.5);}
+.plan-status-btn.status-green.active{background:rgba(58,191,119,0.5);}
+.plan-status-btn.status-violet.active{background:rgba(154,90,214,0.5);}
+.plan-check{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--oe-cream-dim);padding:4px 0;}
+.plan-check input{width:18px;height:18px;}
+.plan-icon-palette{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.plan-icon-item{border:1px solid rgba(92,184,214,0.25);border-radius:8px;background:rgba(255,255,255,0.03);min-height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:9px;font-weight:800;cursor:pointer;}
+.plan-icon-item.placing{border-color:var(--oe-gold);background:rgba(92,184,214,0.2);}
+.plan-token{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;line-height:1;border:1.4px solid transparent;}
+.plan-token.fire{background:#cc2f2f;color:#fff;border-color:#ffd0d0;}
+.plan-token.protection{background:#ffd24a;color:#192534;border-color:#8c6a00;}
+
+:root[data-theme="light"] .btn,
+:root[data-theme="light"] .btn-ghost,
+:root[data-theme="light"] .deck-btn,
+:root[data-theme="light"] .tbtn,
+:root[data-theme="light"] .ftc-btn,
+:root[data-theme="light"] .ftc-member-btn,
+:root[data-theme="light"] .ftc-log-btn,
+:root[data-theme="light"] .header-icon-btn,
+:root[data-theme="light"] .header-network,
+:root[data-theme="light"] .modal-tab,
+:root[data-theme="light"] .modal-chip,
+:root[data-theme="light"] .plan-status-btn,
+:root[data-theme="light"] .plan-icon-item {
+  color:#0a2438;
+  border-color:rgba(10,36,56,0.34);
+}
+
+:root[data-theme="light"] .btn-ghost,
+:root[data-theme="light"] .deck-btn,
+:root[data-theme="light"] .tbtn,
+:root[data-theme="light"] .ftc-btn,
+:root[data-theme="light"] .ftc-member-btn,
+:root[data-theme="light"] .ftc-log-btn,
+:root[data-theme="light"] .header-icon-btn,
+:root[data-theme="light"] .header-network,
+:root[data-theme="light"] .modal-tab,
+:root[data-theme="light"] .modal-chip,
+:root[data-theme="light"] .plan-status-btn,
+:root[data-theme="light"] .plan-icon-item,
+:root[data-theme="light"] .sidebar-item {
+  background:rgba(11,26,46,0.06);
+}
+
+:root[data-theme="light"] .plan-ctrl{background:#ffffff;border-color:#0e2233;color:#0e2233;box-shadow:0 2px 8px rgba(14,34,51,0.2);}
+:root[data-theme="light"] .plan-ctrl:hover{background:#eef3f7;}
+
+:root[data-theme="light"] .btn-ghost:hover,
+:root[data-theme="light"] .deck-btn:hover,
+:root[data-theme="light"] .tbtn:hover,
+:root[data-theme="light"] .ftc-btn:hover,
+:root[data-theme="light"] .ftc-member-btn:hover,
+:root[data-theme="light"] .ftc-log-btn:hover,
+:root[data-theme="light"] .header-icon-btn:hover,
+:root[data-theme="light"] .header-network:hover,
+:root[data-theme="light"] .modal-chip:hover,
+:root[data-theme="light"] .modal-tab:hover,
+:root[data-theme="light"] .plan-status-btn:hover,
+:root[data-theme="light"] .plan-icon-item:hover,
+:root[data-theme="light"] .sidebar-item:hover {
+  background:rgba(11,26,46,0.14);
+  color:#071827;
+  border-color:rgba(10,36,56,0.44);
+}
+
+:root[data-theme="light"] .ftc-member-btn.on-ok,
+:root[data-theme="light"] .ftc-member-btn.on-ok:hover,
+:root[data-theme="light"] .ftc-btn.act-standby,
+:root[data-theme="light"] .ftc-btn.act-standby:hover {
+  background:rgba(25,130,70,0.22);
+  color:#126536;
+  border-color:#198246;
+}
+:root[data-theme="light"] .ftc-btn.act-o2,
+:root[data-theme="light"] .ftc-btn.act-o2:hover {
+  background:rgba(196,93,12,0.2);
+  color:#9A4608;
+  border-color:#C45D0C;
+}
+:root[data-theme="light"] .ftc-btn.act-active,
+:root[data-theme="light"] .ftc-btn.act-active:hover {
+  background:rgba(24,103,159,0.2);
+  color:#12547F;
+  border-color:#18679F;
+}
+:root[data-theme="light"] .ftc-btn.act-purple,
+:root[data-theme="light"] .ftc-btn.act-purple:hover {
+  background:rgba(116,57,168,0.18);
+  color:#653092;
+  border-color:#7439A8;
+}
+:root[data-theme="light"] .ftc-member-btn.on-missing,
+:root[data-theme="light"] .ftc-member-btn.on-missing:hover,
+:root[data-theme="light"] .ftc-btn.act-casualty,
+:root[data-theme="light"] .ftc-btn.act-casualty:hover {
+  background:rgba(192,57,43,0.2);
+  color:#A92F24;
+  border-color:#C0392B;
+}
+
+:root[data-theme="light"] .tbtn.on-ok,
+:root[data-theme="light"] .tbtn.on-ok:hover {
+  background:rgba(25,130,70,0.22);
+  color:#126536;
+  border-color:#198246;
+}
+:root[data-theme="light"] .tbtn.on-missing,
+:root[data-theme="light"] .tbtn.on-missing:hover {
+  background:rgba(192,57,43,0.2);
+  color:#A92F24;
+  border-color:#C0392B;
+}
+:root[data-theme="light"] .btn-danger {
+  color:#FFFFFF;
+  border-color:#8B1A1A;
+}
+
+:root[data-theme="light"] .deck-btn.active,
+:root[data-theme="light"] .deck-btn.active:hover,
+:root[data-theme="light"] .modal-chip.active,
+:root[data-theme="light"] .modal-chip.active:hover,
+:root[data-theme="light"] .modal-tab.active,
+:root[data-theme="light"] .modal-tab.active:hover,
+:root[data-theme="light"] .sidebar-item.active,
+:root[data-theme="light"] .sidebar-item.active:hover,
+:root[data-theme="light"] .plan-icon-item.placing,
+:root[data-theme="light"] .plan-icon-item.placing:hover {
+  background:rgba(15,110,147,0.16);
+  color:#0b4e68;
+  border-color:rgba(11,78,104,0.5);
+}
+
+:root[data-theme="light"] .plan-status-btn.status-ras.active,
+:root[data-theme="light"] .plan-status-btn.status-ras.active:hover {
+  background:rgba(90,100,110,0.22);
+  color:#25313A;
+  border-color:#5A646E;
+}
+:root[data-theme="light"] .plan-status-btn.status-smoke.active,
+:root[data-theme="light"] .plan-status-btn.status-smoke.active:hover {
+  background:rgba(214,105,13,0.24);
+  color:#813D00;
+  border-color:#D6690D;
+}
+:root[data-theme="light"] .plan-status-btn.status-fire.active,
+:root[data-theme="light"] .plan-status-btn.status-fire.active:hover {
+  background:rgba(192,57,43,0.22);
+  color:#8D2018;
+  border-color:#C0392B;
+}
+:root[data-theme="light"] .plan-status-btn.status-water.active,
+:root[data-theme="light"] .plan-status-btn.status-water.active:hover {
+  background:rgba(37,99,190,0.2);
+  color:#164E91;
+  border-color:#2563BE;
+}
+:root[data-theme="light"] .plan-status-btn.status-green.active,
+:root[data-theme="light"] .plan-status-btn.status-green.active:hover {
+  background:rgba(25,130,70,0.2);
+  color:#116132;
+  border-color:#198246;
+}
+:root[data-theme="light"] .plan-status-btn.status-violet.active,
+:root[data-theme="light"] .plan-status-btn.status-violet.active:hover {
+  background:rgba(116,57,168,0.18);
+  color:#632D8C;
+  border-color:#7439A8;
+}
+
+:root[data-theme="light"] .loc-list-item.on-ok .loc-badge {
+  color:#126536;
+  background:rgba(25,130,70,0.16);
+}
+:root[data-theme="light"] .loc-list-item.on-missing .loc-badge {
+  color:#A92F24;
+  background:rgba(192,57,43,0.16);
+}
+
+:root[data-theme="light"] .plan-zone-chip,
+:root[data-theme="light"] .plan-zones-source,
+:root[data-theme="light"] .plan-check,
+:root[data-theme="light"] .loc-list-item,
+:root[data-theme="light"] .loc-list-item .loc-badge,
+:root[data-theme="light"] .sidebar-item .si-lbl,
+:root[data-theme="light"] .net-label {
+  color:#13354d;
+}
+
+/* Notification / network drawers */
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:700;display:none;}
+.drawer-overlay.show{display:block;}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(340px,88vw);background:var(--oe-navy-mid);border-left:1px solid var(--oe-navy-border);box-shadow:var(--shadow-deep);z-index:701;padding:14px;display:flex;flex-direction:column;gap:10px;transform:translateX(100%);transition:transform .25s ease;overflow-y:auto;}
+.drawer.show{transform:translateX(0);}
+.drawer-close{align-self:flex-end;width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.06);border:none;color:var(--oe-cream);font-size:16px;cursor:pointer;}
+.notif-entry{padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border-left:3px solid var(--oe-gold-dim);font-size:12px;line-height:1.4;}
+.notif-entry .ne-time{font-family:var(--font-mono);font-size:9px;color:var(--oe-gold-dim);display:block;margin-bottom:2px;}
+
+/* Toasts */
+#toast-container{position:fixed;top:calc(var(--header-height) + 8px);right:8px;z-index:9500;display:flex;flex-direction:column;gap:6px;max-width:88vw;}
+.toast{background:var(--oe-navy-mid);border:1px solid var(--oe-navy-border);border-left:3px solid var(--oe-gold);border-radius:8px;padding:9px 12px;font-size:12px;box-shadow:var(--shadow-card);animation:fadeInUp .2s ease;}
+.toast-error{border-left-color:var(--status-danger);}
+.toast-warn{border-left-color:var(--status-warn);}
+.toast-ok{border-left-color:var(--status-ok);}
+
+/* Generic full-screen modal (location picker, predefined actions, member picker) */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:800;display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease;padding:10px;}
+.modal-box{background:var(--oe-navy-mid);border:1px solid var(--oe-navy-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-deep);width:min(640px,96vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;animation:fadeInUp .2s ease;}
+.modal-header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(92,184,214,0.15);flex-shrink:0;}
+.modal-title{font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--oe-gold);flex:1;}
+.modal-close{width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,0.06);border:none;color:var(--oe-cream);font-size:16px;cursor:pointer;flex-shrink:0;}
+.modal-tabs{display:flex;gap:6px;padding:8px 14px 0;flex-shrink:0;}
+.modal-tab{flex:1;padding:9px 6px;border-radius:8px 8px 0 0;border:1px solid rgba(255,255,255,0.1);border-bottom:none;background:rgba(255,255,255,0.03);color:var(--oe-cream-dim);font-size:12px;font-weight:800;letter-spacing:0.04em;cursor:pointer;}
+.modal-tab.active{background:rgba(92,184,214,0.14);color:var(--oe-gold);}
+.modal-body{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-height:0;}
+.modal-filter-row{display:flex;gap:5px;flex-wrap:wrap;align-items:center;}
+.modal-chip{padding:5px 10px;border-radius:999px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:var(--oe-cream-dim);font-size:11px;font-weight:700;cursor:pointer;}
+.modal-chip.active{background:rgba(92,184,214,0.2);border-color:var(--oe-gold-dim);color:var(--oe-gold);}
+.loc-list{display:flex;flex-direction:column;gap:4px;}
+.loc-list-item{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);cursor:pointer;font-size:13px;text-align:left;width:100%;}
+.loc-list-item .loc-badge{font-family:var(--font-mono);font-size:9px;font-weight:800;color:var(--oe-gold-dim);background:rgba(92,184,214,0.1);border-radius:4px;padding:2px 6px;flex-shrink:0;}
+.loc-list-item.on-ok{background:rgba(39,174,96,0.16);border-color:var(--status-ok);}
+.loc-list-item.on-ok .loc-badge{color:var(--status-ok);background:rgba(39,174,96,0.15);}
+.loc-list-item.on-missing{background:rgba(231,76,60,0.16);border-color:var(--status-danger);}
+.loc-list-item.on-missing .loc-badge{color:var(--status-danger);background:rgba(231,76,60,0.15);}
+.predef-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+.predef-item{display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;border-left-width:4px;border-left-style:solid;background:rgba(255,255,255,0.03);border-top:1px solid rgba(255,255,255,0.06);border-right:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;font-weight:600;cursor:pointer;text-align:left;}
+.modal-plan-viewer{position:relative;height:min(50vh,420px);border-radius:10px;border:1px solid var(--oe-navy-border);background:#0c1620;overflow:hidden;touch-action:none;flex-shrink:0;}
+.modal-plan-viewer canvas{position:absolute;top:0;left:0;}
+.modal-plan-hint{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(10,20,35,0.85);border:1px solid var(--oe-gold-dim);border-radius:6px;padding:4px 10px;font-size:10px;color:var(--oe-gold);pointer-events:none;}
+.modal-plan-feedback{position:absolute;top:8px;left:50%;transform:translateX(-50%);min-height:20px;padding:2px 10px;border-radius:999px;border:1px solid transparent;background:rgba(8,18,30,0.2);font-size:11px;line-height:16px;pointer-events:none;white-space:nowrap;}
+.modal-plan-feedback.ok{color:#c8f5d9;border-color:rgba(88,196,130,0.55);background:rgba(18,58,34,0.72);}
+.modal-plan-feedback.warn{color:#ffe1a6;border-color:rgba(232,176,64,0.6);background:rgba(64,42,14,0.76);}
+
+/* Utility classes — deduplicate the last few static inline styles */
+.u-bg-status-warn{background:var(--status-warn);}
+.u-hidden{display:none;}
+.u-text-right{text-align:right;}
+.u-net-status-text{font-size:12px;color:var(--oe-cream-dim);}
+.u-mt-8{margin-top:8px;}
+.u-fs11-dim{font-size:11px;color:var(--oe-cream-dim);}
+.u-col-gap6{display:flex;flex-direction:column;gap:6px;}
+.u-chat-drawer-width{width:min(400px,92vw);}
+.u-col-gap4{display:flex;flex-direction:column;gap:4px;}
+.u-chat-log{display:flex;flex-direction:column-reverse;gap:4px;flex:1;overflow-y:auto;min-height:120px;}
+
+/* Portrait / touch tuning */
+@media (max-width:900px){
+  .ftc-member-btn{min-height:62px;}
+  .ftc-btn{min-height:64px;font-size:15px;}
+  .tbtn{min-height:44px;font-size:12px;}
+}
+</style>
+</head>
+<body>
+
+<div id="ui-shell">
+<div id="splash-screen">
+  <img class="splash-icon" src="assets/img/general/floconlcc.png" alt="LCC">
+  <div class="splash-title">LCC OSC</div>
+  <div class="splash-sub">On-Scene Coordinator</div>
+  <div class="splash-spinner"></div>
+</div>
+
+<div class="login-overlay" id="login-overlay">
+  <div class="login-card">
+    <div class="login-title">LCC OSC</div>
+    <div class="login-role">On-Scene Coordinator — #103</div>
+    <div class="login-pin-dots" id="login-pin-dots">
+      <div class="login-pin-dot"></div><div class="login-pin-dot"></div><div class="login-pin-dot"></div><div class="login-pin-dot"></div>
+    </div>
+    <div id="login-error"></div>
+    <div class="pin-pad" id="pin-pad"></div>
+    <div class="login-hint">Code PIN à 4 chiffres — poste OSC</div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="app-header">
+    <div class="header-brand">
+      <img src="assets/img/general/floconlcc.png" alt="LCC">
+      <span class="header-brand-text">LCC OSC</span>
+    </div>
+    <div class="header-network" id="header-network" onclick="NetOSC.toggleDrawer()">
+      <span class="network-dot u-bg-status-warn" id="network-dot"></span>
+      <span class="net-label" id="net-label">Standalone</span>
+    </div>
+    <button class="header-icon-btn" id="theme-toggle-btn" onclick="UI.toggleTheme()" title="Jour / Nuit">🌙</button>
+    <button class="header-icon-btn" onclick="ChatOSC.toggleDrawer()" title="Chat — Bridge Comms">
+      💬<span class="notif-badge u-hidden" id="chat-badge">0</span>
+    </button>
+    <button class="header-icon-btn" onclick="UI.toggleNotifDrawer()" title="Notifications">
+      🔔<span class="notif-badge u-hidden" id="notif-badge">0</span>
+    </button>
+    <div class="u-text-right">
+      <div class="header-clock" id="header-time">00:00:00</div>
+      <div class="header-date" id="header-date">—</div>
+    </div>
+    <div class="header-profile">
+      <div class="profile-avatar">OS</div>
+      <div class="profile-role">OSC</div>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <nav class="app-sidebar" id="app-sidebar"></nav>
+    <div class="page-container" id="page-container"></div>
+  </div>
+</div>
+
+<div class="drawer-overlay" id="net-drawer-overlay" onclick="NetOSC.closeDrawer()"></div>
+<div class="drawer" id="net-drawer">
+  <button class="drawer-close" onclick="NetOSC.closeDrawer()">✕</button>
+  <div class="sec-hdr">RÉSEAU</div>
+  <div id="net-drawer-status" class="u-net-status-text"></div>
+  <div class="sit-field">
+    <label class="sit-label">Serveur (host:port)</label>
+    <input class="sit-input" id="net-host-input" placeholder="ex: 192.168.1.50:8765">
+  </div>
+  <button class="btn btn-gold btn-block" onclick="NetOSC.applyHostAndConnect()">CONNECTER</button>
+  <button class="btn btn-ghost btn-block" onclick="NetOSC.goStandalone()">MODE STANDALONE</button>
+  <div class="sec-hdr u-mt-8">PARAMÈTRES RAPIDES</div>
+  <div class="sit-field">
+    <label class="sit-label">TAILLE DE POLICE</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="display-scale-btn" data-display-scale-role="font" data-display-scale-value="0.9" onclick="UI.setDisplayScale('font',0.9)">0.9×</button>
+      <button class="display-scale-btn" data-display-scale-role="font" data-display-scale-value="1" onclick="UI.setDisplayScale('font',1)">1.0×</button>
+      <button class="display-scale-btn" data-display-scale-role="font" data-display-scale-value="1.1" onclick="UI.setDisplayScale('font',1.1)">1.1×</button>
+      <button class="display-scale-btn" data-display-scale-role="font" data-display-scale-value="1.2" onclick="UI.setDisplayScale('font',1.2)">1.2×</button>
+    </div>
+  </div>
+  <div class="sit-field">
+    <label class="sit-label">ÉCHELLE GÉNÉRALE</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="display-scale-btn" data-display-scale-role="ui" data-display-scale-value="0.9" onclick="UI.setDisplayScale('ui',0.9)">0.9×</button>
+      <button class="display-scale-btn" data-display-scale-role="ui" data-display-scale-value="1" onclick="UI.setDisplayScale('ui',1)">1.0×</button>
+      <button class="display-scale-btn" data-display-scale-role="ui" data-display-scale-value="1.1" onclick="UI.setDisplayScale('ui',1.1)">1.1×</button>
+      <button class="display-scale-btn" data-display-scale-role="ui" data-display-scale-value="1.2" onclick="UI.setDisplayScale('ui',1.2)">1.2×</button>
+    </div>
+  </div>
+  <button class="btn btn-ghost btn-block" onclick="UI.resetDisplaySettings()">RÉINITIALISER</button>
+  <div class="sec-hdr u-mt-8">POSTES CONNECTÉS</div>
+  <div id="net-drawer-clients" class="u-fs11-dim">—</div>
+</div>
+
+<div class="drawer-overlay" id="notif-drawer-overlay" onclick="UI.toggleNotifDrawer()"></div>
+<div class="drawer" id="notif-drawer">
+  <button class="drawer-close" onclick="UI.toggleNotifDrawer()">✕</button>
+  <div class="sec-hdr">NOTIFICATIONS</div>
+  <div id="notif-list" class="u-col-gap6"></div>
+</div>
+
+<div class="drawer-overlay" id="chat-drawer-overlay" onclick="ChatOSC.toggleDrawer()"></div>
+<div class="drawer u-chat-drawer-width" id="chat-drawer">
+  <button class="drawer-close" onclick="ChatOSC.toggleDrawer()">✕</button>
+  <div class="sec-hdr">💬 BRIDGE COMMS</div>
+  <div id="chat-presets" class="u-col-gap4"></div>
+  <div class="sit-row"><input class="sit-input" id="chat-input" placeholder="Message pour la passerelle..." onkeydown="if(event.key==='Enter')ChatOSC.sendCustom()"><button class="btn btn-gold" onclick="ChatOSC.sendCustom()">➤</button></div>
+  <div id="chat-log" class="u-chat-log"></div>
+</div>
+
+<div id="toast-container"></div>
+</div>
+
+<script src="assets/js/oe_crew_data.js"></script>
+<script src="assets/js/oe_spaces_data.js"></script>
+<script>
+/* ============================================================
+   LCC OSC — application logic
+   ============================================================ */
+
+/* ── Data model (same shapes as LCC Sentinel 3 for network compat) ── */
+const STATE = {
+  fireTeams: [
+    { id:1, name:'FIRE TEAM ALPHA',  leader:'207', partner:'219', dresser:'415', status:'missing', memberStates:{'207':'missing','219':'missing','415':'missing'}, location:'', o2Start:null, o2Duration:30, notes:[], memberPressures:{} },
+    { id:2, name:'FIRE TEAM BRAVO',  leader:'208', partner:'125', dresser:'416', status:'missing', memberStates:{'208':'missing','125':'missing','416':'missing'}, location:'', o2Start:null, o2Duration:30, notes:[], memberPressures:{} },
+    { id:3, name:'FIRE TEAM CHARLIE',leader:'115', partner:'221', dresser:'417', status:'missing', memberStates:{'115':'missing','221':'missing','417':'missing'}, location:'', o2Start:null, o2Duration:30, notes:[], memberPressures:{} },
+    { id:4, name:'FIRE TEAM DELTA',  leader:'116', partner:'218', dresser:'418', status:'missing', memberStates:{'116':'missing','218':'missing','418':'missing'}, location:'', o2Start:null, o2Duration:30, notes:[], memberPressures:{} },
+  ],
+  protectionTeams: [
+    { id:1, name:'PROTECTION TEAM 1', members:['212','220'], memberStates:{}, status:'missing', location:'', notes:[] },
+    { id:2, name:'PROTECTION TEAM 2', members:['315','615'], memberStates:{}, status:'missing', location:'', notes:[] },
+    { id:3, name:'PROTECTION TEAM 3', members:['118','614'], memberStates:{}, status:'missing', location:'', notes:[] },
+    { id:4, name:'PROTECTION TEAM 4', members:['316','319'], memberStates:{}, status:'missing', location:'', notes:[] },
+  ],
+  meetingTeams: [
+    { id:'OSC',      name:'OSC (On Scene Coordinator)', members:['103','202'], missing:[], status:'missing' },
+    { id:'BRIDGE',   name:'Bridge Team',             members:['101','102','105','106','109','122','133','201','209'], missing:[], status:'missing' },
+    { id:'FIRE_LDR', name:'First Intervention Leader', members:['104'], missing:[], status:'missing' },
+    { id:'FIRST_INT',name:'First Intervention',      members:['104','108','110','112','128','129','204','210','217'], missing:[], status:'missing' },
+    { id:'ENGINE',   name:'Engine Team',             members:['201','202','203','205','206','211','216','222'], missing:[], status:'missing' },
+    { id:'EVAC',     name:'Evacuation Leaders',       members:['301','302','401','701'], missing:[], status:'missing' },
+    { id:'FIRST_EVAC', name:'First Evacuation Team',  members:['701','705','706','721','722','723'], missing:[], status:'missing' },
+    { id:'LIFERAFT_1', name:'Liferaft prep team 1',  members:['609','611'], missing:[], status:'missing' },
+    { id:'LIFERAFT_2', name:'Liferaft prep team 2',  members:['610','612'], missing:[], status:'missing' },
+    { id:'LIFEBOAT_1', name:'Lifeboats prep 1',      members:['113','121','213'], missing:[], status:'missing' },
+    { id:'LIFEBOAT_2', name:'Lifeboats prep 2',      members:['114','120','214'], missing:[], status:'missing' },
+    { id:'RESCUE_PREP', name:'Rescue prep team',     members:['123','215'], missing:[], status:'missing' },
+    { id:'POLAR_TEAM', name:'Polar Kit Team',        members:['111','117','119','124'], missing:[], status:'missing' },
+    { id:'LSA_SUP',   name:'LSA supervisor',         members:['107'], missing:[], status:'missing' },
+    { id:'MEDICAL',  name:'Medical Team',            members:['130','131','132','624','625','626','627','628'], missing:[], status:'missing' },
+    { id:'CROWD_TEAM', name:'Crowd Control Team',    members:['801','304','305','901','902'], missing:[], status:'missing' },
+  ],
+  evac: {
+    decks: ['DECK 10','DECK 09','DECK 08','DECK 07','DECK 06','DECK 05','DECK 04','DECK 03','DECK 02','DECK 01'],
+    mvzs: ['MVZ 4','MVZ 3','MVZ 2','MVZ 1'],
+    selected: [], // {deck, mvz, status:'in-progress'|'evacuated'}
+  },
+  // Read-only mirror of LCC Sentinel 3's Fire page left column ("Bridge Info")
+  fireSit: {
+    fields: {}, // id -> value, same ids as LCC sentinel 3.html FireSit.inputIds
+    stamps: {}, // id -> "HH:MM:SS"
+    staircaseActive: [],
+    pressureActive: [],
+    fireDoorsActive: [],
+  },
+  medical: { victims: [], activeVictimId: null },
+  plans: { zoneStates: {}, markers: [], markersLocked: false, currentDeck: 'DK03' },
+  oscMessages: [],
+  notifications: [],
+  o2Intervals: {},
+  // Per-team, per-field "when did WE last touch this locally" timestamps (ms epoch) — lets
+  // applySnapshot() merge an incoming update field-by-field instead of replacing a whole team
+  // object wholesale. Without this, two edits to the SAME team on two different stations within
+  // one ~5s sync cycle race: whichever side's periodic snapshot lands on the server last simply
+  // overwrites the other's more recent edit to an unrelated field (e.g. B sets status while A's
+  // stale copy still has the old status — A's next sync wipes B's change). Same technique
+  // LCC Sentinel 3 already uses for MusterModule.zoneMemberStates — see mergeTeamArray() below.
+  touched: { fireTeams: {}, protectionTeams: {}, meetingTeams: {} },
+};
+
+/* Last full snapshot received from the network — kept verbatim so our own
+   STATE_SYNC never truncates branches (polar/muster/abandon/…) we don't manage. */
+let lastKnownFullSnapshot = null;
+
+function nowTime(){ return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+
+/* Records that `fields` on team `id` (in touched map `bucket`, e.g. STATE.touched.fireTeams)
+   were just edited locally — call this from every mutator right before syncing. */
+function touchFields(bucket, id, fields){
+  bucket[id] = bucket[id] || {};
+  const now = Date.now();
+  fields.forEach(f => { bucket[id][f] = now; });
+}
+
+/* Field-level merge of a team array against an incoming (network) copy — a proper per-field
+   Last-Write-Wins register, not just "trust whatever the snapshot's overall timestamp says".
+
+   HISTORY / why this looks the way it does: the first version compared a field's local touch
+   time only against the *whole snapshot's* capture time (incomingUpdatedAt). A stress test with
+   5 stations firing simultaneous conflicting edits found that this isn't enough: a bystander
+   station that never touched a field would still blindly relay its own (possibly stale) copy of
+   it on its next periodic sync, stamped with a BRAND NEW server timestamp — and because that
+   timestamp looks "newer" to every other station, a live edit could get silently reverted to
+   stale/blank data purely because an uninvolved relay happened to sync at the wrong moment.
+   Recording "when did I last accept a value for this field" (touchedBucket) closed part of the
+   gap, but not all of it: the relay's OWN recorded time was still "now" (when it accepted/relayed
+   the value), not the TRUE original edit time — so a slightly-later relay could still outrank a
+   genuinely fresher edit that just hadn't reached the relay yet. Reproduced concretely: two
+   stations racing to set a team's location both got silently reverted to "" this way.
+
+   Fix: incoming[idKey]Touched (attached to each team object by buildStateSnapshot, mirroring
+   this station's own touched-bucket) carries the field's TRUE origin timestamp along with the
+   value, end to end, however many relays it passes through. Merge compares against THAT — not
+   the coarse whole-snapshot time — and forwards the true origin time (not "now") when adopting
+   an incoming value, so downstream stations keep making the correct comparison too. */
+function mergeTeamArray(localArr, incomingArr, touchedBucket, incomingUpdatedAt, idKey){
+  idKey = idKey || 'id';
+  if (!Array.isArray(incomingArr)) return localArr;
+  if (!incomingUpdatedAt) return incomingArr;
+  const localById = {};
+  (localArr || []).forEach(item => { localById[item[idKey]] = item; });
+  return incomingArr.map(incoming => {
+    const id = incoming[idKey];
+    const local = localById[id];
+    if (!local) return incoming;
+    const touched = touchedBucket[id] = touchedBucket[id] || {};
+    const incomingTouched = (incoming.__touchedAt) || {};
+    const merged = { ...incoming };
+    delete merged.__touchedAt;
+    Object.keys(local).forEach(field => {
+      const fieldOriginAt = incomingTouched[field] || incomingUpdatedAt; // true origin time if carried, else fall back to the relay's own timestamp
+      if ((touched[field] || 0) > fieldOriginAt) merged[field] = local[field];
+      else touched[field] = fieldOriginAt; // forward the TRUE origin time, not "now"
+    });
+    return merged;
+  });
+}
+/* Attaches this station's own per-field touched-timestamps to each outgoing team object (as
+   __touchedAt), so mergeTeamArray on the receiving end can compare against the field's TRUE
+   origin time instead of just this send's timestamp. Stripped back off by mergeTeamArray before
+   the data is used anywhere else — it's wire metadata, not part of the real team shape. */
+function withTouchedAt(arr, touchedBucket, idKey){
+  idKey = idKey || 'id';
+  return (arr || []).map(item => ({ ...item, __touchedAt: touchedBucket[item[idKey]] || {} }));
+}
+function getCrewMap(){
+  const map = {};
+  if (window.OE_CREW && Array.isArray(window.OE_CREW.crew)) window.OE_CREW.crew.forEach(c => { map[c.safetyNumber] = c; });
+  return map;
+}
+function crewLabel(sn){ const c = getCrewMap()[sn]; return c ? `#${sn} ${c.rank||c.name||''}` : `#${sn}`; }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+/* ============================================================
+   UI — splash, theme, navigation, toasts, notifications
+   ============================================================ */
+const UI = {
+  init(){
+    this.applyTheme(localStorage.getItem('lcc_osc_theme') || 'dark');
+    this.applyDisplaySettings();
+    this.initClock();
+    this.buildSidebar();
+    this.buildPages();
+    setTimeout(() => this.hideSplash(), 900);
+    document.getElementById('splash-screen').addEventListener('click', () => this.hideSplash());
+  },
+  hideSplash(){
+    const splash = document.getElementById('splash-screen');
+    if (!splash || splash.style.display === 'none') return;
+    splash.style.opacity = '0';
+    setTimeout(() => { splash.style.display = 'none'; Login.init(); }, 300);
+  },
+  initClock(){
+    const tick = () => {
+      const d = new Date();
+      const t = document.getElementById('header-time');
+      const dt = document.getElementById('header-date');
+      if (t) t.textContent = d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      if (dt) dt.textContent = d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'}).toUpperCase();
+    };
+    tick(); setInterval(tick, 1000);
+  },
+  toggleTheme(){
+    const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    this.applyTheme(cur === 'light' ? 'dark' : 'light');
+  },
+  applyTheme(theme){
+    if (theme === 'light') document.documentElement.setAttribute('data-theme','light');
+    else document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('lcc_osc_theme', theme);
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+  },
+  getDisplaySettings(){
+    const fontScale = Number(localStorage.getItem('lcc_osc_font_scale') || '1');
+    const uiScale = Number(localStorage.getItem('lcc_osc_ui_scale') || '1');
+    return {
+      fontScale: Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1,
+      uiScale: Number.isFinite(uiScale) && uiScale > 0 ? uiScale : 1,
+    };
+  },
+  applyDisplaySettings(settings){
+    const base = this.getDisplaySettings();
+    const next = { ...base, ...(settings || {}) };
+    const fontScale = Math.max(0.8, Math.min(1.4, Number(next.fontScale) || 1));
+    const uiScale = Math.max(0.8, Math.min(1.4, Number(next.uiScale) || 1));
+    document.documentElement.style.setProperty('--font-scale', String(fontScale));
+    document.documentElement.style.setProperty('--ui-scale', String(uiScale));
+    localStorage.setItem('lcc_osc_font_scale', String(fontScale));
+    localStorage.setItem('lcc_osc_ui_scale', String(uiScale));
+    this.updateDisplayButtons(fontScale, uiScale);
+  },
+  setDisplayScale(kind, value){
+    const current = this.getDisplaySettings();
+    this.applyDisplaySettings(kind === 'font' ? { ...current, fontScale: value } : { ...current, uiScale: value });
+  },
+  resetDisplaySettings(){
+    this.applyDisplaySettings({ fontScale: 1, uiScale: 1 });
+  },
+  updateDisplayButtons(fontScale, uiScale){
+    document.querySelectorAll('[data-display-scale-role="font"]').forEach(btn => {
+      const val = Number(btn.getAttribute('data-display-scale-value'));
+      btn.classList.toggle('active', Math.abs(val - fontScale) < 0.001);
+    });
+    document.querySelectorAll('[data-display-scale-role="ui"]').forEach(btn => {
+      const val = Number(btn.getAttribute('data-display-scale-value'));
+      btn.classList.toggle('active', Math.abs(val - uiScale) < 0.001);
+    });
+  },
+  showToast(msg, type){
+    const c = document.getElementById('toast-container');
+    const el = document.createElement('div');
+    el.className = 'toast' + (type ? ' toast-' + type : '');
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 4000);
+  },
+  notify(text, type){
+    STATE.notifications.unshift({ time: nowTime(), text });
+    STATE.notifications = STATE.notifications.slice(0, 40);
+    this.renderNotifBadge();
+    this.showToast(text, type);
+  },
+  renderNotifBadge(){
+    const badge = document.getElementById('notif-badge');
+    const n = STATE.notifications.length;
+    if (!badge) return;
+    badge.style.display = n ? 'flex' : 'none';
+    badge.textContent = n > 99 ? '99+' : String(n);
+  },
+  toggleNotifDrawer(){
+    const drawer = document.getElementById('notif-drawer');
+    const overlay = document.getElementById('notif-drawer-overlay');
+    const show = !drawer.classList.contains('show');
+    drawer.classList.toggle('show', show);
+    overlay.classList.toggle('show', show);
+    if (show) this.renderNotifList();
+  },
+  renderNotifList(){
+    const el = document.getElementById('notif-list');
+    if (!STATE.notifications.length) { el.innerHTML = '<div style="font-size:11px;color:var(--oe-cream-dim)">Aucune notification</div>'; return; }
+    el.innerHTML = STATE.notifications.map(n => `<div class="notif-entry"><span class="ne-time">${n.time}</span>${escapeHtml(n.text)}</div>`).join('');
+  },
+
+  // Top-to-bottom order (inverted on request from the original bottom-up reading).
+  SIDEBAR: [
+    { group:'main', id:'meeting', ico:'👥', lbl:'MTP' },
+    { group:'main', id:'evac', ico:'🚨', lbl:'EVAC' },
+    { group:'main', id:'fta', ico:'🔥', lbl:'FTA' },
+    { group:'main', id:'ftb', ico:'🔥', lbl:'FTB' },
+    { group:'main', id:'ftc', ico:'🔥', lbl:'FTC' },
+    { group:'main', id:'ftd', ico:'🔥', lbl:'FTD' },
+    { group:'main', id:'pt1', ico:'🛡️', lbl:'PT1' },
+    { group:'main', id:'pt2', ico:'🛡️', lbl:'PT2' },
+    { group:'main', id:'pt3', ico:'🛡️', lbl:'PT3' },
+    { group:'main', id:'pt4', ico:'🛡️', lbl:'PT4' },
+    { group:'main', id:'medical', ico:'🚑', lbl:'MED' },
+    { group:'main', id:'bridgeinfo', ico:'🛳️', lbl:'BRG' },
+    { group:'bottom', id:'plans', ico:'🗺️', lbl:'Plans' },
+  ],
+  buildSidebar(){
+    const nav = document.getElementById('app-sidebar');
+    const main = this.SIDEBAR.filter(x => x.group === 'main');
+    const bottom = this.SIDEBAR.filter(x => x.group === 'bottom');
+    const itemHtml = (p) => `<div class="sidebar-item" data-nav="${p.id}" onclick="UI.navigateTo('${p.id}')"><span class="si-ico">${p.ico}</span><span class="si-lbl">${p.lbl}</span></div>`;
+    nav.innerHTML = main.map(itemHtml).join('') + '<div class="sidebar-divider"></div>' + bottom.map(itemHtml).join('');
+  },
+  buildPages(){
+    const c = document.getElementById('page-container');
+    c.innerHTML = this.SIDEBAR.map(p => `<div class="page" id="page-${p.id}"></div>`).join('');
+  },
+  currentPage: null,
+  navigateTo(id){
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+    const page = document.getElementById('page-' + id);
+    const nav = document.querySelector(`[data-nav="${id}"]`);
+    if (page) page.classList.add('active');
+    if (nav) nav.classList.add('active');
+    this.currentPage = id;
+    Pages.render(id);
+  },
+};
+
+/* ============================================================
+   Login — PIN pad, OSC profile fixed to token 3003
+   ============================================================ */
+const Login = {
+  OSC_TOKEN: '3003',
+  buffer: '',
+  init(){
+    const saved = localStorage.getItem('lcc_osc_profile');
+    this.buildPad();
+    if (saved) { this.enterApp(); return; }
+    this.show();
+  },
+  buildPad(){
+    const pad = document.getElementById('pin-pad');
+    const keys = ['1','2','3','4','5','6','7','8','9','C','0','⌫'];
+    pad.innerHTML = keys.map(k => {
+      const wide = (k === 'C' || k === '⌫') ? ' wide' : '';
+      return `<button class="pin-key${wide}" onclick="Login.press('${k}')">${k}</button>`;
+    }).join('');
+  },
+  show(){ document.getElementById('login-overlay').classList.add('show'); },
+  hide(){ document.getElementById('login-overlay').classList.remove('show'); },
+  press(k){
+    if (k === 'C') { this.buffer = ''; this.renderDots(false); return; }
+    if (k === '⌫') { this.buffer = this.buffer.slice(0,-1); this.renderDots(false); return; }
+    if (this.buffer.length >= 4) return;
+    this.buffer += k;
+    this.renderDots(false);
+    if (this.buffer.length === 4) this.validate();
+  },
+  renderDots(err){
+    const dots = document.querySelectorAll('.login-pin-dot');
+    dots.forEach((d,i) => {
+      d.classList.toggle('filled', i < this.buffer.length && !err);
+      d.classList.toggle('err', !!err);
+    });
+  },
+  validate(){
+    if (this.buffer === this.OSC_TOKEN) {
+      const profile = { id:'osc', role:'OSC', name:'On-Scene Cmdr', initials:'OS', token:this.OSC_TOKEN, color:'#C0392B' };
+      localStorage.setItem('lcc_osc_profile', JSON.stringify(profile));
+      this.enterApp();
+    } else {
+      document.getElementById('login-error').textContent = 'PIN incorrect';
+      this.renderDots(true);
+      setTimeout(() => { this.buffer=''; document.getElementById('login-error').textContent=''; this.renderDots(false); }, 900);
+    }
+  },
+  enterApp(){
+    this.hide();
+    document.getElementById('app').classList.add('visible');
+    UI.navigateTo('meeting');
+    NetOSC.init();
+  },
+};
+
+/* ============================================================
+   NetOSC — WebSocket client, compatible with sentinel_server.py
+   and LCC Sentinel 3's protocol (AUTH / STATE_SYNC / FULL_STATE).
+   Snapshot pass-through avoids truncating branches (polar, muster,
+   abandon, …) this app doesn't understand — see plan §6.
+   ============================================================ */
+const NetOSC = {
+  ws: null,
+  authenticated: false,
+  standalone: false,
+  reconnectDelay: 2000,
+  reconnectTimer: null,
+  syncTimer: null,
+  heartbeatTimer: null,
+  offlineQueue: [],
+  lastSyncedJson: '',
+  clients: [],
+
+  init(){
+    const host = localStorage.getItem('lcc_osc_net_host') || '';
+    document.getElementById('net-host-input').value = host;
+    if (localStorage.getItem('lcc_osc_standalone') === '1' || !host) { this.goStandalone(true); return; }
+    this.connect(host);
+  },
+  // A corrupted/malformed 'lcc_osc_profile' entry (bad browser storage, stale format from an old
+  // build, third-party storage sanitizer…) must never throw here: connect() and send() both call
+  // this on the hot path, and an uncaught SyntaxError inside connect() permanently kills the
+  // reconnect loop (scheduleReconnect never gets called again) — the app goes silently offline
+  // forever until a manual reload. Same for send(): every outgoing message would throw.
+  getStoredProfile(){
+    try { return JSON.parse(localStorage.getItem('lcc_osc_profile') || '{}') || {}; }
+    catch(e) { return {}; }
+  },
+  toggleDrawer(){
+    const show = !document.getElementById('net-drawer').classList.contains('show');
+    document.getElementById('net-drawer').classList.toggle('show', show);
+    document.getElementById('net-drawer-overlay').classList.toggle('show', show);
+    if (show) this.renderDrawer();
+  },
+  closeDrawer(){
+    document.getElementById('net-drawer').classList.remove('show');
+    document.getElementById('net-drawer-overlay').classList.remove('show');
+  },
+  renderDrawer(){
+    const status = document.getElementById('net-drawer-status');
+    status.textContent = this.standalone ? 'Mode Standalone — aucune connexion serveur.' :
+      (this.authenticated ? 'Connecté et authentifié.' : 'Connexion en cours…');
+    document.getElementById('net-drawer-clients').textContent = this.clients.length
+      ? this.clients.map(c => c.role || c.name || '?').join(', ') : '—';
+  },
+  applyHostAndConnect(){
+    const host = document.getElementById('net-host-input').value.trim();
+    if (!host) return;
+    localStorage.setItem('lcc_osc_net_host', host);
+    localStorage.setItem('lcc_osc_standalone', '0');
+    this.standalone = false;
+    this.connect(host);
+    this.closeDrawer();
+  },
+  goStandalone(silent){
+    this.standalone = true;
+    localStorage.setItem('lcc_osc_standalone', '1');
+    if (this.ws) { try { this.ws.close(); } catch(e){} this.ws = null; }
+    clearTimeout(this.reconnectTimer);
+    this.updateHeaderUI('standalone');
+    if (!silent) this.closeDrawer();
+  },
+  connect(host){
+    this.standalone = false;
+    this.updateHeaderUI('connecting');
+    const profile = this.getStoredProfile();
+    const token = String(profile.token || '').trim();
+    if (!token) {
+      this.standalone = true;
+      localStorage.setItem('lcc_osc_standalone', '1');
+      this.updateHeaderUI('standalone');
+      UI.notify('Connexion bloquee: token OSC vide. Reconnectez-vous via le PIN OSC.');
+      return;
+    }
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    let url = host.includes('://') ? host : `${scheme}://${host}`;
+    try {
+      this.ws = new WebSocket(url);
+    } catch(e) { this.scheduleReconnect(host); return; }
+    this.ws.onopen = () => {
+      this.reconnectDelay = 2000;
+      this.sendRaw({ type:'AUTH', payload:{ token, profile } });
+      this.startHeartbeat();
+    };
+    this.ws.onmessage = (ev) => { try { this.handleMessage(JSON.parse(ev.data)); } catch(e){} };
+    this.ws.onclose = () => {
+      this.authenticated = false;
+      // Don't stomp the 'standalone' pill the AUTH_FAIL handler just set (a rejected
+      // duplicate/invalid token) with a misleading red 'degraded' — this close event is
+      // the server enforcing that rejection, not an unexpected network drop.
+      this.updateHeaderUI(this.standalone ? 'standalone' : 'degraded');
+      this.scheduleReconnect(host);
+    };
+    this.ws.onerror = () => {};
+  },
+  scheduleReconnect(host){
+    clearTimeout(this.reconnectTimer);
+    if (this.standalone) return;
+    this.reconnectTimer = setTimeout(() => this.connect(host), this.reconnectDelay);
+    this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 30000);
+  },
+  startHeartbeat(){
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => this.sendRaw({ type:'HEARTBEAT', payload:{} }), 5000);
+  },
+  startStateSync(){
+    clearInterval(this.syncTimer);
+    this.syncTimer = setInterval(() => {
+      if (!this.authenticated) return;
+      const snapshot = this.buildStateSnapshot();
+      const json = JSON.stringify(snapshot);
+      if (json === this.lastSyncedJson) return;
+      this.lastSyncedJson = json;
+      this.send({ type:'STATE_SYNC', payload:{ snapshot } });
+    }, 5000);
+  },
+  sendRaw(packet){ if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(packet)); },
+  send(data){
+    const profile = this.getStoredProfile();
+    const packet = { ...data, ts: new Date().toISOString(), user: profile.name || 'OSC' };
+    if (this.authenticated && this.ws && this.ws.readyState === WebSocket.OPEN) this.sendRaw(packet);
+    else { this.offlineQueue.push(packet); if (this.offlineQueue.length > 200) this.offlineQueue.shift(); }
+  },
+  flushQueue(){
+    if (!this.offlineQueue.length) return;
+    this.offlineQueue.forEach(p => this.sendRaw(p));
+    this.offlineQueue = [];
+  },
+  buildStateSnapshot(){
+    return {
+      ...(lastKnownFullSnapshot || {}),
+      fire: {
+        teams: withTouchedAt(STATE.meetingTeams, STATE.touched.meetingTeams),
+        fireTeams: withTouchedAt(STATE.fireTeams, STATE.touched.fireTeams),
+      },
+      fireSit: { fields: STATE.fireSit.fields, stamps: STATE.fireSit.stamps, evacSelected: STATE.evac.selected },
+      protection: { teams: withTouchedAt(STATE.protectionTeams, STATE.touched.protectionTeams) },
+      medical: { victims: STATE.medical.victims, activeVictimId: STATE.medical.activeVictimId },
+      plans: { zoneStates: STATE.plans.zoneStates, markers: STATE.plans.markers, markersLocked: STATE.plans.markersLocked },
+      osc: { messages: STATE.oscMessages, currentDeck: STATE.plans.currentDeck },
+    };
+  },
+  sendStateSyncNow(){
+    const snapshot = this.buildStateSnapshot();
+    const json = JSON.stringify(snapshot);
+    this.lastSyncedJson = json;
+    this.send({ type:'STATE_SYNC', payload:{ snapshot } });
+  },
+  handleMessage(msg){
+    switch(msg.type){
+      case 'AUTH_OK':
+        this.authenticated = true;
+        this.clients = msg.payload?.clients || [];
+        this.updateHeaderUI('online');
+        this.flushQueue();
+        this.sendRaw({ type:'REQUEST_SYNC' });
+        this.startStateSync();
+        UI.notify('Connecté au serveur Sentinel');
+        break;
+      case 'AUTH_FAIL': {
+        // Stop auto-retrying with a token the server has just refused (e.g. a duplicate OSC
+        // login, or an invalid PIN) — the previous behaviour kept reconnecting forever every
+        // few seconds with the same rejected token, spamming the server log and the UI with
+        // repeated failures until someone noticed. In-memory only (not persisted) so a page
+        // reload or a manual "CONNECTER" from the network drawer will try again fresh.
+        this.standalone = true;
+        clearTimeout(this.reconnectTimer);
+        this.updateHeaderUI('standalone');
+        const reason = msg.payload?.reason || 'PIN invalide ou refusé par le serveur.';
+        UI.notify('Connexion refusée : ' + reason, 'error');
+        break;
+      }
+      case 'CLIENT_LIST':
+        this.clients = msg.payload?.clients || msg.clients || [];
+        this.updateHeaderUI('online');
+        break;
+      case 'FULL_STATE':
+        this.applyFullState(msg.payload);
+        break;
+      case 'HEARTBEAT_ACK':
+        break;
+      case 'OSC_TEAM_UPDATE':
+        this.applyTeamUpdatePayload(msg.payload);
+        break;
+      case 'OSC_MESSAGE':
+        if (msg.payload?.text) {
+          STATE.oscMessages.unshift({ time: msg.payload.time || nowTime(), text: msg.payload.text, from: msg.user || 'Bridge' });
+          STATE.oscMessages = STATE.oscMessages.slice(0, 50); // bounded — this array rides every STATE_SYNC snapshot
+          ChatOSC.receive();
+          UI.notify(`Bridge: ${msg.payload.text}`);
+        }
+        break;
+      case 'FIRE_SIT_UPDATE':
+        this.applyFireSitPayload(msg.payload);
+        break;
+      default: break;
+    }
+  },
+  applyFullState(state){
+    if (!state) return;
+    if (state.snapshot) {
+      lastKnownFullSnapshot = state.snapshot;
+      const incomingUpdatedAt = state.snapshotMeta?.updatedAt ? new Date(state.snapshotMeta.updatedAt).getTime() : 0;
+      this.applySnapshot(state.snapshot, incomingUpdatedAt);
+    }
+  },
+  applySnapshot(snapshot, incomingUpdatedAt){
+    if (!snapshot || typeof snapshot !== 'object') return;
+    if (snapshot.fire) {
+      if (Array.isArray(snapshot.fire.teams)) STATE.meetingTeams = mergeTeamArray(STATE.meetingTeams, snapshot.fire.teams, STATE.touched.meetingTeams, incomingUpdatedAt);
+      if (Array.isArray(snapshot.fire.fireTeams)) STATE.fireTeams = mergeTeamArray(STATE.fireTeams, snapshot.fire.fireTeams, STATE.touched.fireTeams, incomingUpdatedAt);
+    }
+    if (snapshot.fireSit) this.applyFireSitPayload(snapshot.fireSit);
+    if (snapshot.protection && Array.isArray(snapshot.protection.teams)) {
+      STATE.protectionTeams = mergeTeamArray(STATE.protectionTeams, snapshot.protection.teams, STATE.touched.protectionTeams, incomingUpdatedAt);
+    }
+    if (snapshot.medical) {
+      if (Array.isArray(snapshot.medical.victims)) STATE.medical.victims = snapshot.medical.victims;
+      if (snapshot.medical.activeVictimId !== undefined) STATE.medical.activeVictimId = snapshot.medical.activeVictimId;
+    }
+    if (snapshot.plans) {
+      if (snapshot.plans.zoneStates) STATE.plans.zoneStates = snapshot.plans.zoneStates;
+      if (Array.isArray(snapshot.plans.markers)) STATE.plans.markers = snapshot.plans.markers;
+      if (snapshot.plans.markersLocked !== undefined) STATE.plans.markersLocked = snapshot.plans.markersLocked;
+    }
+    if (snapshot.osc) {
+      if (Array.isArray(snapshot.osc.messages)) STATE.oscMessages = snapshot.osc.messages;
+      if (snapshot.osc.currentDeck) STATE.plans.currentDeck = snapshot.osc.currentDeck;
+    }
+    Pages.renderActive();
+  },
+  applyFireSitPayload(payload){
+    if (!payload) return;
+    if (payload.fields) STATE.fireSit.fields = { ...STATE.fireSit.fields, ...payload.fields };
+    if (payload.stamps) STATE.fireSit.stamps = { ...STATE.fireSit.stamps, ...payload.stamps };
+    if (Array.isArray(payload.staircaseActive)) STATE.fireSit.staircaseActive = payload.staircaseActive;
+    if (Array.isArray(payload.pressureActive)) STATE.fireSit.pressureActive = payload.pressureActive;
+    if (Array.isArray(payload.fireDoorsActive)) STATE.fireSit.fireDoorsActive = payload.fireDoorsActive;
+    if (Array.isArray(payload.evacSelected)) STATE.evac.selected = payload.evacSelected;
+    Pages.renderIfActive('bridgeinfo');
+    Pages.renderIfActive('evac');
+  },
+  applyTeamUpdatePayload(payload){
+    if (!payload) return;
+    if (Array.isArray(payload.fireTeams)) STATE.fireTeams = payload.fireTeams;
+    if (Array.isArray(payload.protectionTeams)) STATE.protectionTeams = payload.protectionTeams;
+    Pages.renderActive();
+  },
+  updateHeaderUI(mode){
+    const cfg = {
+      standalone: { color:'var(--status-warn)', text:'Standalone', anim:false },
+      connecting: { color:'#3498db', text:'Connexion…', anim:true },
+      online:     { color:'var(--status-ok)', text:`${this.clients.length} poste(s)`, anim:true },
+      degraded:   { color:'var(--status-danger)', text:'Hors ligne', anim:false },
+    }[mode] || { color:'var(--status-warn)', text:'Standalone', anim:false };
+    const dot = document.getElementById('network-dot');
+    const label = document.getElementById('net-label');
+    if (dot) { dot.style.background = cfg.color; dot.classList.toggle('anim', cfg.anim); }
+    if (label) label.textContent = cfg.text;
+    this.renderDrawer();
+  },
+};
+
+/* ============================================================
+   Pages — one render function per sidebar entry
+   ============================================================ */
+const Pages = {
+  render(id){
+    // Defensive: one bad render must never take down message handling / the
+    // WebSocket loop with it (a render bug here used to look like an app "crash").
+    try {
+      const fn = this['render_' + id];
+      if (typeof fn === 'function') fn.call(this);
+    } catch (e) { console.error('[Pages] render failed for', id, e); }
+  },
+  _pendingRenderId: null,
+  _renderScheduled: false,
+  /* Coalesce network-driven re-renders onto one requestAnimationFrame instead of
+     rebuilding the DOM once per incoming FULL_STATE — with several stations each
+     syncing every ~5s, the server can broadcast several updates per second, and a
+     full-page rebuild on every single one is what caused the OSC tablet to bog
+     down / crash during sustained multi-station use (see plans page listener leak
+     fix below too). */
+  _scheduleRender(id){
+    this._pendingRenderId = id;
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    requestAnimationFrame(() => {
+      this._renderScheduled = false;
+      const target = this._pendingRenderId;
+      this._pendingRenderId = null;
+      if (!target) return;
+      // Plans is the one page with an interactive canvas (pan/zoom) and a free-text
+      // zone-id input — tearing the whole page down and rebuilding it on every remote
+      // update destroys that in-progress interaction (and was the source of the
+      // resize-listener leak below). A network-driven refresh only needs to redraw
+      // the canvas + tactical panel, not rebuild the DOM.
+      if (target === 'plans' && document.getElementById('plan-canvas')) {
+        try { PlansOSC.redraw(); PlansOSC.refreshTacticalPanel(); }
+        catch (e) { console.error('[Pages] plans soft-refresh failed', e); }
+        return;
+      }
+      this.render(target);
+    });
+  },
+  renderActive(){ if (UI.currentPage) this._scheduleRender(UI.currentPage); },
+  renderIfActive(id){ if (UI.currentPage === id) this._scheduleRender(id); },
+
+  /* ── Meeting Point ── */
+  render_meeting(){
+    const page = document.getElementById('page-meeting');
+    const sorted = [...STATE.meetingTeams].sort((a,b) => a.name.localeCompare(b.name));
+    page.innerHTML = `
+      <div class="page-title-row"><span class="page-title-ico">👥</span><div><div class="page-title">Meeting Point</div><div class="page-sub">Roster complet des équipes — présence</div></div></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${sorted.map(t => this.teamRowHtml(t)).join('')}
+      </div>`;
+  },
+  teamRowHtml(t){
+    const missing = (t.missing || []).map(sn => `<span class="missing-chip">${crewLabel(sn)}<button onclick="MeetingOSC.removeMissing('${t.id}','${sn}');event.stopPropagation()">×</button></span>`).join('');
+    return `
+    <div class="team-row" data-team="${t.id}">
+      <div class="team-row-top">
+        <span class="team-name">${escapeHtml(t.name)}</span>
+        <div class="team-btns">
+          <button class="tbtn ${t.status==='complete'?'on-ok':''}" onclick="MeetingOSC.setStatus('${t.id}','complete')">COMPLETE</button>
+          <button class="tbtn ${t.status==='missing'?'on-missing':''}" onclick="MeetingOSC.setStatus('${t.id}','missing')">MISSING</button>
+          ${t.members.length ? `<button class="tbtn" onclick="MeetingOSC.openMemberModal('${t.id}')">👥 Crew</button>` : ''}
+        </div>
+      </div>
+      ${missing ? `<div class="team-missing">${missing}</div>` : ''}
+    </div>`;
+  },
+
+  /* ── Evacuation ── */
+  render_evac(){
+    const page = document.getElementById('page-evac');
+    const head = `<div class="evac-zone-grid-head"><div class="evac-zone-grid-label">Pont</div>${STATE.evac.mvzs.map(m=>`<div class="evac-zone-grid-label">${m}</div>`).join('')}</div>`;
+    const rows = STATE.evac.decks.map(deck => {
+      const cells = STATE.evac.mvzs.map(mvz => {
+        const found = STATE.evac.selected.find(z => z.deck===deck && z.mvz===mvz);
+        const state = found ? found.status : 'neutral';
+        const label = state==='evacuated' ? 'EVACUATED' : state==='in-progress' ? 'IN PROGRESS' : '—';
+        return `<button class="evac-zone-btn state-${state}" onclick="EvacOSC.toggleZone('${deck}','${mvz}')"><span>${mvz.replace('MVZ ','MVZ')}</span><span>${label}</span></button>`;
+      }).join('');
+      return `<div class="evac-zone-grid-row"><div class="evac-zone-deck">${deck}</div>${cells}</div>`;
+    }).join('');
+    const chips = STATE.evac.selected.length ? STATE.evac.selected.map(z => `<span class="evac-zone-chip st-${z.status}">${z.deck} ${z.mvz} — ${z.status==='evacuated'?'EVACUATED':'IN PROGRESS'}</span>`).join('') : '<span style="color:var(--oe-cream-dim);font-size:11px">Aucune zone sélectionnée</span>';
+    page.innerHTML = `
+      <div class="page-title-row"><span class="page-title-ico">🚨</span><div><div class="page-title">Evacuation Zones</div><div class="page-sub">Tap: neutre → en cours → évacuée → neutre</div></div></div>
+      <div class="card"><div class="sec-hdr">ZONES SÉLECTIONNÉES</div><div class="evac-zone-list">${chips}</div>
+        <button class="btn btn-ghost u-mt-8" onclick="EvacOSC.clearAll()">RESET</button>
+      </div>
+      <div class="card" style="flex:1;overflow-y:auto"><div class="evac-zone-grid">${head}${rows}</div></div>`;
+  },
+
+  /* ── Fire Team A-D ── */
+  FT_MAP: { fta:1, ftb:2, ftc:3, ftd:4 },
+  render_fta(){ this.renderFireTeamPage('fta'); },
+  render_ftb(){ this.renderFireTeamPage('ftb'); },
+  render_ftc(){ this.renderFireTeamPage('ftc'); },
+  render_ftd(){ this.renderFireTeamPage('ftd'); },
+  renderFireTeamPage(pageId){
+    const num = this.FT_MAP[pageId];
+    const t = STATE.fireTeams.find(x => x.id === num);
+    const page = document.getElementById('page-' + pageId);
+    if (!t) { page.innerHTML = ''; return; }
+    const shortName = 'FT' + String.fromCharCode(64+num);
+    page.innerHTML = `
+      <div class="page-title-row"><span class="page-title-ico">🔥</span><div><div class="page-title">${shortName}</div><div class="page-sub">${escapeHtml(t.name)}</div></div></div>
+      <div class="team-page-card-shell">${FireOSC.cardHtml(t)}</div>`;
+    FireOSC.reconcileO2(t);
+  },
+
+  /* ── Protection Team 1-4 ── */
+  render_pt1(){ this.renderProtectionPage('pt1'); },
+  render_pt2(){ this.renderProtectionPage('pt2'); },
+  render_pt3(){ this.renderProtectionPage('pt3'); },
+  render_pt4(){ this.renderProtectionPage('pt4'); },
+  renderProtectionPage(pageId){
+    const num = parseInt(pageId.replace('pt',''),10);
+    const t = STATE.protectionTeams.find(x => x.id === num);
+    const page = document.getElementById('page-' + pageId);
+    if (!t) { page.innerHTML = ''; return; }
+    page.innerHTML = `
+      <div class="page-title-row"><span class="page-title-ico">🛡️</span><div><div class="page-title">PT${num}</div><div class="page-sub">${escapeHtml(t.name)}</div></div></div>
+      <div class="team-page-card-shell">${ProtectionOSC.cardHtml(t)}</div>`;
+  },
+
+  /* ── Medical ── */
+  render_medical(){
+    const page = document.getElementById('page-medical');
+    const v = STATE.medical.victims;
+    const active = v.find(x => x.id === STATE.medical.activeVictimId);
+    page.innerHTML = `
+      <div class="page-title-row"><span class="page-title-ico">🚑</span><div><div class="page-title">Medical</div><div class="page-sub">${v.length} victime(s)</div></div></div>
+      <button class="btn btn-danger btn-block" onclick="MedicalOSC.addVictim()">+ ADD VICTIM</button>
+      <div class="victim-list">${v.map(x => `
+        <div class="victim-card-mini ${x.triage.toLowerCase()} ${x.id===STATE.medical.activeVictimId?'active':''}" onclick="MedicalOSC.select('${x.id}')">
+          <span class="triage-badge triage-${x.triage}">${x.triage}</span>
+          <span style="flex:1;font-size:13px;font-weight:700">${escapeHtml(x.name||'Victime '+x.number)}</span>
+          <span style="font-size:10px;color:var(--oe-cream-dim)">${escapeHtml(x.location||'')}</span>
+        </div>`).join('') || '<div style="font-size:11px;color:var(--oe-cream-dim)">Aucune victime enregistrée</div>'}</div>
+      ${active ? MedicalOSC.sheetHtml(active) : ''}`;
+  },
+
+  /* ── Bridge Info (read-only) ── */
+  BRIDGE_FIELDS: [
+    ['fire-location','Fire location'], ['fire-meeting','Meeting point OSC'],
+    ['fire-vent','Ventilation stopped'], ['fire-ultrafog','Ultrafog'],
+    ['fire-qcv','Quick closing valves'], ['fire-elec','Electricity cut'],
+    ['fire-casualties','Casualties'],
+  ],
+  render_bridgeinfo(){
+    const page = document.getElementById('page-bridgeinfo');
+    const f = STATE.fireSit.fields, s = STATE.fireSit.stamps;
+    const staircase = (STATE.fireSit.staircaseActive || []).filter(v => /^[ABC]$/i.test(String(v || '').trim()));
+    const fireLocker = (STATE.fireSit.staircaseActive || []).filter(v => /^(1|2|3|4)$/.test(String(v || '').trim()));
+    const fireDoors = (STATE.fireSit.fireDoorsActive || []).map(v => String(v || '').trim()).filter(Boolean);
+    const highPressure = (STATE.fireSit.pressureActive || []).map(v => String(v || '').trim()).filter(Boolean);
+    const formatList = (items) => items.length ? escapeHtml(items.join(', ')) : '—';
+
+    const rows = this.BRIDGE_FIELDS.map(([id,label]) => `
+      <div class="sit-field">
+        <div class="sit-row"><span class="sit-label">${label}</span><span class="sit-ts">${s[id]||''}</span></div>
+        <div class="sit-value ${f[id]?'':'empty'}">${f[id] ? escapeHtml(f[id]) : '—'}</div>
+      </div>`).join('');
+
+    const bridgeOpsRows = `
+      <div class="sit-field">
+        <div class="sit-row"><span class="sit-label">Staircase available</span><span class="sit-ts">${s['fire-staircase']||''}</span></div>
+        <div class="sit-value ${staircase.length ? '' : 'empty'}">${formatList(staircase)}</div>
+      </div>
+      <div class="sit-field">
+        <div class="sit-row"><span class="sit-label">Fire locker</span><span class="sit-ts">${s['fire-staircase']||''}</span></div>
+        <div class="sit-value ${fireLocker.length ? '' : 'empty'}">${formatList(fireLocker)}</div>
+      </div>
+      <div class="sit-field">
+        <div class="sit-row"><span class="sit-label">Fire doors closed</span><span class="sit-ts">${s['fire-firedoors']||''}</span></div>
+        <div class="sit-value ${fireDoors.length ? '' : 'empty'}">${formatList(fireDoors)}</div>
+      </div>
+      <div class="sit-field">
+        <div class="sit-row"><span class="sit-label">Staircase in high pressure</span><span class="sit-ts">${s['fire-pressure']||''}</span></div>
+        <div class="sit-value ${highPressure.length ? '' : 'empty'}">${formatList(highPressure)}</div>
+      </div>`;
+
+    const evac = STATE.evac.selected.length ? STATE.evac.selected.map(z => `<span class="evac-zone-chip st-${z.status}">${z.deck} ${z.mvz}</span>`).join('') : '<span style="color:var(--oe-cream-dim);font-size:11px">—</span>';
+    page.innerHTML = `
+      <div class="page-title-row"><span class="page-title-ico">🛳️</span><div><div class="page-title">Bridge Info</div><div class="page-sub">Lecture seule — synchronisé depuis la passerelle</div></div></div>
+      <div class="card">${rows}${bridgeOpsRows}
+        <div class="sit-field"><span class="sit-label">Evacuation zone</span><div class="evac-zone-list">${evac}</div></div>
+      </div>`;
+  },
+
+  /* ── Plans ── */
+  DECKS: ['DK11','DK10','DK09','DK08','DK07','DK06','DK05','DK04','DK03','DK02','DK01','under'],
+  render_plans(){
+    const page = document.getElementById('page-plans');
+    STATE.plans.currentDeck = PlansOSC._normalizeDeck(STATE.plans.currentDeck || 'DK03');
+    page.innerHTML = `
+      <div class="page-title-row"><span class="page-title-ico">🗺️</span><div><div class="page-title">Plans</div><div class="page-sub">Vue mono-pont — zoom/pan tactile</div></div></div>
+      <div class="plans-toolbar">
+        <div class="plan-deck-tabs">${this.DECKS.map(d=>`<button class="deck-btn ${d===STATE.plans.currentDeck?'active':''}" onclick="PlansOSC.setDeck('${d}',this)">${d==='under'?'UNDER':d}</button>`).join('')}</div>
+        <span style="font-size:10px;color:var(--oe-cream-dim)">Tapez une zone ou appuyez directement sur le plan</span>
+      </div>
+      <div class="plan-zones-source" id="plan-zones-source">${escapeHtml(SpacesData.describeSource())}</div>
+      <div class="plan-viewer" id="plan-viewer">
+        <div class="plan-zone-chip" id="plan-zone-chip">Zone: —</div>
+        <canvas id="plan-canvas"></canvas>
+        <div class="plan-controls">
+          <button class="plan-ctrl" onclick="PlansOSC.zoom(1.45)">+</button>
+          <button class="plan-ctrl" onclick="PlansOSC.zoom(0.69)">–</button>
+          <button class="plan-ctrl" onclick="PlansOSC.resetView()">⟲</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sit-field"><label class="sit-label">Zone sélectionnée</label><input class="sit-input" id="plan-zone-input" placeholder="ex: DK03-MVZ2" value="${escapeHtml(PlansOSC.selectedZoneId)}" oninput="PlansOSC.setSelectedZoneId(this.value)"></div>
+        <div class="sec-hdr">STATUT</div>
+        <div class="plan-status-grid" id="plan-status-grid">${PlansOSC.statusButtonsHtml()}</div>
+        <div id="plan-flags">${PlansOSC.flagsHtml()}</div>
+        <div class="sec-hdr" style="margin-top:6px">ICÔNES TACTIQUES</div>
+        <div class="plan-icon-palette" id="plan-icon-palette">
+          ${PlansOSC.ICONS.map(ic => `<div class="plan-icon-item ${PlansOSC.placingId===ic.id?'placing':''}" onclick="PlansOSC.startPlacing('${ic.id}')">${PlansOSC.iconSwatchHtml(ic)}<span>${ic.label}</span></div>`).join('')}
+        </div>
+        <button class="btn btn-ghost btn-block" style="margin-top:6px" onclick="PlansOSC.clearDeckMarkers()">CLEAR DECK ICONS</button>
+        <div class="sec-hdr" style="margin-top:6px">HISTORIQUE ZONE</div>
+        <div id="plan-zone-history" style="display:flex;flex-direction:column;gap:3px;max-height:120px;overflow-y:auto;font-size:11px;color:var(--oe-cream-dim)">${PlansOSC.historyHtml()}</div>
+      </div>`;
+    PlansOSC.initCanvas();
+  },
+};
+
+/* ============================================================
+   MeetingOSC — team roster (Meeting Point page)
+   ============================================================ */
+const MeetingOSC = {
+  find(id){ return STATE.meetingTeams.find(t => t.id === id); },
+  touch(id, ...fields){ touchFields(STATE.touched.meetingTeams, id, fields); },
+  setStatus(id, status){
+    const t = this.find(id); if (!t) return;
+    t.status = status;
+    if (status === 'complete') { t.missing = []; t.members.forEach(sn => { t.memberStates = t.memberStates||{}; t.memberStates[sn] = 'complete'; }); }
+    this.touch(id, 'status', 'missing', 'memberStates');
+    this.sync(); Pages.render_meeting();
+  },
+  cycleMember(teamId, sn){
+    const t = this.find(teamId); if (!t) return;
+    t.memberStates = t.memberStates || {};
+    const cur = t.memberStates[sn] || 'pending';
+    const next = cur === 'pending' ? 'complete' : cur === 'complete' ? 'missing' : 'pending';
+    t.memberStates[sn] = next;
+    t.missing = t.members.filter(m => t.memberStates[m] === 'missing');
+    t.status = t.missing.length ? 'missing' : (t.members.every(m => t.memberStates[m]==='complete') ? 'complete' : t.status);
+    this.touch(teamId, 'status', 'missing', 'memberStates');
+    this.sync(); Pages.render_meeting();
+    if (document.getElementById('osc-modal-overlay')) this._renderMemberModal(teamId); // keep modal in sync while open
+  },
+  openMemberModal(id){ this._renderMemberModal(id); },
+  _renderMemberModal(id){
+    const t = this.find(id); if (!t) return;
+    const rows = t.members.map(sn => {
+      const st = (t.memberStates||{})[sn] || 'pending';
+      const cls = st === 'complete' ? 'on-ok' : st === 'missing' ? 'on-missing' : '';
+      return `<button class="loc-list-item ${cls}" onclick="MeetingOSC.cycleMember('${id}','${sn}')"><span class="loc-badge">${st.toUpperCase()}</span><span>${crewLabel(sn)}</span></button>`;
+    }).join('');
+    ModalOSC.open(`
+      <div class="modal-header"><span class="modal-title">👥 ${escapeHtml(t.name)}</span><button class="modal-close" onclick="ModalOSC.close()">✕</button></div>
+      <div class="modal-body"><div class="loc-list">${rows}</div></div>`);
+  },
+  removeMissing(teamId, sn){
+    const t = this.find(teamId); if (!t) return;
+    t.missing = (t.missing||[]).filter(m => m !== sn);
+    if (t.memberStates) t.memberStates[sn] = 'pending';
+    this.touch(teamId, 'missing', 'memberStates');
+    this.sync(); Pages.render_meeting();
+  },
+  sync(){ NetOSC.send({ type:'OSC_TEAM_UPDATE', payload:{ changed:{kind:'meeting'}, fireTeams: STATE.fireTeams, protectionTeams: STATE.protectionTeams, meetingTeams: STATE.meetingTeams } }); },
+};
+
+/* ============================================================
+   EvacOSC — Evacuation zones page
+   ============================================================ */
+const EvacOSC = {
+  toggleZone(deck, mvz){
+    const list = STATE.evac.selected;
+    const idx = list.findIndex(z => z.deck===deck && z.mvz===mvz);
+    if (idx === -1) list.push({ deck, mvz, status:'in-progress' });
+    else if (list[idx].status === 'in-progress') list[idx].status = 'evacuated';
+    else list.splice(idx,1);
+    this.sync(); Pages.render_evac();
+    if (typeof PlansOSC !== 'undefined' && typeof PlansOSC.redraw === 'function') PlansOSC.redraw();
+  },
+  clearAll(){ STATE.evac.selected = []; this.sync(); Pages.render_evac(); if (typeof PlansOSC !== 'undefined' && typeof PlansOSC.redraw === 'function') PlansOSC.redraw(); },
+  sync(){ NetOSC.send({ type:'FIRE_SIT_UPDATE', payload:{ fields: STATE.fireSit.fields, stamps: STATE.fireSit.stamps, evacSelected: STATE.evac.selected } }); },
+};
+
+/* ============================================================
+   FireOSC — Fire Team A-D cards (full-page)
+   ============================================================ */
+const FireOSC = {
+  getPressureColor(bar){
+    if (bar===null||bar===undefined) return '#64748b';
+    if (bar>200) return '#22c55e'; if (bar>100) return '#f97316'; return '#ef4444';
+  },
+  pressureSectionHtml(t){
+    const pressures = t.memberPressures || {};
+    const members = [{sn:String(t.leader),label:crewLabel(t.leader)},{sn:String(t.partner),label:crewLabel(t.partner)}];
+    const rows = members.map(({sn,label}) => {
+      const data = pressures[sn] || null;
+      const bar = data ? data.bar : 300;
+      const ts = data ? data.time : '—';
+      const pct = Math.max(0,Math.min(100,(bar/300)*100)).toFixed(1);
+      const color = this.getPressureColor(bar);
+      return `<div class="pressure-member-block">
+        <div class="pressure-member-header">
+          <span class="pressure-member-lbl">${label}</span>
+          <span class="pressure-val-badge" id="osc-press-val-${t.id}-${sn}" style="color:${color}">${bar}</span>
+          <span class="pressure-unit">bar</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--oe-gold);margin-left:6px">${ts}</span>
+          <button class="ftc-log-btn" style="margin-left:auto" onclick="FireOSC.updatePressure(${t.id},'${sn}',document.getElementById('osc-press-slider-${t.id}-${sn}').value)">LOG</button>
+        </div>
+        <input type="range" class="pressure-slider" id="osc-press-slider-${t.id}-${sn}" min="0" max="300" step="5" value="${bar}"
+          style="--pslider-fill:${color};--pslider-pct:${pct}%" oninput="FireOSC.liveUpdatePressure(${t.id},'${sn}',this.value)">
+      </div>`;
+    }).join('');
+    return `<div class="ftc-pressure-section"><div class="ftc-pressure-title">🫁 BA BOTTLE PRESSURE</div>${rows}</div>`;
+  },
+  cardHtml(t){
+    const statusColors = { complete:'var(--status-ok)', o2:'#E67E22', active:'#2980B9', missing:'var(--status-danger)' };
+    const shortName = 'FT' + String.fromCharCode(64 + t.id);
+    const memberBtn = (sn,label) => {
+      const st = (t.memberStates||{})[sn] || 'missing';
+      return `<button class="ftc-member-btn ${st==='complete'?'on-ok':'on-missing'}" onclick="FireOSC.toggleMember(${t.id},'${sn}')">${label}</button>`;
+    };
+    return `
+    <div class="ftc" id="osc-ftc-${t.id}" style="border-left-color:${statusColors[t.status]||'var(--oe-navy-border)'}">
+      <div class="ftc-member-grid">
+        ${memberBtn(t.leader, crewLabel(t.leader))}
+        ${memberBtn(t.partner, crewLabel(t.partner))}
+        ${memberBtn(t.dresser, crewLabel(t.dresser))}
+      </div>
+      ${this.pressureSectionHtml(t)}
+      <div class="ftc-status-row">
+        <button class="ftc-btn ${t.status==='complete'?'act-standby':''}" onclick="FireOSC.setStatus(${t.id},'complete')">COMPLETE</button>
+        <button class="ftc-btn ${t.status==='o2'?'act-o2':''}" onclick="FireOSC.setStatus(${t.id},'o2')">O₂</button>
+        <button class="ftc-btn ${t.status==='active'?'act-active':''}" onclick="FireOSC.setStatus(${t.id},'active')">ACTIVE</button>
+        <button class="ftc-btn ${t.status==='missing'?'act-casualty':''}" onclick="FireOSC.setStatus(${t.id},'missing')">MISS</button>
+      </div>
+      <div class="sit-row">
+        <input class="ftc-loc" id="osc-ft-loc-${t.id}" placeholder="📍 Location..." value="${escapeHtml(t.location||'')}" onchange="FireOSC.updateLoc(${t.id},this.value)">
+        <button class="ftc-log-btn ftc-loc-picker" onclick="LocationOSC.open('${shortName}',document.getElementById('osc-ft-loc-${t.id}').value,v=>{FireOSC.updateLoc(${t.id},v);const el=document.getElementById('osc-ft-loc-${t.id}');if(el)el.value=v;})" title="Sélectionner un local / plan"><span class="ico">📍</span><span>Select location</span></button>
+      </div>
+      <div class="ftc-o2 ${t.status==='o2'?'show':''}"><div class="ftc-o2-time safe" id="osc-ftc-o2-time-${t.id}">00:00</div><div style="font-size:9px;color:var(--oe-cream-dim)">O₂ CHRONO</div></div>
+      <div class="sit-row"><textarea class="ftc-note" id="osc-ft-note-${t.id}" placeholder="Note..."></textarea></div>
+      <div style="display:flex;gap:6px">
+        <button class="ftc-log-btn" style="flex:1" onclick="FireOSC.logNote(${t.id})">LOG</button>
+        <button class="ftc-log-btn" style="flex:1;background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.4);color:#2ecc71" onclick="FireOSC.logAtMP(${t.id})">AT MP</button>
+        <button class="ftc-log-btn" style="flex:1;background:rgba(0,180,216,0.2);border-color:rgba(0,180,216,0.4);color:#00b4d8" onclick="PredefOSC.open('${escapeHtml(t.name)}',(text,time)=>FireOSC.logPredef(${t.id},text,time))">⚡ Actions</button>
+      </div>
+      <div class="ftc-hist">${(t.notes||[]).map(n => `<div class="ftc-hi"><span class="ftc-ht">${n.time}</span>${escapeHtml(n.text)}</div>`).join('')}</div>
+    </div>`;
+  },
+  touch(id, ...fields){ touchFields(STATE.touched.fireTeams, id, fields); },
+  setStatus(id, status){
+    const t = STATE.fireTeams.find(x=>x.id===id); if (!t) return;
+    const prev = t.status; t.status = status;
+    t.memberStates = t.memberStates || {};
+    this.touch(id, 'status', 'memberStates', 'o2Start');
+    if (status === 'complete') [t.leader,t.partner,t.dresser].filter(Boolean).forEach(sn => t.memberStates[sn]='complete');
+    if (status === 'o2' && prev !== 'o2') { t.o2Start = Date.now(); this.startO2(id); }
+    else if (status !== 'o2') this.stopO2(id);
+    this.sync(id); Pages.renderActive();
+  },
+  toggleMember(id, sn){
+    const t = STATE.fireTeams.find(x=>x.id===id); if (!t) return;
+    t.memberStates = t.memberStates || {};
+    t.memberStates[sn] = t.memberStates[sn]==='complete' ? 'missing' : 'complete';
+    const states = Object.values(t.memberStates);
+    if (states.some(s=>s==='missing')) t.status='missing'; else if (t.status==='missing') t.status='complete';
+    this.touch(id, 'status', 'memberStates');
+    this.sync(id); Pages.renderActive();
+  },
+  updateLoc(id, val){ const t=STATE.fireTeams.find(x=>x.id===id); if(!t) return; t.location=val; this.touch(id,'location'); this.sync(id); },
+  logNote(id){
+    const t=STATE.fireTeams.find(x=>x.id===id); const input=document.getElementById('osc-ft-note-'+id);
+    if (!t||!input||!input.value.trim()) return;
+    t.notes.unshift({ time: nowTime(), text: input.value.trim() });
+    t.notes = t.notes.slice(0, 50); // bounded — rides every STATE_SYNC snapshot
+    this.touch(id, 'notes');
+    input.value=''; this.sync(id); Pages.renderActive();
+  },
+  logAtMP(id){
+    const t = STATE.fireTeams.find(x=>x.id===id); if (!t) return;
+    t.notes.unshift({ time: nowTime(), text: 'At the meeting point' });
+    t.notes = t.notes.slice(0, 50);
+    this.touch(id, 'notes');
+    this.sync(id); Pages.renderActive();
+  },
+  logPredef(id, text, time){
+    const t = STATE.fireTeams.find(x=>x.id===id); if (!t) return;
+    t.notes.unshift({ time: time || nowTime(), text });
+    t.notes = t.notes.slice(0, 50);
+    this.touch(id, 'notes');
+    this.sync(id); Pages.renderActive();
+  },
+  liveUpdatePressure(id, sn, raw){
+    const bar = parseInt(raw,10); const color=this.getPressureColor(bar);
+    const val=document.getElementById(`osc-press-val-${id}-${sn}`); if (val){ val.textContent=bar; val.style.color=color; }
+    const slider=document.getElementById(`osc-press-slider-${id}-${sn}`);
+    if (slider) slider.style.setProperty('--pslider-fill',color), slider.style.setProperty('--pslider-pct',Math.max(0,Math.min(100,(bar/300)*100))+'%');
+  },
+  updatePressure(id, sn, raw){
+    const t=STATE.fireTeams.find(x=>x.id===id); if(!t) return;
+    t.memberPressures = t.memberPressures || {};
+    t.memberPressures[sn] = { bar: parseInt(raw,10), time: nowTime() };
+    this.touch(id, 'memberPressures');
+    this.sync(id); Pages.renderActive();
+  },
+  startO2(id){
+    if (STATE.o2Intervals[id]) return;
+    const t = STATE.fireTeams.find(x=>x.id===id); if (!t) return;
+    this.updateO2Chrono(t);
+    STATE.o2Intervals[id] = setInterval(() => this.updateO2Chrono(t), 1000);
+  },
+  updateO2Chrono(t){
+    if (!t.o2Start) return;
+    const elapsed = Math.max(0, Math.floor((Date.now()-t.o2Start)/1000));
+    const m = String(Math.floor(elapsed/60)).padStart(2,'0'), s = String(elapsed%60).padStart(2,'0');
+    const pct = t.o2Duration ? (elapsed/(t.o2Duration*60))*100 : 0;
+    const el = document.getElementById('osc-ftc-o2-time-'+t.id);
+    if (el){ el.textContent = `${m}:${s}`; el.className = 'ftc-o2-time ' + (pct>90?'danger':pct>70?'caution':'safe'); }
+  },
+  stopO2(id){
+    if (STATE.o2Intervals[id]) { clearInterval(STATE.o2Intervals[id]); delete STATE.o2Intervals[id]; }
+    const el = document.getElementById('osc-ftc-o2-time-'+id); if (el){ el.textContent='00:00'; el.className='ftc-o2-time safe'; }
+  },
+  reconcileO2(t){ if (t.status==='o2' && t.o2Start) this.startO2(t.id); else this.stopO2(t.id); },
+  sync(changedId){ NetOSC.send({ type:'OSC_TEAM_UPDATE', payload:{ changed:{kind:'fire',teamId:changedId}, fireTeams: STATE.fireTeams, protectionTeams: STATE.protectionTeams } }); },
+};
+
+/* ============================================================
+   ProtectionOSC — Protection Team 1-4 cards (full-page)
+   ============================================================ */
+const ProtectionOSC = {
+  cardHtml(t){
+    const statusColors = { complete:'var(--status-ok)', active:'var(--protect-light)', missing:'var(--status-danger)' };
+    const members = t.members.map(sn => {
+      const st = (t.memberStates||{})[sn] || 'missing';
+      return `<button class="ftc-member-btn ${st==='complete'?'on-ok':'on-missing'}" onclick="ProtectionOSC.toggleMember(${t.id},'${sn}')">${crewLabel(sn)}</button>`;
+    }).join('');
+    const iconId = 'PT' + t.id;
+    return `
+    <div class="ftc ptc" style="border-left-color:${statusColors[t.status]||'var(--oe-navy-border)'}">
+      <div class="ftc-member-grid two-cols">${members}</div>
+      <div class="ftc-status-row pt">
+        <button class="ftc-btn ${t.status==='complete'?'act-standby':''}" onclick="ProtectionOSC.setStatus(${t.id},'complete')">COMPLETE</button>
+        <button class="ftc-btn ${t.status==='active'?'act-purple':''}" onclick="ProtectionOSC.setStatus(${t.id},'active')">ACTIVE</button>
+        <button class="ftc-btn ${t.status==='missing'?'act-casualty':''}" onclick="ProtectionOSC.setStatus(${t.id},'missing')">MISS</button>
+      </div>
+      <div class="sit-row">
+        <input class="ftc-loc" id="osc-pt-loc-${t.id}" placeholder="📍 Location..." value="${escapeHtml(t.location||'')}" onchange="ProtectionOSC.updateLoc(${t.id},this.value)">
+        <button class="ftc-log-btn ftc-loc-picker" onclick="LocationOSC.open('${iconId}',document.getElementById('osc-pt-loc-${t.id}').value,v=>{ProtectionOSC.updateLoc(${t.id},v);const el=document.getElementById('osc-pt-loc-${t.id}');if(el)el.value=v;})" title="Sélectionner un local / plan"><span class="ico">📍</span><span>Select location</span></button>
+      </div>
+      <div class="sit-row"><input class="ftc-note" id="osc-pt-note-${t.id}" placeholder="Note..."></div>
+      <div style="display:flex;gap:6px">
+        <button class="ftc-log-btn" style="flex:1" onclick="ProtectionOSC.logNote(${t.id})">LOG</button>
+        <button class="ftc-log-btn" style="flex:1;background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.4);color:#2ecc71" onclick="ProtectionOSC.logAtMP(${t.id})">AT MP</button>
+        <button class="ftc-log-btn" style="flex:1;background:rgba(0,180,216,0.2);border-color:rgba(0,180,216,0.4);color:#00b4d8" onclick="PredefOSC.open('${escapeHtml(t.name)}',(text,time)=>ProtectionOSC.logPredef(${t.id},text,time))">⚡ Actions</button>
+      </div>
+      <div class="ftc-hist">${(t.notes||[]).map(n => `<div class="ftc-hi"><span class="ftc-ht">${n.time}</span>${escapeHtml(n.text)}</div>`).join('')}</div>
+    </div>`;
+  },
+  touch(id, ...fields){ touchFields(STATE.touched.protectionTeams, id, fields); },
+  setStatus(id, status){
+    const t = STATE.protectionTeams.find(x=>x.id===id); if(!t) return;
+    t.memberStates = t.memberStates || Object.fromEntries(t.members.map(m=>[m,'missing']));
+    t.status = status;
+    if (status==='complete') t.members.forEach(m=>t.memberStates[m]='complete');
+    this.touch(id, 'status', 'memberStates');
+    this.sync(id); Pages.renderActive();
+  },
+  toggleMember(id, sn){
+    const t = STATE.protectionTeams.find(x=>x.id===id); if(!t) return;
+    t.memberStates = t.memberStates||{};
+    t.memberStates[sn] = t.memberStates[sn]==='complete'?'missing':'complete';
+    const states = Object.values(t.memberStates);
+    if (states.some(s=>s==='missing')) t.status='missing'; else if (t.status==='missing') t.status='complete';
+    this.touch(id, 'status', 'memberStates');
+    this.sync(id); Pages.renderActive();
+  },
+  updateLoc(id, val){ const t=STATE.protectionTeams.find(x=>x.id===id); if(!t) return; t.location=val; this.touch(id,'location'); this.sync(id); },
+  logNote(id){
+    const t=STATE.protectionTeams.find(x=>x.id===id); const input=document.getElementById('osc-pt-note-'+id);
+    if (!t||!input||!input.value.trim()) return;
+    t.notes.unshift({ time: nowTime(), text: input.value.trim() });
+    t.notes = t.notes.slice(0, 50); // bounded — rides every STATE_SYNC snapshot
+    this.touch(id, 'notes');
+    input.value=''; this.sync(id); Pages.renderActive();
+  },
+  logAtMP(id){
+    const t = STATE.protectionTeams.find(x=>x.id===id); if (!t) return;
+    t.notes.unshift({ time: nowTime(), text: 'At the meeting point' });
+    t.notes = t.notes.slice(0, 50);
+    this.touch(id, 'notes');
+    this.sync(id); Pages.renderActive();
+  },
+  logPredef(id, text, time){
+    const t = STATE.protectionTeams.find(x=>x.id===id); if (!t) return;
+    t.notes.unshift({ time: time || nowTime(), text });
+    t.notes = t.notes.slice(0, 50);
+    this.touch(id, 'notes');
+    this.sync(id); Pages.renderActive();
+  },
+  sync(changedId){ NetOSC.send({ type:'OSC_TEAM_UPDATE', payload:{ changed:{kind:'protection',teamId:changedId}, fireTeams: STATE.fireTeams, protectionTeams: STATE.protectionTeams } }); },
+};
+
+/* ============================================================
+   MedicalOSC — victims (simplified, no body-diagram SVG)
+   ============================================================ */
+const MedicalOSC = {
+  TRIAGE: ['T1','T2','T3','T4'],
+  INJURIES: ['Laceration','Fracture','Burns','Intoxication','Near-Drowning','Cardiac Arrest','Head Trauma','Hypothermia','Spinal Injury','Chest Injury','Abdominal Injury','Eye Injury'],
+  MEANS: ['AED','Oxygen','Stretcher','Cervical Collar','Backboard','Medical Kit','TMAS Contact','MEDEVAC'],
+  getIdentityCatalog(type){
+    if (type === 'CREW') {
+      return Array.isArray(window.OE_CREW?.crew) ? window.OE_CREW.crew : [];
+    }
+    const paxList = Array.isArray(window.OE_CREW?.pax) ? window.OE_CREW.pax : [];
+    if (paxList.length) return paxList;
+    return Array.isArray(window.OE_CREW?.crew) ? window.OE_CREW.crew : [];
+  },
+  getIdentityFieldLabel(type){ return type === 'CREW' ? 'SAFETY NUMBER' : 'CABIN NUMBER'; },
+  getIdentityPlaceholder(type){ return type === 'CREW' ? 'Safety number...' : 'Cabin number...'; },
+  getIdentityOptionsHtml(type, selectedKey){
+    const list = this.getIdentityCatalog(type);
+    const emptyOption = `<option value="" ${selectedKey ? '' : 'selected'}>— ${type === 'CREW' ? 'SELECT FROM CREW LIST' : 'SELECT FROM PAX LIST'} —</option>`;
+    const options = list.map(entry => {
+      const key = type === 'CREW' ? String(entry?.safetyNumber || '') : String(entry?.cabin || '');
+      if (!key) return '';
+      const name = String(entry?.name || '').trim();
+      const extra = type === 'CREW'
+        ? [entry?.rank, entry?.cabin].filter(Boolean).join(' • ')
+        : [entry?.cabin, entry?.nationality].filter(Boolean).join(' • ');
+      const label = [key, name, extra].filter(Boolean).join(' — ');
+      const selected = String(selectedKey || '') === String(key) ? 'selected' : '';
+      return `<option value="${escapeHtml(key)}" ${selected}>${escapeHtml(label)}</option>`;
+    }).filter(Boolean).join('');
+    return emptyOption + options;
+  },
+  applySelectedPerson(id, key){
+    const v = STATE.medical.victims.find(x => x.id === id);
+    if (!v) return;
+    v.personKey = key || '';
+    if (!key) return;
+    const list = this.getIdentityCatalog(v.victimType || 'PAX');
+    const entry = list.find(item => {
+      const candidate = (v.victimType || 'PAX') === 'CREW' ? String(item?.safetyNumber || '') : String(item?.cabin || '');
+      return String(candidate) === String(key);
+    });
+    if (!entry) return;
+    v.name = String(entry?.name || '');
+    v.cabin = (v.victimType || 'PAX') === 'CREW' ? String(entry?.safetyNumber || '') : String(entry?.cabin || '');
+    v.nationality = String(entry?.nationality || '');
+    v.age = String(entry?.age || '');
+    v.sex = String(entry?.sex || '');
+    this.sync(); Pages.render_medical();
+  },
+  addVictim(){
+    const id = 'v' + Date.now();
+    const number = STATE.medical.victims.length + 1;
+    STATE.medical.victims.push({ id, number, name:'', cabin:'', nationality:'', age:'', sex:'', location:'', personKey:'', triage:'T3', victimType:'PAX', injuries:[], means:[], notes:[] });
+    STATE.medical.activeVictimId = id;
+    this.sync(); Pages.render_medical();
+  },
+  select(id){ STATE.medical.activeVictimId = id; Pages.render_medical(); },
+  update(id, field, val){
+    const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
+    v[field] = val; this.sync();
+  },
+  toggleInjury(id, inj){
+    const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
+    v.injuries = v.injuries.includes(inj) ? v.injuries.filter(i=>i!==inj) : [...v.injuries, inj];
+    this.sync(); Pages.render_medical();
+  },
+  toggleMeans(id, m){
+    const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
+    v.means = v.means.includes(m) ? v.means.filter(x=>x!==m) : [...v.means, m];
+    this.sync(); Pages.render_medical();
+  },
+  setTriage(id, tr){ const v=STATE.medical.victims.find(x=>x.id===id); if(!v) return; v.triage=tr; this.sync(); Pages.render_medical(); },
+  toggleVictimType(id){
+    const v = STATE.medical.victims.find(x => x.id === id);
+    if (!v) return;
+    v.victimType = (v.victimType === 'CREW') ? 'PAX' : 'CREW';
+    v.personKey = '';
+    this.sync(); Pages.render_medical();
+  },
+  logNote(id){
+    const v = STATE.medical.victims.find(x=>x.id===id); const input = document.getElementById('med-note-'+id);
+    if (!v||!input||!input.value.trim()) return;
+    v.notes.unshift({ time: nowTime(), text: input.value.trim() });
+    v.notes = v.notes.slice(0, 50); // bounded — rides every STATE_SYNC snapshot
+    input.value=''; this.sync(); Pages.render_medical();
+  },
+  sync(){ /* medical data rides the periodic STATE_SYNC snapshot (every 5s) — no dedicated push message */ },
+  sheetHtml(v){
+    return `
+    <div class="card">
+      <div class="sec-hdr">TRIAGE</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        ${this.TRIAGE.map(tr => `<button class="tbtn ${v.triage===tr?'on-'+(tr==='T1'?'missing':'ok'):''}" style="flex:1;min-height:44px" onclick="MedicalOSC.setTriage('${v.id}','${tr}')">${tr}</button>`).join('')}
+      </div>
+      <div class="sec-hdr">IDENTITY & LOCATION</div>
+      <button onclick="MedicalOSC.toggleVictimType('${v.id}')"
+        style="display:block;width:100%;margin-bottom:10px;padding:10px 12px;border-radius:8px;border:2px solid ${v.victimType==='CREW' ? 'rgba(92,184,214,0.7)' : 'rgba(240,192,64,0.7)'};background:${v.victimType==='CREW' ? 'rgba(92,184,214,0.2)' : 'rgba(240,192,64,0.2)'};color:${v.victimType==='CREW' ? 'var(--oe-gold)' : '#f0c040'};font-size:13px;font-weight:800;letter-spacing:0.12em;cursor:pointer;text-transform:uppercase">
+        ${v.victimType === 'CREW' ? '⚓ CREW' : '🧳 PAX'}
+      </button>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+        <div style="grid-column:1 / -1" class="sit-field">
+          <label class="sit-label">${v.victimType === 'CREW' ? 'SELECT FROM CREW LIST' : 'SELECT FROM PAX LIST'}</label>
+          <select class="sit-input" onchange="MedicalOSC.applySelectedPerson('${v.id}', this.value)">
+            ${this.getIdentityOptionsHtml(v.victimType || 'PAX', v.personKey)}
+          </select>
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">FULL NAME</label>
+          <input class="sit-input" value="${escapeHtml(v.name)}" placeholder="Nom" onchange="MedicalOSC.update('${v.id}','name',this.value)">
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">${this.getIdentityFieldLabel(v.victimType || 'PAX')}</label>
+          <input class="sit-input" value="${escapeHtml(v.cabin)}" placeholder="${this.getIdentityPlaceholder(v.victimType || 'PAX')}" onchange="MedicalOSC.update('${v.id}','cabin',this.value)">
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">NATIONALITY</label>
+          <input class="sit-input" value="${escapeHtml(v.nationality || '')}" placeholder="Nationality" onchange="MedicalOSC.update('${v.id}','nationality',this.value)">
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">AGE</label>
+          <input class="sit-input" value="${escapeHtml(v.age || '')}" placeholder="Age" onchange="MedicalOSC.update('${v.id}','age',this.value)">
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">SEX</label>
+          <select class="sit-input" onchange="MedicalOSC.update('${v.id}','sex',this.value)">
+            <option value="" ${v.sex ? '' : 'selected'}>—</option>
+            <option value="M" ${v.sex==='M'?'selected':''}>Male</option>
+            <option value="F" ${v.sex==='F'?'selected':''}>Female</option>
+          </select>
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">LOCALISATION</label>
+          <input class="sit-input" value="${escapeHtml(v.location)}" onchange="MedicalOSC.update('${v.id}','location',this.value)">
+        </div>
+      </div>
+      <div class="sec-hdr">BLESSURES</div>
+      <div class="injury-list">${this.INJURIES.map(i => `<div class="injury-item ${v.injuries.includes(i)?'selected':''}" onclick="MedicalOSC.toggleInjury('${v.id}','${i}')">${i}</div>`).join('')}</div>
+      <div class="sec-hdr u-mt-8">MOYENS</div>
+      <div class="injury-list">${this.MEANS.map(m => `<div class="injury-item ${v.means.includes(m)?'selected':''}" onclick="MedicalOSC.toggleMeans('${v.id}','${m}')">${m}</div>`).join('')}</div>
+      <div class="sec-hdr u-mt-8">NOTES</div>
+      <div class="sit-row"><textarea class="ftc-note" id="med-note-${v.id}" placeholder="Note..."></textarea><button class="ftc-log-btn" onclick="MedicalOSC.logNote('${v.id}')">LOG</button></div>
+      <div class="ftc-hist">${(v.notes||[]).map(n => `<div class="ftc-hi"><span class="ftc-ht">${n.time}</span>${escapeHtml(n.text)}</div>`).join('')}</div>
+    </div>`;
+  },
+};
+
+/* ============================================================
+   SpacesData — charge les zones annotées (Zone Annotator) avec
+   fallback robuste vers OE_SPACES embarqué
+   ============================================================ */
+const SpacesData = {
+  DEFAULT_ASSET_PATH: 'assets/OE_SPACES_annotated_2026-04-15.json',
+  sourceLabel: 'Source zones: OE_SPACES embarqué',
+  _spaces: null,
+
+  _normalizeDeck(deck) {
+    const d = String(deck || '').trim();
+    if (!d) return '';
+    if (/^(UNDER|under|DKDB)$/i.test(d)) return 'under';
+    const m = d.match(/^DK\s*0?(\d{1,2})$/i);
+    if (m) return 'DK' + m[1].padStart(2, '0');
+    return d;
+  },
+
+  _normalizePoly(polySrc) {
+    if (!Array.isArray(polySrc) || !polySrc.length) return [];
+    if (typeof polySrc[0] === 'number') {
+      const pts = [];
+      for (let i = 0; i + 1 < polySrc.length; i += 2) {
+        const x = Number(polySrc[i]);
+        const y = Number(polySrc[i + 1]);
+        if (Number.isFinite(x) && Number.isFinite(y)) pts.push([x, y]);
+      }
+      return pts;
+    }
+    return polySrc
+      .map(p => Array.isArray(p) && p.length >= 2 ? [Number(p[0]), Number(p[1])] : null)
+      .filter(p => p && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  },
+
+  _toSpaces(rawList) {
+    if (!Array.isArray(rawList)) return [];
+    const out = [];
+    rawList.forEach((raw, idx) => {
+      if (!raw || typeof raw !== 'object') return;
+      const name = String(raw.name || '').trim();
+      const deck = this._normalizeDeck(raw.deck);
+      const mvz = Number(raw.mvz);
+      if (!name || !deck || !Number.isFinite(mvz)) return;
+      const polySrc = Array.isArray(raw.poly) ? raw.poly : (Array.isArray(raw.pts) ? raw.pts : []);
+      const poly = this._normalizePoly(polySrc);
+      out.push({
+        id: String(raw.id || raw.zone || `zone-${idx + 1}`),
+        zone: String(raw.zone || raw.id || `zone-${idx + 1}`),
+        name,
+        deck,
+        mvz,
+        type: String(raw.type || 'technical'),
+        danger: String(raw.danger || 'low'),
+        poly,
+      });
+    });
+    return out;
+  },
+
+  _getBuiltInSpaces() {
+    return this._toSpaces(Array.isArray(window.OE_SPACES) ? window.OE_SPACES : []);
+  },
+
+  _stripJsonComments(text) {
+    return String(text || '').replace(/^\s*\/\/.*$/gm, '').trim();
+  },
+
+  async init() {
+    let spaces = [];
+    try {
+      const res = await fetch(this.DEFAULT_ASSET_PATH, { cache: 'no-store' });
+      if (res.ok) {
+        const raw = JSON.parse(this._stripJsonComments(await res.text()));
+        const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.zones) ? raw.zones : []);
+        spaces = this._toSpaces(list);
+        if (spaces.length) {
+          this._spaces = spaces;
+          this.sourceLabel = `Source zones: ${this.DEFAULT_ASSET_PATH} (${spaces.length} zones)`;
+          return;
+        }
+      }
+    } catch (e) {}
+    spaces = this._getBuiltInSpaces();
+    this._spaces = spaces;
+    this.sourceLabel = `Source zones: OE_SPACES embarqué (${spaces.length} zones)`;
+  },
+
+  getSpaces() {
+    if (!Array.isArray(this._spaces)) this._spaces = this._getBuiltInSpaces();
+    return this._spaces;
+  },
+
+  describeSource() {
+    return this.sourceLabel;
+  },
+};
+
+/* ============================================================
+   PlansOSC — single-panel deck plan viewer + tactical control
+   with Zone Annotator polygons for direct zone picking.
+   ============================================================ */
+const PlansOSC = {
+  ICONS: [
+    { id:'FTA', emoji:'🔴', label:'FTA' }, { id:'FTB', emoji:'🟠', label:'FTB' },
+    { id:'FTC', emoji:'🟡', label:'FTC' }, { id:'FTD', emoji:'🟢', label:'FTD' },
+    { id:'PT1', emoji:'🔵', label:'PT1' }, { id:'PT2', emoji:'🟣', label:'PT2' },
+    { id:'PT3', emoji:'⚪', label:'PT3' }, { id:'PT4', emoji:'⚫', label:'PT4' },
+    { id:'CASUALTY', emoji:'🚑', label:'Casualty' }, { id:'MEDICAL', emoji:'⚕️', label:'Medical' },
+    { id:'MEETING', emoji:'👥', label:'Meeting' }, { id:'OSC', emoji:'🎖️', label:'OSC' },
+  ],
+  selectedZoneId: '',
+  selectedZone: null,
+  placingId: null,
+  img: null,
+  view: { zoom: 1, panX: 0, panY: 0 },
+  activePointers: new Map(),
+  pinchStartDist: 0,
+  pinchStartZoom: 1,
+  MAX_ZOOM: 30,
+
+  _normalizeDeck(deck) {
+    return SpacesData._normalizeDeck(deck);
+  },
+
+  getDeckSpaces(deck) {
+    const norm = this._normalizeDeck(deck);
+    return SpacesData.getSpaces().filter(s => this._normalizeDeck(s.deck) === norm && Array.isArray(s.poly) && s.poly.length >= 3);
+  },
+
+  zoneKey(space) {
+    if (!space) return '';
+    return String(space.zone || space.id || `${space.deck}:${space.name}`);
+  },
+
+  _normalizeDeckValue(deck) {
+    const raw = String(deck || '').trim().toUpperCase();
+    if (!raw) return '';
+    const compact = raw.replace(/[^A-Z0-9]+/g, '');
+    if (compact.startsWith('DK')) return compact;
+    const m = /DECK\s*0?(\d{1,2})/i.exec(raw);
+    if (m) return `DK${String(Number(m[1])).padStart(2, '0')}`;
+    return compact;
+  },
+
+  _normalizeMvzValue(mvz) {
+    const raw = String(mvz || '').trim();
+    if (!raw) return '';
+    const m = raw.match(/(\d+)/);
+    return m ? String(Number(m[1])) : raw.toUpperCase();
+  },
+
+  _getZoneOverlayState(space) {
+    const key = this.zoneKey(space);
+    const z = STATE.plans.zoneStates[key] || {};
+    if (z.evacuationStatus === 'in-progress' || z.evacuationStatus === 'evacuated') return z.evacuationStatus;
+    if (Array.isArray(STATE.evac?.selected)) {
+      const match = STATE.evac.selected.find(entry => this._normalizeDeckValue(entry.deck) === this._normalizeDeckValue(space.deck) && this._normalizeMvzValue(entry.mvz) === this._normalizeMvzValue(space.mvz));
+      if (match) return match.status === 'evacuated' ? 'evacuated' : 'in-progress';
+    }
+    if (z.evacuated) return 'checked';
+    return null;
+  },
+
+  _tokenForIconId(iconId) {
+    if (/^FT[ABCD]$/.test(iconId || '')) return { kind: 'fire', text: String(iconId || '').slice(-1) };
+    if (/^PT[1-4]$/.test(iconId || '')) return { kind: 'protection', text: String(iconId || '').slice(-1) };
+    return null;
+  },
+
+  iconSwatchHtml(icon) {
+    const tok = this._tokenForIconId(icon?.id || '');
+    if (tok) return `<span class="plan-token ${tok.kind}">${tok.text}</span>`;
+    return `<span>${icon?.emoji || '📍'}</span>`;
+  },
+
+  _drawZoneOverlayExtra(ctx, pts, overlayState, novec, zoom) {
+    if (!pts || pts.length < 3) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y);
+    ctx.closePath();
+    ctx.clip();
+    let bx0 = pts[0].x, by0 = pts[0].y, bx1 = pts[0].x, by1 = pts[0].y;
+    pts.forEach(p => { bx0 = Math.min(bx0, p.x); by0 = Math.min(by0, p.y); bx1 = Math.max(bx1, p.x); by1 = Math.max(by1, p.y); });
+    if (overlayState === 'checked') {
+      const crossStep = Math.max(8, 16 / (zoom || 1));
+      ctx.strokeStyle = 'rgba(14, 80, 140, 0.95)';
+      ctx.lineWidth = Math.max(0.6, 0.8 / (zoom || 1));
+      for (let cx = bx0 + crossStep / 2; cx < bx1; cx += crossStep) {
+        for (let cy = by0 + crossStep / 2; cy < by1; cy += crossStep) {
+          ctx.beginPath();
+          ctx.moveTo(cx - 2.2, cy - 2.2); ctx.lineTo(cx + 2.2, cy + 2.2);
+          ctx.moveTo(cx - 2.2, cy + 2.2); ctx.lineTo(cx + 2.2, cy - 2.2);
+          ctx.stroke();
+        }
+      }
+    } else if (overlayState === 'in-progress' || overlayState === 'evacuated') {
+      const outlineColor = overlayState === 'in-progress' ? 'rgba(216,60,46,0.95)' : 'rgba(34,197,94,0.95)';
+      ctx.strokeStyle = outlineColor;
+      ctx.lineWidth = Math.max(1.6, 2.4 / (zoom || 1));
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    if (novec) {
+      const step = Math.max(5, 12 / (zoom || 1));
+      const r = Math.max(1, 2 / (zoom || 1));
+      ctx.fillStyle = 'rgba(180,100,255,0.70)';
+      for (let px = bx0 + step / 2; px < bx1; px += step) {
+        for (let py = by0 + step / 2; py < by1; py += step) {
+          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  },
+
+  _drawTacticalMarker(ctx, icon, x, y) {
+    const tok = this._tokenForIconId(icon?.id || '');
+    if (!tok) {
+      ctx.font = '22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(icon ? icon.emoji : '📍', x, y);
+      return;
+    }
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    if (tok.kind === 'fire') {
+      ctx.fillStyle = '#cc2f2f';
+      ctx.strokeStyle = '#ffd0d0';
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+    } else {
+      ctx.fillStyle = '#ffd24a';
+      ctx.strokeStyle = '#8c6a00';
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#192534';
+    }
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(tok.text, x, y + 0.5);
+  },
+
+  _syncTeamLocationFromMarker(iconId, src){
+    if (!iconId || !src) return;
+    let teamId = null;
+    let kind = null;
+    const ft = String(iconId).match(/^FT([ABCD])$/);
+    if (ft) {
+      kind = 'fire';
+      teamId = { A:1, B:2, C:3, D:4 }[ft[1]] || null;
+    }
+    const pt = String(iconId).match(/^PT([1-4])$/);
+    if (pt) {
+      kind = 'protection';
+      teamId = Number(pt[1]);
+    }
+    if (!kind || !teamId) return;
+    const spaces = this.getDeckSpaces(STATE.plans.currentDeck);
+    const hit = spaces.find(s => this._pointInPoly(src.x, src.y, s.poly));
+    const value = hit && hit.name ? hit.name : `${STATE.plans.currentDeck} (plan)`;
+    if (kind === 'fire') FireOSC.updateLoc(teamId, value);
+    else ProtectionOSC.updateLoc(teamId, value);
+  },
+
+  _statusStyle(status, isSelected) {
+    const map = {
+      ras: ['rgba(180,180,180,0.18)', 'rgba(210,210,210,0.65)'],
+      smoke: ['rgba(240,145,58,0.22)', 'rgba(240,145,58,0.8)'],
+      fire: ['rgba(224,64,64,0.24)', 'rgba(224,64,64,0.9)'],
+      water: ['rgba(68,138,255,0.22)', 'rgba(68,138,255,0.85)'],
+      green: ['rgba(58,191,119,0.22)', 'rgba(58,191,119,0.9)'],
+      violet: ['rgba(154,90,214,0.22)', 'rgba(154,90,214,0.9)'],
+    };
+    const pair = map[status] || ['rgba(112,130,150,0.12)', 'rgba(112,130,150,0.6)'];
+    return { fill: pair[0], stroke: isSelected ? '#ffffff' : pair[1], lineWidth: isSelected ? 2.6 : 1.4 };
+  },
+
+  _pointInPoly(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1];
+      const xj = poly[j][0], yj = poly[j][1];
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  },
+
+  _canvasToSource(cx, cy) {
+    if (!this._lastDraw) return null;
+    const { x, y, w, h } = this._lastDraw;
+    if (cx < x || cy < y || cx > x + w || cy > y + h) return null;
+    const sx = ((cx - x) / w) * this.img.naturalWidth;
+    const sy = ((cy - y) / h) * this.img.naturalHeight;
+    return { x: sx, y: sy };
+  },
+
+  _sourceToCanvas(sx, sy) {
+    if (!this._lastDraw || !this.img || !this.img.naturalWidth || !this.img.naturalHeight) return null;
+    const { x, y, w, h } = this._lastDraw;
+    const cx = x + (sx / this.img.naturalWidth) * w;
+    const cy = y + (sy / this.img.naturalHeight) * h;
+    return { x: cx, y: cy };
+  },
+
+  _fitToDeck(deck) {
+    const spaces = this.getDeckSpaces(deck);
+    if (!spaces.length || !this.img || !this.img.naturalWidth) {
+      this.view = { zoom: 1, panX: 0, panY: 0 };
+      return;
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    spaces.forEach(s => (s.poly || []).forEach(pt => {
+      if (!Array.isArray(pt) || pt.length < 2) return;
+      const x = Number(pt[0]); const y = Number(pt[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }));
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      this.view = { zoom: 1, panX: 0, panY: 0 };
+      return;
+    }
+    const viewer = document.getElementById('plan-viewer');
+    const canvas = document.getElementById('plan-canvas');
+    if (!viewer || !canvas) return;
+    const cw = canvas.width || viewer.clientWidth;
+    const ch = canvas.height || viewer.clientHeight;
+    const baseFit = Math.min(cw / this.img.naturalWidth, ch / this.img.naturalHeight);
+    const pad = 70;
+    const boxW = Math.max(30, maxX - minX);
+    const boxH = Math.max(30, maxY - minY);
+    const targetScale = Math.min((cw - pad) / boxW, (ch - pad) / boxH);
+    const zoom = Math.max(1, Math.min(this.MAX_ZOOM, targetScale / baseFit));
+    const s = baseFit * zoom;
+    const zoneCx = (minX + maxX) / 2;
+    const zoneCy = (minY + maxY) / 2;
+    const imgCx = this.img.naturalWidth / 2;
+    const imgCy = this.img.naturalHeight / 2;
+    const panX = (cw / 2) - (zoneCx - imgCx) * s - (cw / 2);
+    const panY = (ch / 2) - (zoneCy - imgCy) * s - (ch / 2);
+    this.view = { zoom, panX, panY };
+  },
+
+  currentZoneStatus(){ const z = STATE.plans.zoneStates[this.selectedZoneId]; return z ? z.status : null; },
+  currentZoneFlag(key){ const z = STATE.plans.zoneStates[this.selectedZoneId]; return z ? !!z[key] : false; },
+  getZoneState(){
+    if (!this.selectedZoneId) return null;
+    STATE.plans.zoneStates[this.selectedZoneId] = STATE.plans.zoneStates[this.selectedZoneId] || { status:null, evacuated:false, novec:false, history:[] };
+    return STATE.plans.zoneStates[this.selectedZoneId];
+  },
+  statusButtonsHtml(){
+    return ['ras','smoke','fire','water','green','violet'].map(s =>
+      `<button class="plan-status-btn status-${s} ${this.currentZoneStatus()===s?'active':''}" onclick="PlansOSC.setStatus('${s}')">${s.toUpperCase()}</button>`).join('');
+  },
+  flagsHtml(){
+    return `<label class="plan-check"><input type="checkbox" ${this.currentZoneFlag('evacuated')?'checked':''} onchange="PlansOSC.setFlag('evacuated',this.checked)"> Checked</label>
+      <label class="plan-check"><input type="checkbox" ${this.currentZoneFlag('novec')?'checked':''} onchange="PlansOSC.setFlag('novec',this.checked)"> Under NOVEC</label>`;
+  },
+  historyHtml(){
+    const z = STATE.plans.zoneStates[this.selectedZoneId];
+    if (!z || !z.history || !z.history.length) return '<span>—</span>';
+    return z.history.slice(0,15).map(h => `<div>${h.time} — ${escapeHtml(h.text)}</div>`).join('');
+  },
+  appendHistory(text){
+    const z = this.getZoneState(); if (!z) return;
+    z.history = [{ time: nowTime(), text }, ...(z.history||[])].slice(0,20);
+  },
+  refreshTacticalPanel(){
+    const grid = document.getElementById('plan-status-grid'); if (grid) grid.innerHTML = this.statusButtonsHtml();
+    const flags = document.getElementById('plan-flags'); if (flags) flags.innerHTML = this.flagsHtml();
+    const hist = document.getElementById('plan-zone-history'); if (hist) hist.innerHTML = this.historyHtml();
+  },
+  setSelectedZoneId(val){
+    this.selectedZoneId = (val || '').trim();
+    this.selectedZone = null;
+    this.refreshZoneChip(); this.refreshTacticalPanel();
+  },
+  setStatus(status){
+    if (!this.selectedZoneId) return;
+    const z = this.getZoneState(); z.status = status;
+    this.appendHistory('Status → ' + status.toUpperCase());
+    this.refreshTacticalPanel(); this.redraw();
+  },
+  setFlag(key, val){
+    if (!this.selectedZoneId) return;
+    const z = this.getZoneState(); z[key] = val;
+    this.appendHistory((key==='evacuated'?'Evacuated':'NOVEC') + ' → ' + (val?'ON':'OFF'));
+    this.refreshTacticalPanel();
+  },
+  setDeck(deck, btn){
+    STATE.plans.currentDeck = this._normalizeDeck(deck);
+    this.selectedZoneId = '';
+    this.selectedZone = null;
+    document.querySelectorAll('#page-plans .plan-deck-tabs .deck-btn').forEach(el => el.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    this._fitToDeck(STATE.plans.currentDeck);
+    this.redraw();
+    this.refreshZoneChip();
+    this.refreshTacticalPanel();
+  },
+  startPlacing(iconId){
+    this.placingId = this.placingId === iconId ? null : iconId;
+    document.querySelectorAll('#plan-icon-palette .plan-icon-item').forEach(el => el.classList.remove('placing'));
+    if (this.placingId) {
+      const idx = this.ICONS.findIndex(i => i.id === iconId);
+      const el = document.querySelectorAll('#plan-icon-palette .plan-icon-item')[idx];
+      if (el) el.classList.add('placing');
+    }
+  },
+  clearDeckMarkers(){
+    const current = this._normalizeDeck(STATE.plans.currentDeck);
+    STATE.plans.markers = STATE.plans.markers.filter(m => this._normalizeDeck(m.deck) !== current);
+    this.redraw();
+    NetOSC.sendStateSyncNow();
+  },
+
+  _isSinglePlacementIcon(iconId){
+    return /^FT[ABCD]$/.test(iconId || '') || /^PT[1-4]$/.test(iconId || '');
+  },
+
+  _upsertMarker(iconId, x, y, sx, sy){
+    const deck = this._normalizeDeck(STATE.plans.currentDeck);
+    if (this._isSinglePlacementIcon(iconId)) {
+      const existing = STATE.plans.markers.findIndex(m => this._normalizeDeck(m.deck) === deck && m.iconId === iconId);
+      if (existing >= 0) {
+        const marker = STATE.plans.markers[existing];
+        marker.x = x; marker.y = y; marker.sx = sx; marker.sy = sy;
+        return marker;
+      }
+    }
+    const marker = { id:'m'+Date.now(), iconId, deck:STATE.plans.currentDeck, x, y, sx, sy };
+    STATE.plans.markers.push(marker);
+    return marker;
+  },
+
+  /* ── canvas ── */
+  initCanvas(){
+    const viewer = document.getElementById('plan-viewer');
+    const canvas = document.getElementById('plan-canvas');
+    if (!viewer || !canvas) return;
+    this._resize();
+    // BUGFIX: this used to add a fresh `window.addEventListener('resize', ...)` closure
+    // on every call — and initCanvas() re-runs every time the Plans page is rebuilt
+    // (each navigation to the page, formerly also every network update). None of those
+    // listeners were ever removed, and each one closed over that call's now-detached
+    // #plan-canvas/#plan-viewer elements, pinning them in memory forever. Over a multi-
+    // hour session with the Plans page revisited repeatedly this leaked without bound
+    // and is the most likely cause of the tablet app bogging down/crashing in the field.
+    // Bind the resize listener exactly once for the page's lifetime; _resize() below
+    // always re-queries the *current* canvas/viewer by id, so a single bound listener
+    // keeps working correctly across any number of page rebuilds.
+    if (!this._resizeBound) {
+      window.addEventListener('resize', () => this._resize());
+      this._resizeBound = true;
+    }
+    if (!this.img) {
+      this.img = new Image();
+      this.img.onload = () => { this._fitToDeck(STATE.plans.currentDeck); this.redraw(); };
+      this.img.onerror = () => { const chip = document.getElementById('plan-zone-chip'); if (chip) chip.textContent = 'Plan image indisponible'; };
+      this.img.src = 'assets/img/plans/GaLCC_page_01.png';
+    } else {
+      this._fitToDeck(STATE.plans.currentDeck);
+      this.redraw();
+    }
+    this.bindEvents(canvas);
+  },
+  _resize(){
+    const viewer = document.getElementById('plan-viewer');
+    const canvas = document.getElementById('plan-canvas');
+    if (!viewer || !canvas) return;
+    canvas.width = viewer.clientWidth; canvas.height = viewer.clientHeight;
+    this.redraw();
+  },
+  resetView(){ this._fitToDeck(STATE.plans.currentDeck); this.redraw(); },
+  zoom(factor){
+    this.view.zoom = Math.max(0.3, Math.min(this.MAX_ZOOM, this.view.zoom * factor));
+    this.redraw();
+  },
+  redraw(){
+    const canvas = document.getElementById('plan-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#0c1620'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    if (this.img && this.img.complete && this.img.naturalWidth) {
+      const scaleFit = Math.min(canvas.width / this.img.naturalWidth, canvas.height / this.img.naturalHeight);
+      const s = scaleFit * this.view.zoom;
+      const w = this.img.naturalWidth * s, h = this.img.naturalHeight * s;
+      const x = (canvas.width - w) / 2 + this.view.panX;
+      const y = (canvas.height - h) / 2 + this.view.panY;
+      ctx.drawImage(this.img, x, y, w, h);
+      this._lastDraw = { x, y, w, h };
+    }
+    // Draw annotated zones for the current deck (Zone Annotator source).
+    const deckSpaces = this.getDeckSpaces(STATE.plans.currentDeck);
+    deckSpaces.forEach(space => {
+      const poly = Array.isArray(space.poly) ? space.poly : [];
+      if (poly.length < 3) return;
+      const key = this.zoneKey(space);
+      const st = STATE.plans.zoneStates[key] || {};
+      const sty = this._statusStyle(st.status, key === this.selectedZoneId);
+      const pts = [];
+      ctx.beginPath();
+      poly.forEach((pt, idx) => {
+        const p = this._sourceToCanvas(Number(pt[0]), Number(pt[1]));
+        if (!p) return;
+        pts.push(p);
+        if (idx === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.closePath();
+      ctx.fillStyle = sty.fill;
+      ctx.strokeStyle = sty.stroke;
+      ctx.lineWidth = sty.lineWidth;
+      ctx.fill();
+      ctx.stroke();
+      const overlayState = this._getZoneOverlayState(space);
+      if (overlayState || st.novec) this._drawZoneOverlayExtra(ctx, pts, overlayState, !!st.novec, this.view.zoom || 1);
+    });
+
+    // Tactical icon markers for the current deck.
+    const markers = STATE.plans.markers.filter(m => this._normalizeDeck(m.deck) === this._normalizeDeck(STATE.plans.currentDeck));
+    markers.forEach(m => {
+      const icon = this.ICONS.find(i => i.id === m.iconId);
+      let drawX = Number(m.x), drawY = Number(m.y);
+      if (Number.isFinite(Number(m.sx)) && Number.isFinite(Number(m.sy))) {
+        const pt = this._sourceToCanvas(Number(m.sx), Number(m.sy));
+        if (pt) { drawX = pt.x; drawY = pt.y; }
+      }
+      this._drawTacticalMarker(ctx, icon, drawX, drawY);
+    });
+  },
+  bindEvents(canvas){
+    if (canvas._bound) return; canvas._bound = true;
+    let dragging = false, lastX = 0, lastY = 0, moved = false;
+
+    const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+
+    canvas.addEventListener('pointerdown', (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      this.activePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+      if (this.activePointers.size === 1) { dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY; }
+      else if (this.activePointers.size === 2) {
+        dragging = false;
+        const pts = [...this.activePointers.values()];
+        this.pinchStartDist = dist(pts[0], pts[1]);
+        this.pinchStartZoom = this.view.zoom;
+      }
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this.activePointers.has(e.pointerId)) return;
+      this.activePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+      if (this.activePointers.size === 2) {
+        const pts = [...this.activePointers.values()];
+        const d = dist(pts[0], pts[1]);
+        if (this.pinchStartDist > 0) this.view.zoom = Math.max(0.3, Math.min(this.MAX_ZOOM, this.pinchStartZoom * (d / this.pinchStartDist)));
+        this.redraw();
+        return;
+      }
+      if (dragging) {
+        const dx = e.clientX - lastX, dy = e.clientY - lastY;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+        this.view.panX += dx; this.view.panY += dy;
+        lastX = e.clientX; lastY = e.clientY;
+        this.redraw();
+      }
+    });
+    const endPointer = (e) => {
+      this.activePointers.delete(e.pointerId);
+      if (this.activePointers.size < 2) this.pinchStartDist = 0;
+      if (this.activePointers.size === 0 && dragging && !moved) this.handleTap(e);
+      dragging = false;
+    };
+    canvas.addEventListener('pointerup', endPointer);
+    canvas.addEventListener('pointercancel', endPointer);
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      this.zoom(e.deltaY < 0 ? 1.2 : 0.84);
+    }, { passive:false });
+  },
+  handleTap(e){
+    const canvas = document.getElementById('plan-canvas');
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    const src = this._canvasToSource(x, y);
+    if (this.placingId) {
+      if (!src) return;
+      this._upsertMarker(this.placingId, x, y, src.x, src.y);
+      this._syncTeamLocationFromMarker(this.placingId, src);
+      NetOSC.sendStateSyncNow();
+      this.placingId = null;
+      document.querySelectorAll('#plan-icon-palette .plan-icon-item').forEach(el => el.classList.remove('placing'));
+      this.redraw();
+      return;
+    }
+    if (!src) return;
+
+    const spaces = this.getDeckSpaces(STATE.plans.currentDeck);
+    const hit = spaces.find(s => this._pointInPoly(src.x, src.y, s.poly));
+    if (!hit) return;
+    this.selectedZone = hit;
+    this.selectedZoneId = this.zoneKey(hit);
+    const input = document.getElementById('plan-zone-input');
+    if (input) input.value = this.selectedZoneId;
+    this.refreshZoneChip();
+    this.refreshTacticalPanel();
+    this.redraw();
+  },
+
+  refreshZoneChip(){
+    const el = document.getElementById('plan-zone-chip');
+    if (!el) return;
+    if (this.selectedZone) {
+      el.textContent = `Zone: ${this.selectedZone.deck} MVZ${this.selectedZone.mvz} — ${this.selectedZone.name}`;
+      return;
+    }
+    el.textContent = 'Zone: ' + (this.selectedZoneId || '—');
+  },
+};
+
+/* ============================================================
+   ModalOSC — generic full-screen popup shell (location picker,
+   predefined actions, member picker all build on this)
+   ============================================================ */
+const ModalOSC = {
+  open(html){
+    this.close();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'osc-modal-overlay';
+    overlay.innerHTML = `<div class="modal-box">${html}</div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) this.close(); });
+    document.body.appendChild(overlay);
+  },
+  close(){
+    const el = document.getElementById('osc-modal-overlay');
+    if (el) el.remove();
+  },
+};
+
+/* ============================================================
+   PredefOSC — "Actions prédéfinies" quick-log popup, same default
+   action set as LCC Sentinel 3's PredefNotes module
+   ============================================================ */
+const PredefOSC = {
+  ACTIONS: [
+    { label:'Proceeding to fire area', icon:'➡️', color:'#f59e0b' },
+    { label:'Looking for HotSpot', icon:'🌡️', color:'#ef4444' },
+    { label:'Investigating', icon:'🔎', color:'#8b5cf6' },
+    { label:'Report T° normal', icon:'🟢', color:'#22c55e' },
+    { label:'Report T° increasing', icon:'📈', color:'#f97316' },
+    { label:'Report T° decreasing', icon:'📉', color:'#38bdf8' },
+    { label:'Report Ultrafog running', icon:'💧', color:'#06b6d4' },
+    { label:'Evacuate', icon:'🚨', color:'#dc2626' },
+    { label:'Retreat', icon:'↩️', color:'#f97316' },
+    { label:'Report heavy smoke', icon:'🌫️', color:'#94a3b8' },
+    { label:'Report Black smoke', icon:'⬛', color:'#475569' },
+    { label:'Report Power supply Off', icon:'🔌', color:'#eab308' },
+    { label:'Report fire', icon:'🔥', color:'#ef4444' },
+    { label:'Report fire under control', icon:'🧯', color:'#f59e0b' },
+    { label:'Report fire out', icon:'✅', color:'#22c55e' },
+    { label:'Report fire spreading', icon:'📡', color:'#dc2626' },
+    { label:'Extract casualty', icon:'🆘', color:'#f43f5e' },
+    { label:'Found casualty', icon:'⚕️', color:'#ec4899' },
+    { label:'In supply of other FT', icon:'🤝', color:'#14b8a6' },
+    { label:'Starts boundary cooling', icon:'🧊', color:'#06b6d4' },
+    { label:'Securing entry points', icon:'🚪', color:'#a855f7' },
+    { label:'Ventilation is running', icon:'🌀', color:'#0ea5e9' },
+    { label:'In standby', icon:'⏸️', color:'#64748b' },
+    { label:'Firefighter injured', icon:'⛑️', color:'#e11d48' },
+    { label:'BA set low — need relief', icon:'🫁', color:'#f97316' },
+    { label:'Entry point secured', icon:'🔐', color:'#10b981' },
+    { label:'Hotspot located', icon:'🎯', color:'#ef4444' },
+    { label:'Overhaul in progress', icon:'🛠️', color:'#f59e0b' },
+    { label:'Sector cleared', icon:'🟩', color:'#22c55e' },
+    { label:'Request equipment', icon:'📦', color:'#f97316' },
+  ],
+  _callback: null,
+  open(teamName, callback){
+    this._callback = callback;
+    ModalOSC.open(`
+      <div class="modal-header"><span class="modal-title">⚡ Actions — ${escapeHtml(teamName)}</span><button class="modal-close" onclick="ModalOSC.close()">✕</button></div>
+      <div class="modal-body"><div class="predef-grid">
+        ${this.ACTIONS.map((a,i) => `<button class="predef-item" style="border-left-color:${a.color}" onclick="PredefOSC.pick(${i})">${a.icon} ${escapeHtml(a.label)}</button>`).join('')}
+      </div></div>`);
+  },
+  pick(i){
+    const a = this.ACTIONS[i];
+    if (a && this._callback) this._callback(a.label, nowTime());
+    ModalOSC.close();
+  },
+};
+
+/* ============================================================
+   LocationOSC — team location picker: either pick from the ship's
+   local-space list (window.OE_SPACES), or tap a position on the
+   ship plan (opens by default on the fire's deck, or wherever the
+   team is already placed).
+   ============================================================ */
+const LocationOSC = {
+  _callback: null,
+  _iconId: null,
+  _tab: 'list',
+  _deck: 'DK03',
+  _filterDeck: 'ALL',
+  _filterMvz: 'ALL',
+  _search: '',
+  img: null,
+  _lastView: null,
+  _draftSelection: null,
+  _view: { zoom: 1, panX: 0, panY: 0 },
+  _feedbackTimer: null,
+  MAX_ZOOM: 30,
+  _activePointers: new Map(),
+  _pinchStartDist: 0,
+  _pinchStartZoom: 1,
+
+  _normalizeDeck(deck){
+    return SpacesData._normalizeDeck(deck);
+  },
+
+  _deckSpaces(deck){
+    const d = this._normalizeDeck(deck);
+    return SpacesData.getSpaces().filter(s => this._normalizeDeck(s.deck) === d && Array.isArray(s.poly) && s.poly.length >= 3);
+  },
+
+  _pointInPoly(x, y, poly){
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1];
+      const xj = poly[j][0], yj = poly[j][1];
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  },
+
+  _canvasToSource(x, y){
+    const v = this._lastView;
+    if (!v || !this.img || !this.img.naturalWidth || !this.img.naturalHeight) return null;
+    if (x < v.ox || y < v.oy || x > v.ox + v.w || y > v.oy + v.h) return null;
+    return {
+      sx: ((x - v.ox) / v.w) * this.img.naturalWidth,
+      sy: ((y - v.oy) / v.h) * this.img.naturalHeight,
+    };
+  },
+
+  _sourceToCanvas(sx, sy){
+    const v = this._lastView;
+    if (!v || !this.img || !this.img.naturalWidth || !this.img.naturalHeight) return null;
+    return {
+      x: v.ox + (Number(sx) / this.img.naturalWidth) * v.w,
+      y: v.oy + (Number(sy) / this.img.naturalHeight) * v.h,
+    };
+  },
+
+  _findSpaceAtSource(deck, sx, sy){
+    const spaces = this._deckSpaces(deck);
+    return spaces.find(s => this._pointInPoly(sx, sy, s.poly)) || null;
+  },
+
+  _fitToDeck(deck){
+    const spaces = this._deckSpaces(deck);
+    const viewer = document.getElementById('loc-plan-viewer');
+    const canvas = document.getElementById('loc-plan-canvas');
+    if (!viewer || !canvas || !this.img || !this.img.naturalWidth || !spaces.length) {
+      this._view = { zoom: 1, panX: 0, panY: 0 };
+      return;
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    spaces.forEach(s => (s.poly || []).forEach(pt => {
+      if (!Array.isArray(pt) || pt.length < 2) return;
+      const px = Number(pt[0]);
+      const py = Number(pt[1]);
+      if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }));
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      this._view = { zoom: 1, panX: 0, panY: 0 };
+      return;
+    }
+    const cw = canvas.width || viewer.clientWidth;
+    const ch = canvas.height || viewer.clientHeight;
+    const baseFit = Math.min(cw / this.img.naturalWidth, ch / this.img.naturalHeight);
+    const pad = 70;
+    const boxW = Math.max(30, maxX - minX);
+    const boxH = Math.max(30, maxY - minY);
+    const targetScale = Math.min((cw - pad) / boxW, (ch - pad) / boxH);
+    const zoom = Math.max(1, Math.min(this.MAX_ZOOM, targetScale / baseFit));
+    const s = baseFit * zoom;
+    const zoneCx = (minX + maxX) / 2;
+    const zoneCy = (minY + maxY) / 2;
+    const imgCx = this.img.naturalWidth / 2;
+    const imgCy = this.img.naturalHeight / 2;
+    const panX = -(zoneCx - imgCx) * s;
+    const panY = -(zoneCy - imgCy) * s;
+    this._view = { zoom, panX, panY };
+  },
+
+  _showFeedback(text, kind){
+    const el = document.getElementById('loc-plan-feedback');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = `modal-plan-feedback ${kind === 'warn' ? 'warn' : 'ok'}`;
+    clearTimeout(this._feedbackTimer);
+    this._feedbackTimer = setTimeout(() => {
+      const now = document.getElementById('loc-plan-feedback');
+      if (now) { now.textContent = ''; now.className = 'modal-plan-feedback'; }
+    }, 1500);
+  },
+
+  guessDeck(){
+    const text = (STATE.fireSit.fields['fire-location'] || '') + ' ' + (STATE.fireSit.fields['fire-meeting'] || '');
+    const m = text.match(/DK\s?0?(\d{1,2})/i);
+    if (m) return 'DK' + m[1].padStart(2, '0');
+    const marker = STATE.plans.markers.find(mk => mk.iconId === this._iconId);
+    if (marker) return marker.deck;
+    return STATE.plans.currentDeck || 'DK03';
+  },
+  open(iconId, currentValue, callback){
+    this._iconId = iconId;
+    this._callback = callback;
+    this._tab = 'list';
+    this._deck = this._normalizeDeck(this.guessDeck());
+    this._filterDeck = this._deck || 'ALL';
+    this._filterMvz = 'ALL';
+    this._search = '';
+    this._draftSelection = null;
+    this._view = { zoom: 1, panX: 0, panY: 0 };
+    clearTimeout(this._feedbackTimer);
+    this._render();
+  },
+  setTab(tab){ this._tab = tab; this._render(); },
+  _render(){
+    ModalOSC.open(`
+      <div class="modal-header"><span class="modal-title">📍 Localisation</span><button class="modal-close" onclick="ModalOSC.close()">✕</button></div>
+      <div class="modal-tabs">
+        <button class="modal-tab ${this._tab==='list'?'active':''}" onclick="LocationOSC.setTab('list')">LISTE DES LOCAUX</button>
+        <button class="modal-tab ${this._tab==='plan'?'active':''}" onclick="LocationOSC.setTab('plan')">PLAN DU NAVIRE</button>
+      </div>
+      <div class="modal-body">${this._tab === 'list' ? this._listHtml() : this._planHtml()}</div>`);
+    if (this._tab === 'plan') this._initPlanCanvas();
+  },
+  _decks(){
+    const spaces = SpacesData.getSpaces();
+    const order = ['DK11','DK10','DK09','DK08','DK07','DK06','DK05','DK04','DK03','DK02','DK01','under'];
+    const set = Array.from(new Set(spaces.map(s => s.deck)));
+    set.sort((a,b) => { const ai=order.indexOf(a), bi=order.indexOf(b); if(ai===-1&&bi===-1) return a.localeCompare(b); if(ai===-1) return 1; if(bi===-1) return -1; return ai-bi; });
+    return set;
+  },
+  _decksForMvz(){
+    const mvz = String(this._filterMvz || 'ALL');
+    if (mvz === 'ALL') return this._decks();
+    const spaces = SpacesData.getSpaces().filter(s => String(s.mvz) === mvz);
+    const order = ['DK11','DK10','DK09','DK08','DK07','DK06','DK05','DK04','DK03','DK02','DK01','under'];
+    const set = Array.from(new Set(spaces.map(s => s.deck)));
+    set.sort((a,b) => { const ai=order.indexOf(a), bi=order.indexOf(b); if(ai===-1&&bi===-1) return a.localeCompare(b); if(ai===-1) return 1; if(bi===-1) return -1; return ai-bi; });
+    return set;
+  },
+  _listHtml(){
+    const spaces = SpacesData.getSpaces();
+    const decks = this._decksForMvz();
+    const effectiveDeck = (this._filterDeck !== 'ALL' && !decks.includes(this._filterDeck)) ? 'ALL' : this._filterDeck;
+    const filtered = spaces.filter(s => {
+      const deckOk = effectiveDeck === 'ALL' || s.deck === effectiveDeck;
+      const mvzOk = this._filterMvz === 'ALL' || String(s.mvz) === this._filterMvz;
+      const qOk = !this._search || (s.name || '').toLowerCase().includes(this._search.toLowerCase());
+      return deckOk && mvzOk && qOk;
+    }).slice(0, 200);
+    const deckChips = ['ALL', ...decks].map(d => `<button class="modal-chip ${effectiveDeck===d?'active':''}" onclick="LocationOSC.setFilterDeck('${d}')">${d==='ALL'?'Tous ponts':(d==='under'?'UNDER':d)}</button>`).join('');
+    const mvzChips = ['ALL','1','2','3','4'].map(m => `<button class="modal-chip ${this._filterMvz===m?'active':''}" onclick="LocationOSC.setFilterMvz('${m}')">${m==='ALL'?'Tous MVZ':'MVZ '+m}</button>`).join('');
+    return `
+      <input class="sit-input" placeholder="Rechercher un local..." value="${escapeHtml(this._search)}" oninput="LocationOSC.setSearch(this.value)">
+      <div class="modal-filter-row" style="max-height:70px;overflow-y:auto">${deckChips}</div>
+      <div class="modal-filter-row">${mvzChips}</div>
+      <div class="loc-list">
+        ${filtered.length ? filtered.map(s => `<button class="loc-list-item" onclick="LocationOSC.pickSpace(this.dataset.name)" data-name="${escapeHtml(s.name)}"><span class="loc-badge">${s.deck}${s.mvz?' Z'+s.mvz:''}</span><span>${escapeHtml(s.name)}</span></button>`).join('') : '<div style="color:var(--oe-cream-dim);font-size:12px;text-align:center;padding:20px">Aucun résultat</div>'}
+      </div>`;
+  },
+  setFilterDeck(d){ this._filterDeck = d; this._render(); },
+  setFilterMvz(m){
+    this._filterMvz = m;
+    const decks = this._decksForMvz();
+    if (this._filterDeck !== 'ALL' && !decks.includes(this._filterDeck)) this._filterDeck = decks[0] || 'ALL';
+    this._render();
+  },
+  setSearch(v){ this._search = v; this._render(); },
+  pickSpace(name){
+    if (this._callback) this._callback(name);
+    ModalOSC.close();
+  },
+  _planHtml(){
+    const decks = Pages.DECKS || ['DK11','DK10','DK09','DK08','DK07','DK06','DK05','DK04','DK03','DK02','DK01','under'];
+    return `
+      <select class="sit-input" onchange="LocationOSC.setDeck(this.value)" style="margin-bottom:6px">
+        ${decks.map(d => `<option value="${d}" ${d===this._deck?'selected':''}>${d==='under'?'UNDER':d}</option>`).join('')}
+      </select>
+      <div class="modal-plan-viewer" id="loc-plan-viewer">
+        <canvas id="loc-plan-canvas"></canvas>
+        <div class="plan-controls">
+          <button class="plan-ctrl" onclick="LocationOSC.zoom(1.45)">+</button>
+          <button class="plan-ctrl" onclick="LocationOSC.zoom(0.69)">–</button>
+          <button class="plan-ctrl" onclick="LocationOSC.resetView()">⟲</button>
+        </div>
+        <div class="modal-plan-hint">Tap pour placer l'équipe (pont ${this._deck})</div>
+        <div class="modal-plan-feedback" id="loc-plan-feedback"></div>
+      </div>
+      <button class="btn btn-gold btn-block" id="loc-plan-validate" onclick="LocationOSC.confirmPlanSelection()" disabled>Valider la position</button>`;
+  },
+  setDeck(d){ this._deck = this._normalizeDeck(d); this._draftSelection = null; this._render(); },
+  _initPlanCanvas(){
+    const viewer = document.getElementById('loc-plan-viewer');
+    const canvas = document.getElementById('loc-plan-canvas');
+    if (!viewer || !canvas) return;
+    canvas.width = viewer.clientWidth; canvas.height = viewer.clientHeight;
+    if (!this.img) {
+      this.img = new Image();
+      this.img.onload = () => { this._fitToDeck(this._deck); this._redraw(); };
+      this.img.src = 'assets/img/plans/GaLCC_page_01.png';
+    }
+    if (this.img && this.img.complete && this.img.naturalWidth) this._fitToDeck(this._deck);
+    this._redraw();
+    this._bindEvents(canvas);
+  },
+  resetView(){ this._fitToDeck(this._deck); this._redraw(); },
+  zoom(factor){
+    this._view.zoom = Math.max(0.3, Math.min(this.MAX_ZOOM, (this._view.zoom || 1) * factor));
+    this._redraw();
+  },
+  _bindEvents(canvas){
+    if (canvas._bound) return;
+    canvas._bound = true;
+    let dragging = false;
+    let moved = false;
+    let lastX = 0;
+    let lastY = 0;
+    const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+
+    canvas.addEventListener('pointerdown', (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      this._activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._activePointers.size === 1) {
+        dragging = true;
+        moved = false;
+        lastX = e.clientX;
+        lastY = e.clientY;
+      } else if (this._activePointers.size === 2) {
+        dragging = false;
+        const pts = [...this._activePointers.values()];
+        this._pinchStartDist = dist(pts[0], pts[1]);
+        this._pinchStartZoom = this._view.zoom || 1;
+      }
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this._activePointers.has(e.pointerId)) return;
+      this._activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._activePointers.size === 2) {
+        const pts = [...this._activePointers.values()];
+        const d = dist(pts[0], pts[1]);
+        if (this._pinchStartDist > 0) {
+          this._view.zoom = Math.max(0.3, Math.min(this.MAX_ZOOM, this._pinchStartZoom * (d / this._pinchStartDist)));
+          this._redraw();
+        }
+        return;
+      }
+      if (dragging) {
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+        this._view.panX += dx;
+        this._view.panY += dy;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        this._redraw();
+      }
+    });
+
+    const endPointer = (e) => {
+      const pt = this._activePointers.get(e.pointerId);
+      this._activePointers.delete(e.pointerId);
+      if (this._activePointers.size < 2) this._pinchStartDist = 0;
+      if (this._activePointers.size === 0 && dragging && !moved && pt) {
+        const rect = canvas.getBoundingClientRect();
+        this.placeHere(pt.x - rect.left, pt.y - rect.top);
+      }
+      dragging = false;
+    };
+    canvas.addEventListener('pointerup', endPointer);
+    canvas.addEventListener('pointercancel', endPointer);
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      this.zoom(e.deltaY < 0 ? 1.2 : 0.84);
+    }, { passive:false });
+  },
+  _redraw(){
+    const canvas = document.getElementById('loc-plan-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0c1620'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (this.img && this.img.complete && this.img.naturalWidth) {
+      const scaleFit = Math.min(canvas.width / this.img.naturalWidth, canvas.height / this.img.naturalHeight);
+      const scale = scaleFit * (this._view?.zoom || 1);
+      const w = this.img.naturalWidth * scale, h = this.img.naturalHeight * scale;
+      const x = (canvas.width - w) / 2 + (this._view?.panX || 0);
+      const y = (canvas.height - h) / 2 + (this._view?.panY || 0);
+      ctx.drawImage(this.img, x, y, w, h);
+      this._lastView = { ox: x, oy: y, w, h };
+
+      // Draw deck polygons so the operator can target a real local area.
+      const spaces = this._deckSpaces(this._deck);
+      spaces.forEach(space => {
+        const poly = Array.isArray(space.poly) ? space.poly : [];
+        if (poly.length < 3) return;
+        ctx.beginPath();
+        poly.forEach((pt, idx) => {
+          const p = this._sourceToCanvas(pt[0], pt[1]);
+          if (!p) return;
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(92,184,214,0.08)';
+        ctx.strokeStyle = 'rgba(92,184,214,0.35)';
+        ctx.lineWidth = 1;
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
+    const marker = STATE.plans.markers.find(m => m.iconId === this._iconId && this._normalizeDeck(m.deck) === this._normalizeDeck(this._deck));
+    const draft = this._draftSelection && this._normalizeDeck(this._draftSelection.deck) === this._normalizeDeck(this._deck)
+      ? this._draftSelection
+      : null;
+    const drawMarker = draft || marker;
+    if (drawMarker) {
+      let mx = Number(drawMarker.x), my = Number(drawMarker.y);
+      if (Number.isFinite(Number(drawMarker.sx)) && Number.isFinite(Number(drawMarker.sy))) {
+        const p = this._sourceToCanvas(Number(drawMarker.sx), Number(drawMarker.sy));
+        if (p) { mx = p.x; my = p.y; }
+      }
+      ctx.font = '26px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('📍', mx, my);
+    }
+  },
+  placeHere(x, y){
+    const src = this._canvasToSource(x, y);
+    const sx = src ? src.sx : null;
+    const sy = src ? src.sy : null;
+    const hit = src ? this._findSpaceAtSource(this._deck, sx, sy) : null;
+    const value = hit && hit.name ? hit.name : `${this._deck} (plan)`;
+    this._draftSelection = { x, y, sx, sy, deck: this._deck, value };
+    const btn = document.getElementById('loc-plan-validate');
+    if (btn) btn.disabled = false;
+    this._showFeedback(hit ? `Local détecté: ${value}` : `Position prête sur ${this._deck}` , hit ? 'ok' : 'warn');
+    this._redraw();
+  },
+  confirmPlanSelection(){
+    const draft = this._draftSelection;
+    if (!draft) {
+      this._showFeedback('Sélectionnez une position avant de valider', 'warn');
+      return;
+    }
+    // Single-placement policy — move this team's marker rather than stacking duplicates.
+    STATE.plans.markers = STATE.plans.markers.filter(m => m.iconId !== this._iconId);
+    STATE.plans.markers.push({
+      id:'m'+Date.now(),
+      iconId:this._iconId,
+      deck:draft.deck,
+      x:draft.x,
+      y:draft.y,
+      sx:draft.sx,
+      sy:draft.sy,
+    });
+    NetOSC.sendStateSyncNow();
+    if (this._callback) this._callback(draft.value);
+    this._draftSelection = null;
+    ModalOSC.close();
+    if (UI.currentPage === 'plans') Pages.render_plans();
+  },
+};
+
+/* ============================================================
+   ChatOSC — header chat button — Bridge Comms preset/custom
+   messages, same preset list as LCC Sentinel 3's OSCModule
+   ============================================================ */
+const ChatOSC = {
+  PRESETS: [
+    'Zone secured — no casualties',
+    'Fire under control — cooling operations',
+    'Need reinforcement — send FS team',
+    'BA sets running low — send replacement',
+    'Team withdrawn — boundary set',
+    'Casualty on scene — request medical',
+    'Evacuation complete — all zones clear',
+  ],
+  unread: 0,
+  toggleDrawer(){
+    const drawer = document.getElementById('chat-drawer');
+    const overlay = document.getElementById('chat-drawer-overlay');
+    const show = !drawer.classList.contains('show');
+    drawer.classList.toggle('show', show);
+    overlay.classList.toggle('show', show);
+    if (show) { this.unread = 0; this.updateBadge(); this.renderPresets(); this.renderLog(); }
+  },
+  renderPresets(){
+    const el = document.getElementById('chat-presets');
+    if (el) el.innerHTML = this.PRESETS.map((m,i) => `<button class="btn btn-ghost" style="justify-content:flex-start;font-size:11px" onclick="ChatOSC.send(ChatOSC.PRESETS[${i}])">${escapeHtml(m)}</button>`).join('');
+  },
+  renderLog(){
+    const el = document.getElementById('chat-log');
+    if (el) el.innerHTML = STATE.oscMessages.slice(0,30).map(m => `<div class="notif-entry"><span class="ne-time">${m.time} — ${escapeHtml(m.from||'OSC')}</span>${escapeHtml(m.text)}</div>`).join('');
+  },
+  send(text){
+    const time = nowTime();
+    STATE.oscMessages.unshift({ time, text, from:'OSC' });
+    STATE.oscMessages = STATE.oscMessages.slice(0, 50);
+    NetOSC.send({ type:'OSC_MESSAGE', payload:{ text, time } });
+    this.renderLog();
+    UI.showToast('OSC → Bridge: ' + text);
+  },
+  sendCustom(){
+    const input = document.getElementById('chat-input');
+    if (!input || !input.value.trim()) return;
+    this.send(input.value.trim());
+    input.value = '';
+  },
+  receive(){
+    this.unread++;
+    this.updateBadge();
+    if (document.getElementById('chat-drawer').classList.contains('show')) this.renderLog();
+  },
+  updateBadge(){
+    const badge = document.getElementById('chat-badge');
+    if (!badge) return;
+    badge.style.display = this.unread ? 'flex' : 'none';
+    badge.textContent = this.unread > 99 ? '99+' : String(this.unread);
+  },
+};
+
+/* ============================================================
+   Bootstrap
+   ============================================================ */
+window.addEventListener('load', () => {
+  SpacesData.init().then(() => {
+    const src = document.getElementById('plan-zones-source');
+    if (src) src.textContent = SpacesData.describeSource();
+    if (UI.currentPage === 'plans') Pages.render_plans();
+  }).catch(() => {});
+  UI.init();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw-osc.js').catch(() => {});
+  }
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    window._pwaInstallPrompt = e;
+  });
+});
+</script>
+</body>
+</html>

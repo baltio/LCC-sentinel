@@ -8,7 +8,7 @@
 
 // Bumped by SAVE_VERSION.ps1 on every release, in step with Sentinel 3's own sw.js — see its
 // comment for why this byte-diff is what makes an update visible to the browser at all.
-const CACHE_NAME = 'lcc-mustering-v2.0.37';
+const CACHE_NAME = 'lcc-mustering-v2.0.36';
 
 const APP_SHELL_URL = './LCC Sentinel Mustering.html';
 

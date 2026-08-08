@@ -34,7 +34,7 @@ import ssl
 import sys
 import threading
 from datetime import datetime, timezone
-from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 # stdout/stderr default to the Windows console codepage (cp1252 on a French
@@ -158,16 +158,7 @@ def get_local_ip():
     return '127.0.0.1'
 
 def now_iso():
-    # Millisecond resolution matters: this timestamp becomes shared_snapshot_meta['updatedAt'],
-    # which clients compare against their own per-field "last touched" clocks to decide whether
-    # to keep a local edit or accept an incoming one (see LCC sentinel 3's / LCC OSC's
-    # mergeTeamArray). With whole-second resolution (the previous %S-only format), two different
-    # stations' edits landing within the same wall-clock second got IDENTICAL timestamps — found
-    # via a 5-station simultaneous-conflicting-edit stress test: a station would correctly accept
-    # one edit, then a second broadcast sharing that same one-second timestamp would immediately
-    # overwrite it again (touched > incoming uses strict "greater than", so a tie doesn't protect
-    # the value that was *just* accepted), silently reverting a live edit to stale/blank data.
-    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 if disconnect_diag.get('startedAt') is None:
     disconnect_diag['startedAt'] = now_iso()
@@ -342,17 +333,7 @@ async def push_state_to_peer():
                 ssl_ctx.verify_mode = ssl.CERT_NONE  # certificat auto-signe, propre a chaque serveur
             async with websockets.connect(url, ssl=ssl_ctx, open_timeout=5) as peer_ws:
                 await peer_ws.send(json.dumps({'type': 'AUTH', 'payload': {'token': '0000', 'profile': {}}}))
-                # The peer's AUTH handler broadcasts CLIENT_LIST to every authenticated client
-                # (itself included) BEFORE replying AUTH_OK to the one that just authenticated — a
-                # single recv() here used to grab that CLIENT_LIST instead and misread it as a
-                # rejection, silently aborting the push every single time (found via a dedicated
-                # peer-sync test: the backup server never once received a pushed snapshot). Drain
-                # messages until the real AUTH_OK/AUTH_FAIL shows up, or give up after a few tries.
-                reply = {}
-                for _ in range(5):
-                    reply = json.loads(await asyncio.wait_for(peer_ws.recv(), timeout=5))
-                    if reply.get('type') in ('AUTH_OK', 'AUTH_FAIL'):
-                        break
+                reply = json.loads(await asyncio.wait_for(peer_ws.recv(), timeout=5))
                 if reply.get('type') != 'AUTH_OK':
                     log.warning(f'[PEER-SYNC] Authentification refusee par {url}: {reply.get("payload")}')
                     return
@@ -506,14 +487,7 @@ async def handler(ws, path='/'):
                     shared_snapshot = snapshot
                     shared_snapshot_meta = {'updatedBy': cid, 'updatedAt': now_iso()}
                     mark_state_dirty()
-                    # NOT an immediate save_persistent_state() here: STATE_SYNC arrives from every
-                    # connected client roughly every 5s, and a synchronous disk write
-                    # (STATE_FILE.write_text) blocks this single asyncio event loop for every other
-                    # client's message processing (including their HEARTBEAT_ACK) while it runs. With
-                    # several stations syncing at once that adds up to frequent stalls felt by
-                    # everyone. mark_state_dirty() + the periodic autosave_loop (every
-                    # AUTOSAVE_INTERVAL=5s, one write regardless of client count) already guarantees
-                    # the same worst-case data-loss window on an ungraceful shutdown.
+                    save_persistent_state()
                     await broadcast({
                         'type': 'FULL_STATE',
                         'payload': build_full_state_payload(),
@@ -728,12 +702,7 @@ def start_http_server(use_https=False):
             self.send_response(404)
             self.end_headers()
 
-    # ThreadingHTTPServer (not the plain HTTPServer) — several tablets can hit the app shell /
-    # crew+spaces data files / plan images at once (e.g. right after a reboot, or several crew
-    # opening the PWA around the same moment), and the plain single-threaded HTTPServer serves
-    # one request at a time: every OTHER tablet's request just queues behind whichever transfer
-    # is already in flight, which reads as a random, unexplained hang/timeout to that user.
-    server = ThreadingHTTPServer((HOST, HTTP_PORT), SilentHandler)
+    server = HTTPServer((HOST, HTTP_PORT), SilentHandler)
     if use_https:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
@@ -743,26 +712,8 @@ def start_http_server(use_https=False):
     return server
 
 
-def _quiet_asyncio_exception_handler(loop, context):
-    """Windows' ProactorEventLoop logs a full traceback from its own internal socket-teardown
-    callback (_call_connection_lost -> sock.shutdown()) whenever a client's TCP connection is
-    already gone by the time the loop gets around to closing it — completely normal when several
-    tablets drop at once (Wi-Fi AP reboot, power blip, everyone logging off together at shift end;
-    reproduced with a 12-client simultaneous-disconnect load test). It's not a crash and every
-    other client stays fully served, but the scary traceback is easy to mistake for the server
-    dying if someone is watching the console. Downgrade this one known-benign case to a one-line
-    debug log; anything else still goes through asyncio's normal (louder) default handling.
-    """
-    exc = context.get('exception')
-    if isinstance(exc, ConnectionResetError):
-        log.debug(f'[NET] Connexion deja fermee cote client (nettoyage normal): {exc}')
-        return
-    loop.default_exception_handler(context)
-
-
 # ── Main ───────────────────────────────────────────────────────────────────────
 async def main():
-    asyncio.get_running_loop().set_exception_handler(_quiet_asyncio_exception_handler)
     local_ip = get_local_ip()
 
     logging.basicConfig(

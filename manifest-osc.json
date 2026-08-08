@@ -1,0 +1,45 @@
+{
+  "name": "LCC OSC — On-Scene Coordinator",
+  "short_name": "LCC OSC",
+  "description": "Tablet companion to LCC Sentinel 3 for the On-Scene Coordinator (Fire/Protection teams, Meeting Point, Evacuation, Medical, Bridge Info, Plans)",
+  "start_url": "./LCC%20OSC.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#06111F",
+  "theme_color": "#06111F",
+  "lang": "fr",
+  "categories": ["utilities"],
+  "icons": [
+    {
+      "src": "assets/img/general/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/img/general/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/img/general/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "assets/img/general/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/img/general/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

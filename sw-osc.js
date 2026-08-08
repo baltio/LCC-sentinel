@@ -1,28 +1,32 @@
-﻿/* ============================================================
-   LCC SENTINEL MUSTERING — Service Worker PWA
+/* ============================================================
+   LCC OSC — Service Worker PWA
    Cache-first strategy so the app shell (HTML/CSS/JS) loads with
-   no network at all — separate from LCC Sentinel 3's own sw.js.
-   Live crew/PAX roster data is a separate concern, cached in
-   localStorage by the app itself (STATE.cachedRoster).
+   no network at all — separate from LCC Sentinel 3's own sw.js
+   and LCC Sentinel Mustering's sw-mustering.js.
+   Live team/fire-sit/medical/plans data is synced over WebSocket
+   by the app itself (NetOSC), not cached here.
    ============================================================ */
 
-// Bumped by SAVE_VERSION.ps1 on every release, in step with Sentinel 3's own sw.js — see its
-// comment for why this byte-diff is what makes an update visible to the browser at all.
-const CACHE_NAME = 'lcc-mustering-v2.0.37';
+// Bump on every release so the browser detects the update (byte-diff triggers install).
+const CACHE_NAME = 'lcc-osc-v1.0.0';
 
-const APP_SHELL_URL = './LCC Sentinel Mustering.html';
+const APP_SHELL_URL = './LCC OSC.html';
 
 const PRECACHE_URLS = [
   APP_SHELL_URL,
-  './manifest-mustering.json',
+  './manifest-osc.json',
+  './assets/js/oe_crew_data.js',
+  './assets/js/oe_spaces_data.js',
   './assets/img/general/icon-192.png',
   './assets/img/general/icon-512.png',
   './assets/img/general/icon-96.png',
   './assets/img/general/LOGO_CC_RGBv2.ico',
+  './assets/img/general/floconlcc.png',
+  './assets/img/plans/GaLCC_page_01.png',
 ];
 
-// See sw.js's identical comment: retries the app shell specifically (the one file offline access
-// cannot work without) instead of letting a flaky first-install connection silently and
+// Retries the app shell specifically (the one file offline access cannot work
+// without) instead of letting a flaky first-install connection silently and
 // permanently leave the tablet unable to open this app offline.
 async function cacheAppShellWithRetry(cache, attempts = 3) {
   for (let i = 0; i < attempts; i++) {
@@ -69,6 +73,8 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  // Never cache the live WebSocket/API traffic — only static app-shell assets.
+  if (url.pathname.startsWith('/api/')) return;
 
   const isNavigation = event.request.mode === 'navigate' || event.request.destination === 'document';
 

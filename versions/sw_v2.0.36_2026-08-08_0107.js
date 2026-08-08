@@ -7,7 +7,7 @@
 // bytes actually change each release — that byte diff is what makes the browser notice there's a
 // new service worker at all and go fetch it; a same-content sw.js is otherwise invisible to it,
 // and the app would stay on old cached code until the site's storage is cleared by hand.
-const CACHE_NAME = 'charcot-sentinel-v2.0.37';
+const CACHE_NAME = 'charcot-sentinel-v2.0.36';
 
 // The main HTML is the one file offline access cannot work without — everything else
 // (icons, manifest) degrades gracefully if missing, this one doesn't.
