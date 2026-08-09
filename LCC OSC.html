@@ -573,8 +573,8 @@ button,input,select,textarea{font-family:var(--font-ui);}
   <div class="sec-hdr">RÉSEAU</div>
   <div id="net-drawer-status" class="u-net-status-text"></div>
   <div class="sit-field">
-    <label class="sit-label">Serveur (host:port)</label>
-    <input class="sit-input" id="net-host-input" placeholder="ex: 192.168.1.50:8765">
+    <label class="sit-label">Serveur (IP seule ou IP:port)</label>
+    <input class="sit-input" id="net-host-input" placeholder="ex: 192.168.1.50 (port 8765 par défaut)">
   </div>
   <button class="btn btn-gold btn-block" onclick="NetOSC.applyHostAndConnect()">CONNECTER</button>
   <button class="btn btn-ghost btn-block" onclick="NetOSC.goStandalone()">MODE STANDALONE</button>
@@ -1048,7 +1048,15 @@ const NetOSC = {
       return;
     }
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    let url = host.includes('://') ? host : `${scheme}://${host}`;
+    // A bare IP/hostname with no ":port" is the single most natural thing to type in this field —
+    // e.g. reading it off a QR code or off Sentinel 3's own network status, which shows just the
+    // IP. Without a fallback, the browser silently defaults to port 443/80 (nothing listens there;
+    // sentinel_server.py's WebSocket is on 8765 by default), and the app just hangs on
+    // "Connecting..." forever with no error explaining why. Only append the default port when the
+    // host has neither an explicit scheme nor its own ":port" already.
+    let hostPart = host;
+    if (!hostPart.includes('://') && !/:\d+$/.test(hostPart)) hostPart = `${hostPart}:8765`;
+    let url = hostPart.includes('://') ? hostPart : `${scheme}://${hostPart}`;
     try {
       this.ws = new WebSocket(url);
     } catch(e) { this.scheduleReconnect(host); return; }
