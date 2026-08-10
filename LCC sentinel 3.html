@@ -5816,14 +5816,14 @@ body {
             <span class="sit-ts" id="ts-fire-staircase"></span>
           </div>
           <div style="display:flex;gap:4px;align-items:center;margin-top:3px">
-            <button class="tbtn on-ok" onclick="FireSit.toggleBinary(this,'fire-staircase','Staircase A')">A</button>
-            <button class="tbtn on-ok" onclick="FireSit.toggleBinary(this,'fire-staircase','Staircase B')">B</button>
-            <button class="tbtn on-ok" onclick="FireSit.toggleBinary(this,'fire-staircase','Staircase C')">C</button>
+            <button class="tbtn on-ok" data-flag-group="staircase" data-flag-key="A" onclick="FireSit.toggleBinary(this,'fire-staircase','Staircase A')">A</button>
+            <button class="tbtn on-ok" data-flag-group="staircase" data-flag-key="B" onclick="FireSit.toggleBinary(this,'fire-staircase','Staircase B')">B</button>
+            <button class="tbtn on-ok" data-flag-group="staircase" data-flag-key="C" onclick="FireSit.toggleBinary(this,'fire-staircase','Staircase C')">C</button>
             <span style="font-size:8px;color:var(--oe-cream-dim);margin-left:6px">FIRE LOCKER</span>
-            <button class="tbtn on-ok" onclick="FireSit.toggleBinary(this,'fire-staircase','Fire locker 1')">1</button>
-            <button class="tbtn on-ok" onclick="FireSit.toggleBinary(this,'fire-staircase','Fire locker 2')">2</button>
-            <button class="tbtn on-ok" onclick="FireSit.toggleBinary(this,'fire-staircase','Fire locker 3')">3</button>
-            <button class="tbtn on-ok" onclick="FireSit.toggleBinary(this,'fire-staircase','Fire locker 4')">4</button>
+            <button class="tbtn on-ok" data-flag-group="staircase" data-flag-key="1" onclick="FireSit.toggleBinary(this,'fire-staircase','Fire locker 1')">1</button>
+            <button class="tbtn on-ok" data-flag-group="staircase" data-flag-key="2" onclick="FireSit.toggleBinary(this,'fire-staircase','Fire locker 2')">2</button>
+            <button class="tbtn on-ok" data-flag-group="staircase" data-flag-key="3" onclick="FireSit.toggleBinary(this,'fire-staircase','Fire locker 3')">3</button>
+            <button class="tbtn on-ok" data-flag-group="staircase" data-flag-key="4" onclick="FireSit.toggleBinary(this,'fire-staircase','Fire locker 4')">4</button>
           </div>
         </div>
 
@@ -5853,10 +5853,10 @@ body {
           </div>
           <div class="u-display-flex_gap-3px_flex-wrap-wrap_margin-top-3px" id="fire-firedoors-zones">
             <span class="u-font-size-9px_color-oe-cream-dim_width-100_margin-bottom-2">FSD (MVZ) :</span>
-            <button class="tbtn" onclick="this.classList.toggle('on-ok');var fireDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-firedoors').textContent=fireDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'FSD 1: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">1</button>
-            <button class="tbtn" onclick="this.classList.toggle('on-ok');var fireDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-firedoors').textContent=fireDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'FSD 2: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">2</button>
-            <button class="tbtn" onclick="this.classList.toggle('on-ok');var fireDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-firedoors').textContent=fireDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'FSD 3: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">3</button>
-            <button class="tbtn" onclick="this.classList.toggle('on-ok');var fireDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-firedoors').textContent=fireDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'FSD 4: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">4</button>
+            <button class="tbtn" data-flag-group="fireDoors" data-flag-key="1" onclick="FireSit.toggleFlag('fireDoors','1','FSD 1','CLOSED','OPENED')">1</button>
+            <button class="tbtn" data-flag-group="fireDoors" data-flag-key="2" onclick="FireSit.toggleFlag('fireDoors','2','FSD 2','CLOSED','OPENED')">2</button>
+            <button class="tbtn" data-flag-group="fireDoors" data-flag-key="3" onclick="FireSit.toggleFlag('fireDoors','3','FSD 3','CLOSED','OPENED')">3</button>
+            <button class="tbtn" data-flag-group="fireDoors" data-flag-key="4" onclick="FireSit.toggleFlag('fireDoors','4','FSD 4','CLOSED','OPENED')">4</button>
           </div>
         </div>
 
@@ -5868,17 +5868,17 @@ body {
           </div>
           <div class="u-display-flex_gap-3px_flex-wrap-wrap_margin-top-3px" id="fire-wtdoors-zones">
             <span class="u-font-size-9px_color-oe-cream-dim_width-100_margin-bottom-2">WTD :</span>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 1: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">1</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 2: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">2</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 3: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">3</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 4: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">4</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 5: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">5</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 6: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">6</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 7: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">7</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 8: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">8</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 9: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">9</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 10: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">10</button>
-            <button class="tbtn u-padding-2px-4px_min-width-24px" onclick="this.classList.toggle('on-ok');var wtDoorTs=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});document.getElementById('ts-fire-wtdoors').textContent=wtDoorTs;CharcotSentinel.log(CharcotSentinel.state.profile.name,'WTD 11: '+(this.classList.contains('on-ok')?'CLOSED':'OPENED'),'FIRE');">11</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="1" onclick="FireSit.toggleFlag('wtDoors','1','WTD 1','CLOSED','OPENED')">1</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="2" onclick="FireSit.toggleFlag('wtDoors','2','WTD 2','CLOSED','OPENED')">2</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="3" onclick="FireSit.toggleFlag('wtDoors','3','WTD 3','CLOSED','OPENED')">3</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="4" onclick="FireSit.toggleFlag('wtDoors','4','WTD 4','CLOSED','OPENED')">4</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="5" onclick="FireSit.toggleFlag('wtDoors','5','WTD 5','CLOSED','OPENED')">5</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="6" onclick="FireSit.toggleFlag('wtDoors','6','WTD 6','CLOSED','OPENED')">6</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="7" onclick="FireSit.toggleFlag('wtDoors','7','WTD 7','CLOSED','OPENED')">7</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="8" onclick="FireSit.toggleFlag('wtDoors','8','WTD 8','CLOSED','OPENED')">8</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="9" onclick="FireSit.toggleFlag('wtDoors','9','WTD 9','CLOSED','OPENED')">9</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="10" onclick="FireSit.toggleFlag('wtDoors','10','WTD 10','CLOSED','OPENED')">10</button>
+            <button class="tbtn u-padding-2px-4px_min-width-24px" data-flag-group="wtDoors" data-flag-key="11" onclick="FireSit.toggleFlag('wtDoors','11','WTD 11','CLOSED','OPENED')">11</button>
           </div>
         </div>
 
@@ -5902,9 +5902,9 @@ body {
             <span class="sit-ts" id="ts-fire-pressure"></span>
           </div>
           <div class="u-display-flex_gap-3px_margin-top-3px">
-            <button class="tbtn" onclick="this.classList.toggle('on-ok');FireSit.stampNow('fire-pressure');">A</button>
-            <button class="tbtn" onclick="this.classList.toggle('on-ok');FireSit.stampNow('fire-pressure');">B</button>
-            <button class="tbtn" onclick="this.classList.toggle('on-ok');FireSit.stampNow('fire-pressure');">C</button>
+            <button class="tbtn" data-flag-group="pressure" data-flag-key="A" onclick="FireSit.toggleFlag('pressure','A','Staircase A high pressure','ON','OFF')">A</button>
+            <button class="tbtn" data-flag-group="pressure" data-flag-key="B" onclick="FireSit.toggleFlag('pressure','B','Staircase B high pressure','ON','OFF')">B</button>
+            <button class="tbtn" data-flag-group="pressure" data-flag-key="C" onclick="FireSit.toggleFlag('pressure','C','Staircase C high pressure','ON','OFF')">C</button>
           </div>
         </div>
 
@@ -9094,6 +9094,7 @@ const FireModule = {
     return {
       checklist: this.checklist,
       teamStatuses: this.teamStatuses,
+      teamStatusesTouchedAt: this.teamStatusesTouchedAt,
       teams: (typeof NetworkModule !== 'undefined' && NetworkModule.withTouchedAt) ? NetworkModule.withTouchedAt(teams, this.teamsTouchedAt) : teams,
       fireTeams: (typeof NetworkModule !== 'undefined' && NetworkModule.withTouchedAt) ? NetworkModule.withTouchedAt(fireTeams, this.fireTeamsTouchedAt) : fireTeams,
     };
@@ -9225,7 +9226,18 @@ const FireModule = {
       ProtectionTeams.teams = NetworkModule.mergeTeamArray(ProtectionTeams.teams, payload.protectionTeams, ProtectionTeams.touchedAt, incomingUpdatedAt);
     }
 
+    // LCC OSC's Meeting Point page — its COMPLETE/MISSING status lives in this SAME separate
+    // teamStatuses dict LCC sentinel 3 uses (not a field on the roster item), see LCC OSC.html's
+    // meetingTeamStatuses comment for the full story of why that status never used to sync at all.
+    if (Array.isArray(payload.meetingTeams) && typeof NetworkModule !== 'undefined') {
+      this.teams = NetworkModule.mergeTeamArray(this.teams, payload.meetingTeams, this.teamsTouchedAt, incomingUpdatedAt);
+    }
+    if (payload.meetingTeamStatuses && typeof NetworkModule !== 'undefined') {
+      this.teamStatuses = NetworkModule.mergeDictByKey(this.teamStatuses, payload.meetingTeamStatuses, this.teamStatusesTouchedAt, incomingUpdatedAt);
+    }
+
     this.renderFireTeams();
+    if (Array.isArray(payload.meetingTeams) || payload.meetingTeamStatuses) this.renderTeamStatus();
     if (typeof ProtectionTeams !== 'undefined' && typeof ProtectionTeams.render === 'function') {
       ProtectionTeams.render();
     }
@@ -9272,7 +9284,16 @@ const FireModule = {
     const highlightTargets = shouldShowOscHighlight ? this.collectRemoteHighlightTargets(payload) : [];
 
     if (Array.isArray(payload.checklist)) this.checklist = payload.checklist;
-    if (payload.teamStatuses && typeof payload.teamStatuses === 'object') this.teamStatuses = payload.teamStatuses;
+    if (payload.teamStatuses && typeof payload.teamStatuses === 'object' && typeof NetworkModule !== 'undefined') {
+      // Was a blind overwrite of the whole dict — same class of bug as the original fire-team
+      // location race, just never caught here since this discrete path wasn't part of that fix.
+      this.teamStatuses = NetworkModule.mergeDictByKey(this.teamStatuses, payload.teamStatuses, this.teamStatusesTouchedAt, incomingUpdatedAt, payload.teamStatusesTouchedAt);
+    }
+
+    if (Array.isArray(payload.protectionTeams) && typeof ProtectionTeams !== 'undefined' && typeof NetworkModule !== 'undefined') {
+      ProtectionTeams.teams = NetworkModule.mergeTeamArray(ProtectionTeams.teams, payload.protectionTeams, ProtectionTeams.touchedAt, incomingUpdatedAt);
+      if (typeof ProtectionTeams.render === 'function') ProtectionTeams.render();
+    }
 
     if (Array.isArray(payload.teams) && typeof NetworkModule !== 'undefined') {
       this.teams = NetworkModule.mergeTeamArray(this.teams, payload.teams, this.teamsTouchedAt, incomingUpdatedAt).map(t => ({
@@ -10197,8 +10218,13 @@ const FireDeckMiniMap = {
     /* Calcul bounding box des pts */
     let bx0 = pts[0].x, by0 = pts[0].y, bx1 = pts[0].x, by1 = pts[0].y;
     pts.forEach(p => { bx0 = Math.min(bx0, p.x); by0 = Math.min(by0, p.y); bx1 = Math.max(bx1, p.x); by1 = Math.max(by1, p.y); });
-    const overlayState = st.overlayState || (st.evacuationStatus || (st.evacuated ? 'checked' : null));
-    if (overlayState === 'checked') {
+    // checked (blue cross — a local physically verified) and evac status (green/red hachure) are
+    // independent facts about a zone and can both be true at once — this used to collapse both
+    // into a single "overlayState" with evac always winning, so the checked-cross silently never
+    // drew for any zone that also had an evacuation status. st carries the raw evacuated/
+    // evacuationStatus fields (spread from getZoneState before overlayState was appended) —
+    // check them independently instead, and draw both when both apply.
+    if (st.evacuated) {
       const crossStep = Math.max(8, 16 / zoom);
       ctx.strokeStyle = 'rgba(14, 80, 140, 0.95)';
       ctx.lineWidth = Math.max(0.6, 0.8 / zoom);
@@ -10210,9 +10236,10 @@ const FireDeckMiniMap = {
           ctx.stroke();
         }
       }
-    } else if (overlayState === 'in-progress' || overlayState === 'evacuated') {
+    }
+    if (st.evacuationStatus === 'in-progress' || st.evacuationStatus === 'evacuated') {
       const step = Math.max(4, 10 / zoom);
-      const hatchColor = overlayState === 'in-progress' ? 'rgba(216,60,46,0.90)' : 'rgba(34,197,94,0.90)';
+      const hatchColor = st.evacuationStatus === 'in-progress' ? 'rgba(216,60,46,0.90)' : 'rgba(34,197,94,0.90)';
       ctx.strokeStyle = hatchColor;
       ctx.lineWidth = Math.max(0.7, 1 / zoom);
       ctx.beginPath();
@@ -10634,7 +10661,65 @@ const FireDeckMiniMap = {
 /* ── FireSit — Situation stamping & zone selectors ─────────── */
 const FireSit = {
 
+  // WTD/FSD/staircase+fire-locker/high-pressure-staircase toggle state used to live NOWHERE but
+  // the DOM (a CSS class on the button element itself, read back via getActiveButtons() querying
+  // button.textContent) — found via a stress test report ("boutons qui ne gardent pas leur état").
+  // Two real bugs came from that: (1) if a station's periodic STATE_SYNC fires while it's on any
+  // OTHER page, these buttons aren't even mounted, so it reports "nothing active" and that empty
+  // reading gets broadcast as truth; (2) receiving a remote snapshot just force-set the DOM classes
+  // from whatever the LATEST snapshot said, wholesale, with no per-item merge — so a stale/empty
+  // reading from one station could silently wipe a correctly-set state from another. Fixed by
+  // keeping the real state in these flat dicts (key -> boolean) with per-key touched timestamps,
+  // same LWW mechanism used elsewhere (mergeDictByKey) — the DOM is now a pure reflection of this
+  // state, applied via applyFlagsToDom(), never the source of truth itself.
+  // Staircase A/B/C + Fire locker 1-4 default to AVAILABLE (matches the static "on-ok" class
+  // already baked into their HTML) — everything else (FSD/WTD/pressure) defaults to off/unset.
+  // Keys are the button's own short label ('A'/'B'/'C'/'1'..'4') — matches the wire format LCC
+  // OSC's Bridge Info page already expects (staircaseActive: array of these same short labels).
+  staircaseFlags: { 'A':true, 'B':true, 'C':true, '1':true, '2':true, '3':true, '4':true }, staircaseFlagsTouchedAt: {},
+  fireDoorsFlags: {}, fireDoorsFlagsTouchedAt: {},
+  wtDoorsFlags: {}, wtDoorsFlagsTouchedAt: {},
+  pressureFlags: {}, pressureFlagsTouchedAt: {},
+
+  FLAG_GROUPS: {
+    staircase: { flags: 'staircaseFlags', touched: 'staircaseFlagsTouchedAt', stampField: 'fire-staircase' },
+    fireDoors: { flags: 'fireDoorsFlags', touched: 'fireDoorsFlagsTouchedAt', stampField: 'fire-firedoors' },
+    wtDoors:   { flags: 'wtDoorsFlags',   touched: 'wtDoorsFlagsTouchedAt',   stampField: 'fire-wtdoors' },
+    pressure:  { flags: 'pressureFlags',  touched: 'pressureFlagsTouchedAt',  stampField: 'fire-pressure' },
+  },
+
+  toggleFlag(group, key, label, onText, offText) {
+    const cfg = this.FLAG_GROUPS[group];
+    if (!cfg) return;
+    const next = !this[cfg.flags][key];
+    this[cfg.flags][key] = next;
+    this[cfg.touched][key] = Date.now();
+    this.applyFlagsToDom(group);
+    this.stampNow(cfg.stampField); // stampNow() also calls syncNow(), broadcasting the change
+    if (typeof CharcotSentinel !== 'undefined') {
+      CharcotSentinel.log(CharcotSentinel.state.profile.name, `${label}: ${next ? (onText||'ON') : (offText||'OFF')}`, 'FIRE');
+    }
+  },
+
+  applyFlagsToDom(group) {
+    const cfg = this.FLAG_GROUPS[group];
+    if (!cfg) return;
+    const flags = this[cfg.flags];
+    document.querySelectorAll(`[data-flag-group="${group}"]`).forEach(btn => {
+      btn.classList.toggle('on-ok', !!flags[btn.dataset.flagKey]);
+    });
+  },
+
+  applyAllFlagsToDom() {
+    Object.keys(this.FLAG_GROUPS).forEach(group => this.applyFlagsToDom(group));
+  },
+
+  // Legacy handler kept for the "STAIRCASE AVAILABLE" A/B/C + "Fire locker" 1-4 buttons — now just
+  // routes into the state-backed toggleFlag() above instead of touching classList directly.
   toggleBinary(btn, stampFieldId, label) {
+    const key = btn.dataset.flagKey;
+    if (key) { this.toggleFlag('staircase', key, label, 'AVAIL', 'BLOCKED'); return; }
+    // Fallback (should not happen once every button carries data-flag-key): behave as before.
     const isOk = btn.classList.contains('on-ok');
     const nextOk = !isOk;
     btn.classList.toggle('on-ok', nextOk);
@@ -10789,15 +10874,25 @@ const FireSit = {
     const dcpPsBtn = document.querySelector("button[onclick*=\"FireSit.toggleDcp(this,'PS')\"]");
     const dcpStbBtn = document.querySelector("button[onclick*=\"FireSit.toggleDcp(this,'STB')\"]");
 
+    // staircaseActive/pressureActive/fireDoorsActive/wtDoorsActive derive from the real state dicts
+    // now (staircaseFlags etc), not a DOM query — see the FLAG_GROUPS comment above toggleFlag().
+    // Wire SHAPE is unchanged (array of the short button labels that are "on") so nothing else that
+    // reads these fields (e.g. LCC OSC's Bridge Info page) needs to change; the *TouchedAt dicts are
+    // additive, used for the LWW merge in applyRemoteSnapshot() below.
+    const activeKeys = (flags) => Object.keys(flags).filter(k => flags[k]);
     return {
       fields,
       stamps,
       evacSelected: Array.isArray(this.evacSelected) ? this.evacSelected : [],
       elecSelected: Array.isArray(this.elecSelected) ? this.elecSelected : [],
-      staircaseActive: this.getActiveButtons("button[onclick*=\"fire-staircase\"]"),
-      pressureActive: this.getActiveButtons("button[onclick*=\"fire-pressure\"]"),
-      fireDoorsActive: this.getActiveButtons('#fire-firedoors-zones .tbtn'),
-      wtDoorsActive: this.getActiveButtons('#fire-wtdoors-zones .tbtn'),
+      staircaseActive: activeKeys(this.staircaseFlags),
+      staircaseFlagsTouchedAt: { ...this.staircaseFlagsTouchedAt },
+      pressureActive: activeKeys(this.pressureFlags),
+      pressureFlagsTouchedAt: { ...this.pressureFlagsTouchedAt },
+      fireDoorsActive: activeKeys(this.fireDoorsFlags),
+      fireDoorsFlagsTouchedAt: { ...this.fireDoorsFlagsTouchedAt },
+      wtDoorsActive: activeKeys(this.wtDoorsFlags),
+      wtDoorsFlagsTouchedAt: { ...this.wtDoorsFlagsTouchedAt },
       dcp: {
         psActive: !!(dcpPsBtn && dcpPsBtn.classList.contains('on-ok')),
         stbActive: !!(dcpStbBtn && dcpStbBtn.classList.contains('on-ok')),
@@ -10807,8 +10902,31 @@ const FireSit = {
     };
   },
 
-  applyRemoteSnapshot(snapshot) {
+  STAIRCASE_KEYS: ['A','B','C','1','2','3','4'],
+  FIREDOORS_KEYS: ['1','2','3','4'],
+  WTDOORS_KEYS: ['1','2','3','4','5','6','7','8','9','10','11'],
+  PRESSURE_KEYS: ['A','B','C'],
+  // The wire format only lists which keys are ACTIVE (see getNetworkSnapshot's activeKeys()) — to
+  // merge correctly we need an explicit true/false for every KNOWN key, since a key simply absent
+  // from the incoming array must mean "the sender considers this OFF", not "no opinion".
+  _activeArrayToFlagDict(knownKeys, activeArray) {
+    const active = new Set(Array.isArray(activeArray) ? activeArray : []);
+    const dict = {};
+    knownKeys.forEach(k => { dict[k] = active.has(k); });
+    return dict;
+  },
+  // Merges one flag group's incoming (array-of-active-keys) reading into local state via the same
+  // per-key LWW as everywhere else, then reflects the merged result onto the actual DOM buttons.
+  _mergeFlagGroup(group, knownKeys, incomingActive, incomingTouchedAt, incomingUpdatedAt) {
+    if (!Array.isArray(incomingActive) || typeof NetworkModule === 'undefined') return;
+    const cfg = this.FLAG_GROUPS[group];
+    const incomingDict = this._activeArrayToFlagDict(knownKeys, incomingActive);
+    this[cfg.flags] = NetworkModule.mergeDictByKey(this[cfg.flags], incomingDict, this[cfg.touched], incomingUpdatedAt, incomingTouchedAt);
+    this.applyFlagsToDom(group);
+  },
+  applyRemoteSnapshot(snapshot, incomingUpdatedAt) {
     if (!snapshot || typeof snapshot !== 'object') return;
+    incomingUpdatedAt = incomingUpdatedAt || Date.now();
 
     if (snapshot.fields && typeof snapshot.fields === 'object') {
       Object.entries(snapshot.fields).forEach(([id, value]) => {
@@ -10850,10 +10968,10 @@ const FireSit = {
       }));
     }
 
-    this.setActiveButtons("button[onclick*=\"fire-staircase\"]", snapshot.staircaseActive);
-    this.setActiveButtons("button[onclick*=\"fire-pressure\"]", snapshot.pressureActive);
-    this.setActiveButtons('#fire-firedoors-zones .tbtn', snapshot.fireDoorsActive);
-    this.setActiveButtons('#fire-wtdoors-zones .tbtn', snapshot.wtDoorsActive);
+    this._mergeFlagGroup('staircase', this.STAIRCASE_KEYS, snapshot.staircaseActive, snapshot.staircaseFlagsTouchedAt, incomingUpdatedAt);
+    this._mergeFlagGroup('pressure', this.PRESSURE_KEYS, snapshot.pressureActive, snapshot.pressureFlagsTouchedAt, incomingUpdatedAt);
+    this._mergeFlagGroup('fireDoors', this.FIREDOORS_KEYS, snapshot.fireDoorsActive, snapshot.fireDoorsFlagsTouchedAt, incomingUpdatedAt);
+    this._mergeFlagGroup('wtDoors', this.WTDOORS_KEYS, snapshot.wtDoorsActive, snapshot.wtDoorsFlagsTouchedAt, incomingUpdatedAt);
 
     if (snapshot.dcp && typeof snapshot.dcp === 'object') {
       const dcpPsBtn = document.querySelector("button[onclick*=\"FireSit.toggleDcp(this,'PS')\"]");
@@ -11375,6 +11493,17 @@ const ProtectionTeams = {
     fields.forEach(f => { this.touchedAt[id][f] = now; });
   },
 
+  // Unlike FireModule, ProtectionTeams never broadcast a discrete update on edit — every change
+  // made from the dedicated Protection Team page (as opposed to Sentinel3's OSC page, which DOES
+  // push via OSCModule.sendTeamUpdate) only reached other stations on the next periodic ~5s
+  // STATE_SYNC. Found via a full bidirectional-sync verification pass (Fire Teams synced near-
+  // instantly, Protection Teams took up to 5s for the exact same kind of edit). Reuses the
+  // FIRE_TEAM_UPDATE channel FireModule/LCC OSC already listen on, just adding protectionTeams.
+  sendNetworkUpdate() {
+    if (typeof NetworkModule === 'undefined' || typeof NetworkModule.send !== 'function') return;
+    NetworkModule.send({ type: 'FIRE_TEAM_UPDATE', payload: { protectionTeams: NetworkModule.withTouchedAt(this.teams, this.touchedAt) } });
+  },
+
   init() {
     this.teams.forEach(team => {
       team.status = team.status || 'missing';
@@ -11470,6 +11599,7 @@ const ProtectionTeams = {
     this.touch(id, 'status', 'memberStates');
 
     this.render();
+    this.sendNetworkUpdate();
     CharcotSentinel.log(CharcotSentinel.state.profile.name, `${t.name}: ${status.toUpperCase()}`, 'FIRE');
   },
 
@@ -11479,6 +11609,7 @@ const ProtectionTeams = {
     if ((t.location || '') !== (val || '')) CharcotSentinel.log(CharcotSentinel.state.profile.name, `${t.name}: Location -> ${val || '—'}`, 'FIRE');
     t.location = val;
     this.touch(id, 'location');
+    this.sendNetworkUpdate();
   },
 
   toggleMember(id, safetyNumber) {
@@ -11494,6 +11625,7 @@ const ProtectionTeams = {
     }
     this.touch(id, 'status', 'memberStates');
     this.render();
+    this.sendNetworkUpdate();
   },
 
   logNote(id) {
@@ -11507,6 +11639,7 @@ const ProtectionTeams = {
     this.touch(id, 'notes');
     el.value = '';
     this.render();
+    this.sendNetworkUpdate();
   },
 
   logAtMP(id) {
@@ -11518,6 +11651,7 @@ const ProtectionTeams = {
     CharcotSentinel.log(CharcotSentinel.state.profile.name, `${t.name}: ${text}`, 'FIRE');
     this.touch(id, 'notes');
     this.render();
+    this.sendNetworkUpdate();
   },
 
   _renderNotes(id, notes) {
@@ -11555,6 +11689,7 @@ const ProtectionTeams = {
     CharcotSentinel.log(CharcotSentinel.state.profile.name, `${t.name}: ${text}`, 'FIRE');
     this.touch(id, 'notes');
     this.render();
+    this.sendNetworkUpdate();
   }
 };
 
@@ -12086,6 +12221,19 @@ const MedicalModule = {
     return this.victims.find(v => v.id === id);
   },
 
+  // Same per-victim, per-field LWW tracking as FireModule.fireTeamsTouchedAt — victims.length
+  // grows dynamically (unlike the fixed-size team rosters), so this ALSO depends on
+  // NetworkModule.mergeTeamArray()'s union-safety fix (keep local-only items, don't drop them)
+  // found via a full bidirectional-sync verification pass: a victim created on LCC OSC was
+  // silently deleted the moment Sentinel3's own next periodic snapshot (which naturally didn't
+  // know about it yet) got merged in, since victims.id wasn't present in that incoming array.
+  victimsTouchedAt: {},
+  touch(id, ...fields) {
+    this.victimsTouchedAt[id] = this.victimsTouchedAt[id] || {};
+    const now = Date.now();
+    fields.forEach(f => { this.victimsTouchedAt[id][f] = now; });
+  },
+
   renderVictimList() {
     const el = document.getElementById('victim-list');
     const fireEl = document.getElementById('fire-victim-list');
@@ -12246,10 +12394,12 @@ const MedicalModule = {
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px">
           <div class="t-subtitle">IDENTITY & LOCATION</div>
         </div>
-        <button onclick="MedicalModule.toggleVictimType(${id})"
-          style="display:block; width:100%; margin-bottom:10px; padding:10px 12px; border-radius:8px; border:2px solid ${v.victimType==='CREW' ? 'rgba(92,184,214,0.7)' : 'rgba(240,192,64,0.7)'}; background:${v.victimType==='CREW' ? 'rgba(92,184,214,0.2)' : 'rgba(240,192,64,0.2)'}; color:${v.victimType==='CREW' ? 'var(--oe-gold)' : '#f0c040'}; font-size:13px; font-weight:800; letter-spacing:0.12em; cursor:pointer; text-transform:uppercase">
-          ${v.victimType === 'CREW' ? '⚓ CREW' : '🧳 PAX'}
-        </button>
+        <div style="display:flex; gap:6px; margin-bottom:10px">
+          <button onclick="MedicalModule.setVictimType(${id},'CREW')"
+            style="flex:1; padding:10px 12px; border-radius:8px; border:2px solid ${v.victimType==='CREW' ? 'rgba(92,184,214,0.9)' : 'rgba(255,255,255,0.12)'}; background:${v.victimType==='CREW' ? 'rgba(92,184,214,0.22)' : 'rgba(255,255,255,0.03)'}; color:${v.victimType==='CREW' ? 'var(--oe-gold)' : 'var(--oe-cream-dim)'}; font-size:13px; font-weight:800; letter-spacing:0.1em; cursor:pointer; text-transform:uppercase">⚓ CREW</button>
+          <button onclick="MedicalModule.setVictimType(${id},'PAX')"
+            style="flex:1; padding:10px 12px; border-radius:8px; border:2px solid ${v.victimType==='PAX' ? 'rgba(240,192,64,0.9)' : 'rgba(255,255,255,0.12)'}; background:${v.victimType==='PAX' ? 'rgba(240,192,64,0.22)' : 'rgba(255,255,255,0.03)'}; color:${v.victimType==='PAX' ? '#f0c040' : 'var(--oe-cream-dim)'}; font-size:13px; font-weight:800; letter-spacing:0.1em; cursor:pointer; text-transform:uppercase">🧳 PAX</button>
+        </div>
         <div class="confidential-data" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px">
           <div style="grid-column:1 / -1">
             <label class="t-small u-display-block_margin-bottom-3px-2">${v.victimType === 'CREW' ? 'SELECT FROM CREW LIST' : 'SELECT FROM PAX LIST'}</label>
@@ -12513,6 +12663,7 @@ const MedicalModule = {
     } else {
       v.injuredZones[zone] = severities[nextIdx];
     }
+    this.touch(id, 'injuredZones');
     this.renderVictimSheet(id);
     if (v.injuredZones[zone]) {
       CharcotSentinel.log(CharcotSentinel.state.profile.name,
@@ -12524,6 +12675,7 @@ const MedicalModule = {
     const v = this.getVictim(id);
     if (!v) return;
     v.triage = triage;
+    this.touch(id, 'triage');
     this.victims.sort((a,b) => {const o={T1:0,T2:1,T3:2,T4:3}; return o[a.triage]-o[b.triage];});
     this.renderVictimList();
     this.renderVictimSheet(id);
@@ -12535,13 +12687,15 @@ const MedicalModule = {
     if (!v) return;
     const idx = v.categories.indexOf(cat);
     if (idx > -1) v.categories.splice(idx,1); else v.categories.push(cat);
+    this.touch(id, 'categories');
     this.renderVictimSheet(id);
   },
 
-  toggleVictimType(id) {
+  setVictimType(id, type) {
     const v = this.getVictim(id);
-    if (!v) return;
-    v.victimType = (v.victimType === 'CREW') ? 'PAX' : 'CREW';
+    if (!v || v.victimType === type) return;
+    v.victimType = type;
+    this.touch(id, 'victimType');
     this.renderVictimList();
     this.renderVictimSheet(id);
     CharcotSentinel.log(CharcotSentinel.state.profile.name, `Victim #${v.number}: type → ${v.victimType}`, 'MEDICAL');
@@ -12551,6 +12705,7 @@ const MedicalModule = {
     const v = this.getVictim(id);
     if (!v) return;
     v.consciousness = state;
+    this.touch(id, 'consciousness');
     this.renderVictimSheet(id);
     CharcotSentinel.log(CharcotSentinel.state.profile.name, `Victim #${v.number}: ${state}`, 'MEDICAL');
   },
@@ -12560,6 +12715,7 @@ const MedicalModule = {
     if (!v) return;
     const idx = v.injuries.indexOf(inj);
     if (idx > -1) v.injuries.splice(idx,1); else v.injuries.push(inj);
+    this.touch(id, 'injuries');
     this.renderVictimSheet(id);
   },
 
@@ -12568,6 +12724,7 @@ const MedicalModule = {
     if (!v) return;
     const idx = v.means.indexOf(mean);
     if (idx > -1) v.means.splice(idx,1); else v.means.push(mean);
+    this.touch(id, 'means');
     this.renderVictimSheet(id);
     CharcotSentinel.log(CharcotSentinel.state.profile.name, `Victim #${v.number}: ${mean} — engaged`, 'MEDICAL');
   },
@@ -12576,6 +12733,7 @@ const MedicalModule = {
     const v = this.getVictim(id);
     if (!v) return;
     v[field] = value;
+    this.touch(id, field);
     this.renderVictimList();
   },
 
@@ -12583,6 +12741,7 @@ const MedicalModule = {
     const v = this.getVictim(id);
     if (!v) return;
     v.envConditions[field] = value;
+    this.touch(id, 'envConditions');
   },
 
   addNote(id) {
@@ -12591,6 +12750,7 @@ const MedicalModule = {
     if (!v || !input || !input.value.trim()) return;
     const now = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     v.notes.unshift({ time: now, text: input.value.trim() });
+    this.touch(id, 'notes');
     CharcotSentinel.log(CharcotSentinel.state.profile.name, `Victim #${v.number}: "${input.value.trim()}"`, 'MEDICAL');
     input.value = '';
     this.renderVictimSheet(id);
@@ -17914,10 +18074,14 @@ const EmergencyClear = {
     // Réinitialiser les boutons/toggles
     FireSit.evacSelected = [];
     FireSit.elecSelected = [];
-    FireSit.setActiveButtons("button[onclick*=\"fire-staircase\"]", ['A','B','C','1','2','3','4']);
-    FireSit.setActiveButtons("button[onclick*=\"fire-pressure\"]", []);
-    FireSit.setActiveButtons('#fire-firedoors-zones .tbtn', []);
-    FireSit.setActiveButtons('#fire-wtdoors-zones .tbtn', []);
+    // Reset the real state dicts (not just the DOM classes) — see FireSit.FLAG_GROUPS — or a
+    // reset "clears" the buttons visually but the old values come right back on the next merge.
+    const resetNow = Date.now();
+    FireSit.STAIRCASE_KEYS.forEach(k => { FireSit.staircaseFlags[k] = true; FireSit.staircaseFlagsTouchedAt[k] = resetNow; });
+    FireSit.PRESSURE_KEYS.forEach(k => { FireSit.pressureFlags[k] = false; FireSit.pressureFlagsTouchedAt[k] = resetNow; });
+    FireSit.FIREDOORS_KEYS.forEach(k => { FireSit.fireDoorsFlags[k] = false; FireSit.fireDoorsFlagsTouchedAt[k] = resetNow; });
+    FireSit.WTDOORS_KEYS.forEach(k => { FireSit.wtDoorsFlags[k] = false; FireSit.wtDoorsFlagsTouchedAt[k] = resetNow; });
+    FireSit.applyAllFlagsToDom();
     // DCP toggles
     const dcpPsBtn = document.querySelector("button[onclick*=\"FireSit.toggleDcp(this,'PS')\"]");
     const dcpStbBtn = document.querySelector("button[onclick*=\"FireSit.toggleDcp(this,'STB')\"]");
@@ -23331,8 +23495,21 @@ const NetworkModule = {
         // the other scheme before treating it as a real failure.
         if (this.ws === ws) this.ws = null;
         this._connectAttempt(fallbackProtocol, null);
-      } else if (!hasOpened && timedOut) {
-        this.onConnectFail('Timeout connexion (5s)');
+      } else if (!hasOpened) {
+        // Neither scheme ever opened. Used to only reach onConnectFail() here if the 5s timeout
+        // had actually elapsed (timedOut) — but a certificate rejection (ERR_CERT_AUTHORITY_INVALID,
+        // the self-signed cert never accepted for this origin) closes the socket almost instantly,
+        // well before that timer fires, so this fell into the onDisconnected() branch instead —
+        // which only shows anything to the user if it thinks it was PREVIOUSLY connected
+        // (wasOnline). Net effect: the app retried forever with zero visible explanation, exactly
+        // as reported when opening the file directly (file://) instead of via the server's own
+        // https://host:port/ link — that link is what normally walks a user through accepting the
+        // certificate for both ports; opening the file skips that step entirely, and unlike loading
+        // an HTTPS page, a WebSocket-level cert rejection shows no click-through prompt at all.
+        const certHint = window.location.protocol === 'file:'
+          ? ` Si l'appli est ouverte depuis le fichier (pas via le lien du serveur), ouvrez aussi https://${this.getActiveHost()}:${this.getActivePort()}/ dans un nouvel onglet et acceptez l'avertissement de sécurité (certificat auto-signé — à faire une fois par appareil/navigateur).`
+          : '';
+        this.onConnectFail(`Connexion WebSocket impossible (aucun schéma n'a fonctionné).${certHint}`);
       } else {
         this.onDisconnected(event);
       }
@@ -23347,6 +23524,7 @@ const NetworkModule = {
     this.connected = true;
     this.reconnectDelay = 3000;
     this.unreachableSince = null; // reached this server — stop the failover clock
+    this._connectFailToastShown = false; // a later failure (e.g. after a network drop) can show again
     this.setMode('connecting');  // En attente d'auth
 
     // Authentification
@@ -23418,6 +23596,14 @@ const NetworkModule = {
   onConnectFail(reason) {
     this.setMode('degraded');
     sLog('NETWORK', `Connexion échouée: ${reason}`, 'NETWORK');
+    // Was entirely silent to the user — see the onclose comment above for how a WebSocket-level
+    // certificate rejection used to retry forever with no visible explanation at all. Shown once
+    // per disconnected stretch (not on every retry, which would spam a toast every couple seconds)
+    // — cleared in onConnected() so a later genuine failure can show again.
+    if (!this._connectFailToastShown && typeof CharcotSentinel !== 'undefined' && typeof CharcotSentinel.showToast === 'function') {
+      this._connectFailToastShown = true;
+      CharcotSentinel.showToast(`🔴 Réseau: ${reason}`, 'warning', { sticky: true });
+    }
     this.noteConnectFailureAndMaybeFailover();
     if (this.config.enabled) this.scheduleReconnect();
   },
@@ -23557,7 +23743,8 @@ const NetworkModule = {
 
       case 'FIRE_SIT_UPDATE': {
         if (typeof FireSit !== 'undefined' && typeof FireSit.applyRemoteSnapshot === 'function') {
-          FireSit.applyRemoteSnapshot(msg.payload);
+          const tsMs = msg.ts ? new Date(msg.ts).getTime() : Date.now();
+          FireSit.applyRemoteSnapshot(msg.payload, tsMs);
         }
         break;
       }
@@ -23785,7 +23972,7 @@ const NetworkModule = {
         ? this.safeClone(DamageControlPlanModule.getNetworkPayload())
         : null,
       medical: (typeof MedicalModule !== 'undefined') ? this.safeClone({
-        victims: MedicalModule.victims,
+        victims: this.withTouchedAt(MedicalModule.victims, MedicalModule.victimsTouchedAt),
         activeVictimId: MedicalModule.activeVictimId,
         confidentialMode: MedicalModule.confidentialMode,
       }) : null,
@@ -23881,7 +24068,7 @@ const NetworkModule = {
     }
 
     if (snapshot.fireSit && typeof FireSit !== 'undefined' && typeof FireSit.applyRemoteSnapshot === 'function') {
-      FireSit.applyRemoteSnapshot(snapshot.fireSit);
+      FireSit.applyRemoteSnapshot(snapshot.fireSit, snapshotUpdatedAt);
     }
 
     if (snapshot.plans && typeof PlansModule !== 'undefined' && typeof PlansModule.applySnapshot === 'function') {
@@ -23908,7 +24095,13 @@ const NetworkModule = {
     }
 
     if (snapshot.medical && typeof MedicalModule !== 'undefined') {
-      if (Array.isArray(snapshot.medical.victims)) MedicalModule.victims = this.safeClone(snapshot.medical.victims);
+      // Was a blind wholesale replace — victims.length grows dynamically (unlike the fixed-size
+      // team rosters), so two stations both syncing periodically could stomp each other's victim
+      // list depending purely on timing, and (before mergeTeamArray's union fix) a victim created
+      // on one side could vanish entirely the moment the other side's own snapshot merged in.
+      if (Array.isArray(snapshot.medical.victims)) {
+        MedicalModule.victims = this.mergeTeamArray(MedicalModule.victims, snapshot.medical.victims, MedicalModule.victimsTouchedAt, snapshotUpdatedAt);
+      }
       if (snapshot.medical.activeVictimId !== undefined) MedicalModule.activeVictimId = snapshot.medical.activeVictimId;
       if (snapshot.medical.confidentialMode !== undefined) MedicalModule.confidentialMode = !!snapshot.medical.confidentialMode;
     }
@@ -24066,9 +24259,11 @@ const NetworkModule = {
     if (!incomingUpdatedAt || !touchedBucket) return this.safeClone(incomingArr);
     const localById = {};
     (Array.isArray(localArr) ? localArr : []).forEach(item => { localById[item[idKey]] = item; });
-    return incomingArr.map(rawIncoming => {
+    const incomingIds = new Set();
+    const merged = incomingArr.map(rawIncoming => {
       const incoming = this.safeClone(rawIncoming) || rawIncoming;
       const id = incoming[idKey];
+      incomingIds.add(id);
       const local = localById[id];
       const incomingTouched = incoming.__touchedAt || {};
       delete incoming.__touchedAt;
@@ -24082,6 +24277,15 @@ const NetworkModule = {
       });
       return incoming;
     });
+    // Union, not intersection: a local-only item (e.g. a victim/marker just created here, that the
+    // incoming snapshot's sender simply hasn't heard about yet) used to be silently DELETED by this
+    // merge, since it only ever iterated incomingArr. Fine for fixed-cardinality rosters (fire
+    // teams, the 18-team roster — every id always exists on both sides) but actively destructive
+    // for anything with dynamically-created items, like MedicalModule.victims. Keep them.
+    (Array.isArray(localArr) ? localArr : []).forEach(item => {
+      if (!incomingIds.has(item[idKey])) merged.push(item);
+    });
+    return merged;
   },
 
   // Attaches a station's own per-field touched-timestamps to each outgoing team object (as
