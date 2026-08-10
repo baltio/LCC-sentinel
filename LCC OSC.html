@@ -374,6 +374,22 @@ button,input,select,textarea{font-family:var(--font-ui);}
   color:#FFFFFF;
   border-color:#8B1A1A;
 }
+/* .evac-zone-btn's dark-mode colors (near-white text on a low-opacity dark fill) read fine over
+   the dark page background but turn into pale, near-white-on-pale-green/red text once the page
+   background itself is white in day mode — unreadable. Same light-mode formula as .tbtn.on-ok/
+   .on-missing above: solid-enough tint + a dark, saturated text/border color instead. */
+:root[data-theme="light"] .evac-zone-btn.state-evacuated {
+  background:rgba(25,130,70,0.22);
+  color:#126536;
+  border-color:#198246;
+  text-shadow:none;
+}
+:root[data-theme="light"] .evac-zone-btn.state-in-progress {
+  background:rgba(192,57,43,0.2);
+  color:#A92F24;
+  border-color:#C0392B;
+  text-shadow:none;
+}
 
 :root[data-theme="light"] .deck-btn.active,
 :root[data-theme="light"] .deck-btn.active:hover,
@@ -661,7 +677,12 @@ const STATE = {
     { id:'CROWD_TEAM', name:'Crowd Control Team',    members:['801','304','305','901','902'], missing:[], status:'missing' },
   ],
   evac: {
-    decks: ['DECK 10','DECK 09','DECK 08','DECK 07','DECK 06','DECK 05','DECK 04','DECK 03','DECK 02','DECK 01'],
+    // Must match LCC sentinel 3's FireSit.evacDecks EXACTLY, character for character — zone
+    // matching between the two apps is by string equality on `deck` (no normalization), and
+    // Sentinel3 uses no leading zero ('DECK 9', not 'DECK 09'). A mismatch here meant decks 1-9
+    // (only 10 happened to match) never matched between the two apps: a zone toggled on one side
+    // rendered as unselected on the other, looking like an intermittent display glitch.
+    decks: ['DECK 10','DECK 9','DECK 8','DECK 7','DECK 6','DECK 5','DECK 4','DECK 3','DECK 2','DECK 1'],
     mvzs: ['MVZ 4','MVZ 3','MVZ 2','MVZ 1'],
     selected: [], // {deck, mvz, status:'in-progress'|'evacuated'}
   },
@@ -672,12 +693,20 @@ const STATE = {
     staircaseActive: [],
     pressureActive: [],
     fireDoorsActive: [],
+    wtDoorsActive: [], // was never read from the network payload at all — see applyFireSitPayload
   },
   medical: { victims: [], activeVictimId: null },
   plans: { zoneStates: {}, markers: [], markersLocked: false, currentDeck: 'DK03' },
   oscMessages: [],
   notifications: [],
   o2Intervals: {},
+  // Meeting Point COMPLETE/MISSING status, kept as a SEPARATE flat dict (teamId -> status) instead
+  // of a field on each meetingTeams item — this mirrors LCC Sentinel 3's FireModule.teamStatuses
+  // exactly, which is where Sentinel3's own Meeting-Point-equivalent roster page reads/writes this
+  // status. Sentinel3 never looks at a `.status` field on the roster array items themselves, so
+  // storing it there (as this used to) meant the COMPLETE/MISSING buttons never synced in either
+  // direction even though the `.missing` member list (a real field on the array items) did.
+  meetingTeamStatuses: {},
   // Per-team, per-field "when did WE last touch this locally" timestamps (ms epoch) — lets
   // applySnapshot() merge an incoming update field-by-field instead of replacing a whole team
   // object wholesale. Without this, two edits to the SAME team on two different stations within
@@ -685,7 +714,10 @@ const STATE = {
   // overwrites the other's more recent edit to an unrelated field (e.g. B sets status while A's
   // stale copy still has the old status — A's next sync wipes B's change). Same technique
   // LCC Sentinel 3 already uses for MusterModule.zoneMemberStates — see mergeTeamArray() below.
-  touched: { fireTeams: {}, protectionTeams: {}, meetingTeams: {} },
+  touched: { fireTeams: {}, protectionTeams: {}, meetingTeams: {}, medicalVictims: {} },
+  // Flat (not per-team-nested) touched map for meetingTeamStatuses, matching mergeDictByKey's shape
+  // (teamId -> timestamp) — see FireModule.teamStatusesTouchedAt in LCC sentinel 3.html.
+  meetingTeamStatusesTouchedAt: {},
 };
 
 /* Last full snapshot received from the network — kept verbatim so our own
@@ -729,8 +761,10 @@ function mergeTeamArray(localArr, incomingArr, touchedBucket, incomingUpdatedAt,
   if (!incomingUpdatedAt) return incomingArr;
   const localById = {};
   (localArr || []).forEach(item => { localById[item[idKey]] = item; });
-  return incomingArr.map(incoming => {
+  const incomingIds = new Set();
+  const result = incomingArr.map(incoming => {
     const id = incoming[idKey];
+    incomingIds.add(id);
     const local = localById[id];
     if (!local) return incoming;
     const touched = touchedBucket[id] = touchedBucket[id] || {};
@@ -744,6 +778,12 @@ function mergeTeamArray(localArr, incomingArr, touchedBucket, incomingUpdatedAt,
     });
     return merged;
   });
+  // Union, not intersection: a local-only item (created here but not yet known to whoever sent
+  // this incoming snapshot) used to be silently deleted since this only ever iterated incomingArr.
+  (localArr || []).forEach(item => {
+    if (!incomingIds.has(item[idKey])) result.push(item);
+  });
+  return result;
 }
 /* Attaches this station's own per-field touched-timestamps to each outgoing team object (as
    __touchedAt), so mergeTeamArray on the receiving end can compare against the field's TRUE
@@ -752,6 +792,20 @@ function mergeTeamArray(localArr, incomingArr, touchedBucket, incomingUpdatedAt,
 function withTouchedAt(arr, touchedBucket, idKey){
   idKey = idKey || 'id';
   return (arr || []).map(item => ({ ...item, __touchedAt: touchedBucket[item[idKey]] || {} }));
+}
+/* Same LWW idea as mergeTeamArray but for a flat dict keyed by id -> scalar value (e.g.
+   meetingTeamStatuses: teamId -> 'complete'|'missing'), matching LCC sentinel 3's
+   NetworkModule.mergeDictByKey (used there for FireModule.teamStatuses). */
+function mergeDictByKey(localDict, incomingDict, touchedAtMap, incomingUpdatedAt, incomingTouchedAtMap){
+  if (!incomingDict || typeof incomingDict !== 'object') return localDict;
+  if (!incomingUpdatedAt || !touchedAtMap) return { ...incomingDict };
+  const merged = { ...incomingDict };
+  Object.keys(localDict || {}).forEach(k => {
+    const fieldOriginAt = (incomingTouchedAtMap && incomingTouchedAtMap[k]) || incomingUpdatedAt;
+    if ((touchedAtMap[k] || 0) > fieldOriginAt) merged[k] = localDict[k];
+    else touchedAtMap[k] = fieldOriginAt;
+  });
+  return merged;
 }
 function getCrewMap(){
   const map = {};
@@ -771,6 +825,8 @@ const UI = {
     this.initClock();
     this.buildSidebar();
     this.buildPages();
+    document.addEventListener('fullscreenchange', () => this._updateFullscreenButton());
+    this._updateFullscreenButton();
     setTimeout(() => this.hideSplash(), 900);
     document.getElementById('splash-screen').addEventListener('click', () => this.hideSplash());
   },
@@ -887,17 +943,40 @@ const UI = {
     { group:'main', id:'medical', ico:'🚑', lbl:'MED' },
     { group:'main', id:'bridgeinfo', ico:'🛳️', lbl:'BRG' },
     { group:'bottom', id:'plans', ico:'🗺️', lbl:'Plans' },
+    // Action item (no id/page — calls UI.toggleFullscreen() instead of navigating). Icon/label
+    // updated live by the fullscreenchange listener below (enter vs exit glyph).
+    { group:'bottom', action:'toggleFullscreen', ico:'⛶', lbl:'Plein écran' },
   ],
   buildSidebar(){
     const nav = document.getElementById('app-sidebar');
     const main = this.SIDEBAR.filter(x => x.group === 'main');
     const bottom = this.SIDEBAR.filter(x => x.group === 'bottom');
-    const itemHtml = (p) => `<div class="sidebar-item" data-nav="${p.id}" onclick="UI.navigateTo('${p.id}')"><span class="si-ico">${p.ico}</span><span class="si-lbl">${p.lbl}</span></div>`;
+    const itemHtml = (p) => p.action
+      ? `<div class="sidebar-item" id="sidebar-action-${p.action}" onclick="UI.${p.action}()"><span class="si-ico">${p.ico}</span><span class="si-lbl">${p.lbl}</span></div>`
+      : `<div class="sidebar-item" data-nav="${p.id}" onclick="UI.navigateTo('${p.id}')"><span class="si-ico">${p.ico}</span><span class="si-lbl">${p.lbl}</span></div>`;
     nav.innerHTML = main.map(itemHtml).join('') + '<div class="sidebar-divider"></div>' + bottom.map(itemHtml).join('');
   },
   buildPages(){
     const c = document.getElementById('page-container');
-    c.innerHTML = this.SIDEBAR.map(p => `<div class="page" id="page-${p.id}"></div>`).join('');
+    // Skip action items (e.g. the fullscreen toggle) — they don't navigate to a page, so there's
+    // nothing to build a #page-<id> container for.
+    c.innerHTML = this.SIDEBAR.filter(p => p.id).map(p => `<div class="page" id="page-${p.id}"></div>`).join('');
+  },
+  toggleFullscreen(){
+    if (!document.fullscreenElement) {
+      (document.documentElement.requestFullscreen ? document.documentElement.requestFullscreen() : Promise.reject()).catch(() => {
+        UI.notify('Plein écran non disponible sur ce navigateur/appareil.', 'error');
+      });
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  },
+  _updateFullscreenButton(){
+    const el = document.getElementById('sidebar-action-toggleFullscreen');
+    if (!el) return;
+    const active = !!document.fullscreenElement;
+    el.querySelector('.si-lbl').textContent = active ? 'Quitter' : 'Plein écran';
+    el.classList.toggle('active', active);
   },
   currentPage: null,
   navigateTo(id){
@@ -1047,7 +1126,6 @@ const NetOSC = {
       UI.notify('Connexion bloquee: token OSC vide. Reconnectez-vous via le PIN OSC.');
       return;
     }
-    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
     // A bare IP/hostname with no ":port" is the single most natural thing to type in this field —
     // e.g. reading it off a QR code or off Sentinel 3's own network status, which shows just the
     // IP. Without a fallback, the browser silently defaults to port 443/80 (nothing listens there;
@@ -1056,17 +1134,60 @@ const NetOSC = {
     // host has neither an explicit scheme nor its own ":port" already.
     let hostPart = host;
     if (!hostPart.includes('://') && !/:\d+$/.test(hostPart)) hostPart = `${hostPart}:8765`;
-    let url = hostPart.includes('://') ? hostPart : `${scheme}://${hostPart}`;
+    if (hostPart.includes('://')) {
+      // Explicit scheme typed by the user — respect it as-is, no guessing/fallback needed.
+      this._connectAttempt(hostPart, host, token, profile, hostPart, null);
+      return;
+    }
+    // location.protocol can't tell us what scheme the SERVER actually needs — it's 'file:' with no
+    // https/wss inference possible when this app is opened by double-clicking it from disk instead
+    // of loading it through http(s)://host:8080/. That silently broke "connect from a fresh
+    // browser": opened via file://, this always guessed plain ws://, and (unlike LCC sentinel 3,
+    // which already had this fallback) there was no retry with the other scheme — it just kept
+    // guessing wrong forever against sentinel_server.py's TLS-only WebSocket port. Try the scheme
+    // guessed from how the page loaded first, and if that one never even opens, retry once with
+    // the other before giving up.
+    const preferred = location.protocol === 'https:' ? 'wss' : 'ws';
+    const fallback = preferred === 'wss' ? 'ws' : 'wss';
+    this._connectAttempt(`${preferred}://${hostPart}`, host, token, profile, hostPart, fallback);
+  },
+  _connectAttempt(url, host, token, profile, hostPart, fallbackScheme){
+    let ws;
     try {
-      this.ws = new WebSocket(url);
-    } catch(e) { this.scheduleReconnect(host); return; }
-    this.ws.onopen = () => {
+      ws = new WebSocket(url);
+    } catch(e) {
+      if (fallbackScheme) { this._connectAttempt(`${fallbackScheme}://${hostPart}`, host, token, profile, hostPart, null); return; }
+      this.scheduleReconnect(host); return;
+    }
+    this.ws = ws;
+    let hasOpened = false;
+    ws.onopen = () => {
+      hasOpened = true;
       this.reconnectDelay = 2000;
+      this._connectFailNotified = false; // a later genuine failure (e.g. after a network drop) can notify again
       this.sendRaw({ type:'AUTH', payload:{ token, profile } });
       this.startHeartbeat();
     };
-    this.ws.onmessage = (ev) => { try { this.handleMessage(JSON.parse(ev.data)); } catch(e){} };
-    this.ws.onclose = () => {
+    ws.onmessage = (ev) => { try { this.handleMessage(JSON.parse(ev.data)); } catch(e){} };
+    ws.onclose = () => {
+      if (!hasOpened && fallbackScheme) {
+        // Never managed to open with this scheme — almost always the wrong one. Retry once with
+        // the other scheme before treating it as a real failure.
+        if (this.ws === ws) this.ws = null;
+        this._connectAttempt(`${fallbackScheme}://${hostPart}`, host, token, profile, hostPart, null);
+        return;
+      }
+      if (!hasOpened && !this._connectFailNotified) {
+        // Neither scheme ever opened — the app used to just retry forever here with zero visible
+        // explanation. Most likely cause on a browser/device that's never connected before: the
+        // self-signed certificate has never been accepted for this server (a WebSocket-level
+        // rejection shows no click-through prompt at all, unlike loading an HTTPS page would).
+        this._connectFailNotified = true;
+        const certHint = location.protocol === 'file:'
+          ? ` Si l'appli est ouverte depuis le fichier (pas via le lien du serveur), ouvrez aussi https://${hostPart.replace(/:\d+$/, '')}:8080/ dans un nouvel onglet et acceptez l'avertissement de sécurité (certificat auto-signé — une fois par appareil/navigateur).`
+          : '';
+        UI.notify(`Connexion réseau impossible.${certHint}`, 'error');
+      }
       this.authenticated = false;
       // Don't stomp the 'standalone' pill the AUTH_FAIL handler just set (a rejected
       // duplicate/invalid token) with a misleading red 'degraded' — this close event is
@@ -1074,7 +1195,7 @@ const NetOSC = {
       this.updateHeaderUI(this.standalone ? 'standalone' : 'degraded');
       this.scheduleReconnect(host);
     };
-    this.ws.onerror = () => {};
+    ws.onerror = () => {};
   },
   scheduleReconnect(host){
     clearTimeout(this.reconnectTimer);
@@ -1114,11 +1235,13 @@ const NetOSC = {
       ...(lastKnownFullSnapshot || {}),
       fire: {
         teams: withTouchedAt(STATE.meetingTeams, STATE.touched.meetingTeams),
+        teamStatuses: STATE.meetingTeamStatuses,
+        teamStatusesTouchedAt: STATE.meetingTeamStatusesTouchedAt,
         fireTeams: withTouchedAt(STATE.fireTeams, STATE.touched.fireTeams),
       },
       fireSit: { fields: STATE.fireSit.fields, stamps: STATE.fireSit.stamps, evacSelected: STATE.evac.selected },
       protection: { teams: withTouchedAt(STATE.protectionTeams, STATE.touched.protectionTeams) },
-      medical: { victims: STATE.medical.victims, activeVictimId: STATE.medical.activeVictimId },
+      medical: { victims: withTouchedAt(STATE.medical.victims, STATE.touched.medicalVictims), activeVictimId: STATE.medical.activeVictimId },
       plans: { zoneStates: STATE.plans.zoneStates, markers: STATE.plans.markers, markersLocked: STATE.plans.markersLocked },
       osc: { messages: STATE.oscMessages, currentDeck: STATE.plans.currentDeck },
     };
@@ -1162,9 +1285,27 @@ const NetOSC = {
         break;
       case 'HEARTBEAT_ACK':
         break;
-      case 'OSC_TEAM_UPDATE':
-        this.applyTeamUpdatePayload(msg.payload);
+      case 'OSC_TEAM_UPDATE': {
+        const tsMs = msg.ts ? new Date(msg.ts).getTime() : Date.now();
+        this.applyTeamUpdatePayload(msg.payload, tsMs);
         break;
+      }
+      case 'FIRE_TEAM_UPDATE': {
+        // Broadcast by LCC Sentinel 3's own Fire/Meeting-Point pages on every roster edit — was
+        // never handled here at all (fell through to default/ignored), so a station on Sentinel3
+        // clicking COMPLETE/MISSING or checking someone in only reached LCC OSC via the periodic
+        // ~5s full resync, never instantly. Same merge machinery as applySnapshot's fire branch.
+        const tsMs = msg.ts ? new Date(msg.ts).getTime() : Date.now();
+        const payload = msg.payload || {};
+        if (Array.isArray(payload.teams)) STATE.meetingTeams = mergeTeamArray(STATE.meetingTeams, payload.teams, STATE.touched.meetingTeams, tsMs);
+        if (payload.teamStatuses) STATE.meetingTeamStatuses = mergeDictByKey(STATE.meetingTeamStatuses, payload.teamStatuses, STATE.meetingTeamStatusesTouchedAt, tsMs, payload.teamStatusesTouchedAt);
+        if (Array.isArray(payload.fireTeams)) STATE.fireTeams = mergeTeamArray(STATE.fireTeams, payload.fireTeams, STATE.touched.fireTeams, tsMs);
+        // ProtectionTeams (Sentinel3) never used to broadcast discretely at all (found in the same
+        // verification pass) — now that it does (same FIRE_TEAM_UPDATE channel), pick it up here.
+        if (Array.isArray(payload.protectionTeams)) STATE.protectionTeams = mergeTeamArray(STATE.protectionTeams, payload.protectionTeams, STATE.touched.protectionTeams, tsMs);
+        Pages.renderActive();
+        break;
+      }
       case 'OSC_MESSAGE':
         if (msg.payload?.text) {
           STATE.oscMessages.unshift({ time: msg.payload.time || nowTime(), text: msg.payload.text, from: msg.user || 'Bridge' });
@@ -1191,6 +1332,9 @@ const NetOSC = {
     if (!snapshot || typeof snapshot !== 'object') return;
     if (snapshot.fire) {
       if (Array.isArray(snapshot.fire.teams)) STATE.meetingTeams = mergeTeamArray(STATE.meetingTeams, snapshot.fire.teams, STATE.touched.meetingTeams, incomingUpdatedAt);
+      if (snapshot.fire.teamStatuses) {
+        STATE.meetingTeamStatuses = mergeDictByKey(STATE.meetingTeamStatuses, snapshot.fire.teamStatuses, STATE.meetingTeamStatusesTouchedAt, incomingUpdatedAt, snapshot.fire.teamStatusesTouchedAt);
+      }
       if (Array.isArray(snapshot.fire.fireTeams)) STATE.fireTeams = mergeTeamArray(STATE.fireTeams, snapshot.fire.fireTeams, STATE.touched.fireTeams, incomingUpdatedAt);
     }
     if (snapshot.fireSit) this.applyFireSitPayload(snapshot.fireSit);
@@ -1198,7 +1342,12 @@ const NetOSC = {
       STATE.protectionTeams = mergeTeamArray(STATE.protectionTeams, snapshot.protection.teams, STATE.touched.protectionTeams, incomingUpdatedAt);
     }
     if (snapshot.medical) {
-      if (Array.isArray(snapshot.medical.victims)) STATE.medical.victims = snapshot.medical.victims;
+      // Was a blind wholesale replace — see mergeTeamArray's union-safety comment; without it, a
+      // victim created on one app could be silently deleted the moment the other app's own
+      // (necessarily victim-less, since it hadn't heard about it yet) snapshot merged in.
+      if (Array.isArray(snapshot.medical.victims)) {
+        STATE.medical.victims = mergeTeamArray(STATE.medical.victims, snapshot.medical.victims, STATE.touched.medicalVictims, incomingUpdatedAt);
+      }
       if (snapshot.medical.activeVictimId !== undefined) STATE.medical.activeVictimId = snapshot.medical.activeVictimId;
     }
     if (snapshot.plans) {
@@ -1219,14 +1368,22 @@ const NetOSC = {
     if (Array.isArray(payload.staircaseActive)) STATE.fireSit.staircaseActive = payload.staircaseActive;
     if (Array.isArray(payload.pressureActive)) STATE.fireSit.pressureActive = payload.pressureActive;
     if (Array.isArray(payload.fireDoorsActive)) STATE.fireSit.fireDoorsActive = payload.fireDoorsActive;
+    if (Array.isArray(payload.wtDoorsActive)) STATE.fireSit.wtDoorsActive = payload.wtDoorsActive;
     if (Array.isArray(payload.evacSelected)) STATE.evac.selected = payload.evacSelected;
     Pages.renderIfActive('bridgeinfo');
     Pages.renderIfActive('evac');
   },
-  applyTeamUpdatePayload(payload){
+  applyTeamUpdatePayload(payload, incomingUpdatedAt){
     if (!payload) return;
-    if (Array.isArray(payload.fireTeams)) STATE.fireTeams = payload.fireTeams;
-    if (Array.isArray(payload.protectionTeams)) STATE.protectionTeams = payload.protectionTeams;
+    incomingUpdatedAt = incomingUpdatedAt || Date.now();
+    // Was a blind overwrite (STATE.fireTeams = payload.fireTeams) — no merge at all, meaning this
+    // discrete broadcast could clobber a locally-newer edit made on THIS tablet in the same instant
+    // another station's OSC_TEAM_UPDATE arrives. Same class of bug as the original fire-team
+    // location race, fixed for consistency with applySnapshot()'s merge.
+    if (Array.isArray(payload.fireTeams)) STATE.fireTeams = mergeTeamArray(STATE.fireTeams, payload.fireTeams, STATE.touched.fireTeams, incomingUpdatedAt);
+    if (Array.isArray(payload.protectionTeams)) STATE.protectionTeams = mergeTeamArray(STATE.protectionTeams, payload.protectionTeams, STATE.touched.protectionTeams, incomingUpdatedAt);
+    if (Array.isArray(payload.meetingTeams)) STATE.meetingTeams = mergeTeamArray(STATE.meetingTeams, payload.meetingTeams, STATE.touched.meetingTeams, incomingUpdatedAt);
+    if (payload.meetingTeamStatuses) STATE.meetingTeamStatuses = mergeDictByKey(STATE.meetingTeamStatuses, payload.meetingTeamStatuses, STATE.meetingTeamStatusesTouchedAt, incomingUpdatedAt);
     Pages.renderActive();
   },
   updateHeaderUI(mode){
@@ -1300,14 +1457,15 @@ const Pages = {
       </div>`;
   },
   teamRowHtml(t){
+    const status = MeetingOSC.getStatus(t.id);
     const missing = (t.missing || []).map(sn => `<span class="missing-chip">${crewLabel(sn)}<button onclick="MeetingOSC.removeMissing('${t.id}','${sn}');event.stopPropagation()">×</button></span>`).join('');
     return `
     <div class="team-row" data-team="${t.id}">
       <div class="team-row-top">
         <span class="team-name">${escapeHtml(t.name)}</span>
         <div class="team-btns">
-          <button class="tbtn ${t.status==='complete'?'on-ok':''}" onclick="MeetingOSC.setStatus('${t.id}','complete')">COMPLETE</button>
-          <button class="tbtn ${t.status==='missing'?'on-missing':''}" onclick="MeetingOSC.setStatus('${t.id}','missing')">MISSING</button>
+          <button class="tbtn ${status==='complete'?'on-ok':''}" onclick="MeetingOSC.setStatus('${t.id}','complete')">COMPLETE</button>
+          <button class="tbtn ${status==='missing'?'on-missing':''}" onclick="MeetingOSC.setStatus('${t.id}','missing')">MISSING</button>
           ${t.members.length ? `<button class="tbtn" onclick="MeetingOSC.openMemberModal('${t.id}')">👥 Crew</button>` : ''}
         </div>
       </div>
@@ -1381,7 +1539,7 @@ const Pages = {
       <div class="victim-list">${v.map(x => `
         <div class="victim-card-mini ${x.triage.toLowerCase()} ${x.id===STATE.medical.activeVictimId?'active':''}" onclick="MedicalOSC.select('${x.id}')">
           <span class="triage-badge triage-${x.triage}">${x.triage}</span>
-          <span style="flex:1;font-size:13px;font-weight:700">${escapeHtml(x.name||'Victime '+x.number)}</span>
+          <span style="flex:1;font-size:13px;font-weight:700">${escapeHtml(x.name||'Victime '+x.number)}${x.consciousness ? ' · '+escapeHtml(x.consciousness) : ''}</span>
           <span style="font-size:10px;color:var(--oe-cream-dim)">${escapeHtml(x.location||'')}</span>
         </div>`).join('') || '<div style="font-size:11px;color:var(--oe-cream-dim)">Aucune victime enregistrée</div>'}</div>
       ${active ? MedicalOSC.sheetHtml(active) : ''}`;
@@ -1394,14 +1552,16 @@ const Pages = {
     ['fire-qcv','Quick closing valves'], ['fire-elec','Electricity cut'],
     ['fire-casualties','Casualties'],
   ],
+  // Read-only status indicators (green=on, red=off) mirroring the actual buttons on Sentinel3's
+  // Fire page — was previously a plain comma-separated text list (e.g. "A, 2, 3"), unreadable at a
+  // glance compared to the color-coded buttons everyone is used to on Sentinel3 itself.
+  flagButtonsHtml(keys, activeList){
+    const active = new Set((activeList||[]).map(v => String(v||'').trim()));
+    return keys.map(k => `<span class="tbtn ${active.has(k)?'on-ok':'on-missing'}" style="min-width:22px;text-align:center;cursor:default">${k}</span>`).join('');
+  },
   render_bridgeinfo(){
     const page = document.getElementById('page-bridgeinfo');
     const f = STATE.fireSit.fields, s = STATE.fireSit.stamps;
-    const staircase = (STATE.fireSit.staircaseActive || []).filter(v => /^[ABC]$/i.test(String(v || '').trim()));
-    const fireLocker = (STATE.fireSit.staircaseActive || []).filter(v => /^(1|2|3|4)$/.test(String(v || '').trim()));
-    const fireDoors = (STATE.fireSit.fireDoorsActive || []).map(v => String(v || '').trim()).filter(Boolean);
-    const highPressure = (STATE.fireSit.pressureActive || []).map(v => String(v || '').trim()).filter(Boolean);
-    const formatList = (items) => items.length ? escapeHtml(items.join(', ')) : '—';
 
     const rows = this.BRIDGE_FIELDS.map(([id,label]) => `
       <div class="sit-field">
@@ -1411,20 +1571,24 @@ const Pages = {
 
     const bridgeOpsRows = `
       <div class="sit-field">
-        <div class="sit-row"><span class="sit-label">Staircase available</span><span class="sit-ts">${s['fire-staircase']||''}</span></div>
-        <div class="sit-value ${staircase.length ? '' : 'empty'}">${formatList(staircase)}</div>
+        <div class="sit-row"><span class="sit-label">Staircase available / Fire locker</span><span class="sit-ts">${s['fire-staircase']||''}</span></div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:3px">
+          ${this.flagButtonsHtml(['A','B','C'], STATE.fireSit.staircaseActive)}
+          <span style="font-size:8px;color:var(--oe-cream-dim);margin-left:4px">LOCKER</span>
+          ${this.flagButtonsHtml(['1','2','3','4'], STATE.fireSit.staircaseActive)}
+        </div>
       </div>
       <div class="sit-field">
-        <div class="sit-row"><span class="sit-label">Fire locker</span><span class="sit-ts">${s['fire-staircase']||''}</span></div>
-        <div class="sit-value ${fireLocker.length ? '' : 'empty'}">${formatList(fireLocker)}</div>
+        <div class="sit-row"><span class="sit-label">Fire doors closed (FSD)</span><span class="sit-ts">${s['fire-firedoors']||''}</span></div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${this.flagButtonsHtml(['1','2','3','4'], STATE.fireSit.fireDoorsActive)}</div>
       </div>
       <div class="sit-field">
-        <div class="sit-row"><span class="sit-label">Fire doors closed</span><span class="sit-ts">${s['fire-firedoors']||''}</span></div>
-        <div class="sit-value ${fireDoors.length ? '' : 'empty'}">${formatList(fireDoors)}</div>
+        <div class="sit-row"><span class="sit-label">Watertight doors closed (WTD)</span><span class="sit-ts">${s['fire-wtdoors']||''}</span></div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${this.flagButtonsHtml(['1','2','3','4','5','6','7','8','9','10','11'], STATE.fireSit.wtDoorsActive)}</div>
       </div>
       <div class="sit-field">
         <div class="sit-row"><span class="sit-label">Staircase in high pressure</span><span class="sit-ts">${s['fire-pressure']||''}</span></div>
-        <div class="sit-value ${highPressure.length ? '' : 'empty'}">${formatList(highPressure)}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${this.flagButtonsHtml(['A','B','C'], STATE.fireSit.pressureActive)}</div>
       </div>`;
 
     const evac = STATE.evac.selected.length ? STATE.evac.selected.map(z => `<span class="evac-zone-chip st-${z.status}">${z.deck} ${z.mvz}</span>`).join('') : '<span style="color:var(--oe-cream-dim);font-size:11px">—</span>';
@@ -1479,11 +1643,14 @@ const Pages = {
 const MeetingOSC = {
   find(id){ return STATE.meetingTeams.find(t => t.id === id); },
   touch(id, ...fields){ touchFields(STATE.touched.meetingTeams, id, fields); },
+  touchStatus(id){ STATE.meetingTeamStatusesTouchedAt[id] = Date.now(); },
+  getStatus(id){ return STATE.meetingTeamStatuses[id] || 'missing'; },
   setStatus(id, status){
     const t = this.find(id); if (!t) return;
-    t.status = status;
+    STATE.meetingTeamStatuses[id] = status;
+    this.touchStatus(id);
     if (status === 'complete') { t.missing = []; t.members.forEach(sn => { t.memberStates = t.memberStates||{}; t.memberStates[sn] = 'complete'; }); }
-    this.touch(id, 'status', 'missing', 'memberStates');
+    this.touch(id, 'missing', 'memberStates');
     this.sync(); Pages.render_meeting();
   },
   cycleMember(teamId, sn){
@@ -1493,8 +1660,10 @@ const MeetingOSC = {
     const next = cur === 'pending' ? 'complete' : cur === 'complete' ? 'missing' : 'pending';
     t.memberStates[sn] = next;
     t.missing = t.members.filter(m => t.memberStates[m] === 'missing');
-    t.status = t.missing.length ? 'missing' : (t.members.every(m => t.memberStates[m]==='complete') ? 'complete' : t.status);
-    this.touch(teamId, 'status', 'missing', 'memberStates');
+    const curStatus = this.getStatus(teamId);
+    const nextStatus = t.missing.length ? 'missing' : (t.members.every(m => t.memberStates[m]==='complete') ? 'complete' : curStatus);
+    if (nextStatus !== curStatus) { STATE.meetingTeamStatuses[teamId] = nextStatus; this.touchStatus(teamId); }
+    this.touch(teamId, 'missing', 'memberStates');
     this.sync(); Pages.render_meeting();
     if (document.getElementById('osc-modal-overlay')) this._renderMemberModal(teamId); // keep modal in sync while open
   },
@@ -1514,10 +1683,14 @@ const MeetingOSC = {
     const t = this.find(teamId); if (!t) return;
     t.missing = (t.missing||[]).filter(m => m !== sn);
     if (t.memberStates) t.memberStates[sn] = 'pending';
+    if (t.missing.length === 0 && this.getStatus(teamId) === 'missing') {
+      STATE.meetingTeamStatuses[teamId] = 'complete';
+      this.touchStatus(teamId);
+    }
     this.touch(teamId, 'missing', 'memberStates');
     this.sync(); Pages.render_meeting();
   },
-  sync(){ NetOSC.send({ type:'OSC_TEAM_UPDATE', payload:{ changed:{kind:'meeting'}, fireTeams: STATE.fireTeams, protectionTeams: STATE.protectionTeams, meetingTeams: STATE.meetingTeams } }); },
+  sync(){ NetOSC.send({ type:'OSC_TEAM_UPDATE', payload:{ changed:{kind:'meeting'}, fireTeams: STATE.fireTeams, protectionTeams: STATE.protectionTeams, meetingTeams: withTouchedAt(STATE.meetingTeams, STATE.touched.meetingTeams), meetingTeamStatuses: STATE.meetingTeamStatuses } }); },
 };
 
 /* ============================================================
@@ -1570,7 +1743,7 @@ const FireOSC = {
   },
   cardHtml(t){
     const statusColors = { complete:'var(--status-ok)', o2:'#E67E22', active:'#2980B9', missing:'var(--status-danger)' };
-    const shortName = 'FT' + String.fromCharCode(64 + t.id);
+    const shortName = 'F' + t.id; // matches PlansOSC marker iconId (F1-F4) — see LocationOSC.guessDeck()
     const memberBtn = (sn,label) => {
       const st = (t.memberStates||{})[sn] || 'missing';
       return `<button class="ftc-member-btn ${st==='complete'?'on-ok':'on-missing'}" onclick="FireOSC.toggleMember(${t.id},'${sn}')">${label}</button>`;
@@ -1691,7 +1864,7 @@ const ProtectionOSC = {
       const st = (t.memberStates||{})[sn] || 'missing';
       return `<button class="ftc-member-btn ${st==='complete'?'on-ok':'on-missing'}" onclick="ProtectionOSC.toggleMember(${t.id},'${sn}')">${crewLabel(sn)}</button>`;
     }).join('');
-    const iconId = 'PT' + t.id;
+    const iconId = 'P' + t.id; // matches PlansOSC marker iconId (P1-P4) — see LocationOSC.guessDeck()
     return `
     <div class="ftc ptc" style="border-left-color:${statusColors[t.status]||'var(--oe-navy-border)'}">
       <div class="ftc-member-grid two-cols">${members}</div>
@@ -1761,6 +1934,7 @@ const ProtectionOSC = {
    MedicalOSC — victims (simplified, no body-diagram SVG)
    ============================================================ */
 const MedicalOSC = {
+  touch(id, ...fields){ touchFields(STATE.touched.medicalVictims, id, fields); },
   TRIAGE: ['T1','T2','T3','T4'],
   INJURIES: ['Laceration','Fracture','Burns','Intoxication','Near-Drowning','Cardiac Arrest','Head Trauma','Hypothermia','Spinal Injury','Chest Injury','Abdominal Injury','Eye Injury'],
   MEANS: ['AED','Oxygen','Stretcher','Cervical Collar','Backboard','Medical Kit','TMAS Contact','MEDEVAC'],
@@ -1806,36 +1980,66 @@ const MedicalOSC = {
     v.nationality = String(entry?.nationality || '');
     v.age = String(entry?.age || '');
     v.sex = String(entry?.sex || '');
+    this.touch(id, 'personKey', 'name', 'cabin', 'nationality', 'age', 'sex');
     this.sync(); Pages.render_medical();
   },
+  CATEGORIES: ['Medical','Trauma'],
+  CONSCIOUSNESS: ['Conscious & Oriented','Disoriented','Unconscious','Not Breathing','Abnormal Vital Signs'],
   addVictim(){
     const id = 'v' + Date.now();
     const number = STATE.medical.victims.length + 1;
-    STATE.medical.victims.push({ id, number, name:'', cabin:'', nationality:'', age:'', sex:'', location:'', personKey:'', triage:'T3', victimType:'PAX', injuries:[], means:[], notes:[] });
+    // Same field shape as LCC sentinel 3's MedicalModule.addVictim() — categories/consciousness/
+    // team/linkedEmergency/envConditions used to be entirely missing here, so a victim sheet
+    // created or edited on Sentinel3 synced that data over the network fine (it just rides the
+    // snapshot) but LCC OSC never displayed or let anyone edit it.
+    STATE.medical.victims.push({ id, number, name:'', cabin:'', nationality:'', age:'', sex:'', location:'', personKey:'', triage:'T3', victimType:'PAX', categories:[], consciousness:'', injuries:[], means:[], team:'', linkedEmergency:'', envConditions:{}, notes:[] });
     STATE.medical.activeVictimId = id;
     this.sync(); Pages.render_medical();
   },
   select(id){ STATE.medical.activeVictimId = id; Pages.render_medical(); },
   update(id, field, val){
     const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
-    v[field] = val; this.sync();
+    v[field] = val; this.touch(id, field); this.sync();
   },
   toggleInjury(id, inj){
     const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
     v.injuries = v.injuries.includes(inj) ? v.injuries.filter(i=>i!==inj) : [...v.injuries, inj];
+    this.touch(id, 'injuries');
     this.sync(); Pages.render_medical();
   },
   toggleMeans(id, m){
     const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
     v.means = v.means.includes(m) ? v.means.filter(x=>x!==m) : [...v.means, m];
+    this.touch(id, 'means');
     this.sync(); Pages.render_medical();
   },
-  setTriage(id, tr){ const v=STATE.medical.victims.find(x=>x.id===id); if(!v) return; v.triage=tr; this.sync(); Pages.render_medical(); },
-  toggleVictimType(id){
+  setTriage(id, tr){ const v=STATE.medical.victims.find(x=>x.id===id); if(!v) return; v.triage=tr; this.touch(id, 'triage'); this.sync(); Pages.render_medical(); },
+  toggleCategory(id, cat){
+    const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
+    v.categories = v.categories || [];
+    v.categories = v.categories.includes(cat) ? v.categories.filter(c=>c!==cat) : [...v.categories, cat];
+    this.touch(id, 'categories');
+    this.sync(); Pages.render_medical();
+  },
+  setConsciousness(id, state){
+    const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
+    v.consciousness = state;
+    this.touch(id, 'consciousness');
+    this.sync(); Pages.render_medical();
+  },
+  updateEnv(id, field, value){
+    const v = STATE.medical.victims.find(x=>x.id===id); if (!v) return;
+    v.envConditions = v.envConditions || {};
+    v.envConditions[field] = value;
+    this.touch(id, 'envConditions');
+    this.sync();
+  },
+  setVictimType(id, type){
     const v = STATE.medical.victims.find(x => x.id === id);
-    if (!v) return;
-    v.victimType = (v.victimType === 'CREW') ? 'PAX' : 'CREW';
+    if (!v || v.victimType === type) return;
+    v.victimType = type;
     v.personKey = '';
+    this.touch(id, 'victimType', 'personKey');
     this.sync(); Pages.render_medical();
   },
   logNote(id){
@@ -1843,6 +2047,7 @@ const MedicalOSC = {
     if (!v||!input||!input.value.trim()) return;
     v.notes.unshift({ time: nowTime(), text: input.value.trim() });
     v.notes = v.notes.slice(0, 50); // bounded — rides every STATE_SYNC snapshot
+    this.touch(id, 'notes');
     input.value=''; this.sync(); Pages.render_medical();
   },
   sync(){ /* medical data rides the periodic STATE_SYNC snapshot (every 5s) — no dedicated push message */ },
@@ -1854,10 +2059,12 @@ const MedicalOSC = {
         ${this.TRIAGE.map(tr => `<button class="tbtn ${v.triage===tr?'on-'+(tr==='T1'?'missing':'ok'):''}" style="flex:1;min-height:44px" onclick="MedicalOSC.setTriage('${v.id}','${tr}')">${tr}</button>`).join('')}
       </div>
       <div class="sec-hdr">IDENTITY & LOCATION</div>
-      <button onclick="MedicalOSC.toggleVictimType('${v.id}')"
-        style="display:block;width:100%;margin-bottom:10px;padding:10px 12px;border-radius:8px;border:2px solid ${v.victimType==='CREW' ? 'rgba(92,184,214,0.7)' : 'rgba(240,192,64,0.7)'};background:${v.victimType==='CREW' ? 'rgba(92,184,214,0.2)' : 'rgba(240,192,64,0.2)'};color:${v.victimType==='CREW' ? 'var(--oe-gold)' : '#f0c040'};font-size:13px;font-weight:800;letter-spacing:0.12em;cursor:pointer;text-transform:uppercase">
-        ${v.victimType === 'CREW' ? '⚓ CREW' : '🧳 PAX'}
-      </button>
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button onclick="MedicalOSC.setVictimType('${v.id}','CREW')"
+          style="flex:1;padding:10px 12px;border-radius:8px;border:2px solid ${v.victimType==='CREW' ? 'rgba(92,184,214,0.9)' : 'rgba(255,255,255,0.12)'};background:${v.victimType==='CREW' ? 'rgba(92,184,214,0.22)' : 'rgba(255,255,255,0.03)'};color:${v.victimType==='CREW' ? 'var(--oe-gold)' : 'var(--oe-cream-dim)'};font-size:13px;font-weight:800;letter-spacing:0.1em;cursor:pointer;text-transform:uppercase">⚓ CREW</button>
+        <button onclick="MedicalOSC.setVictimType('${v.id}','PAX')"
+          style="flex:1;padding:10px 12px;border-radius:8px;border:2px solid ${v.victimType==='PAX' ? 'rgba(240,192,64,0.9)' : 'rgba(255,255,255,0.12)'};background:${v.victimType==='PAX' ? 'rgba(240,192,64,0.22)' : 'rgba(255,255,255,0.03)'};color:${v.victimType==='PAX' ? '#f0c040' : 'var(--oe-cream-dim)'};font-size:13px;font-weight:800;letter-spacing:0.1em;cursor:pointer;text-transform:uppercase">🧳 PAX</button>
+      </div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
         <div style="grid-column:1 / -1" class="sit-field">
           <label class="sit-label">${v.victimType === 'CREW' ? 'SELECT FROM CREW LIST' : 'SELECT FROM PAX LIST'}</label>
@@ -1894,10 +2101,58 @@ const MedicalOSC = {
           <input class="sit-input" value="${escapeHtml(v.location)}" onchange="MedicalOSC.update('${v.id}','location',this.value)">
         </div>
       </div>
+      <div class="sec-hdr">CATEGORY</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+        ${this.CATEGORIES.map(c => `<button class="condition-btn ${(v.categories||[]).includes(c)?'selected':''}" onclick="MedicalOSC.toggleCategory('${v.id}','${c}')">${c}</button>`).join('')}
+      </div>
+      <div class="sec-hdr">CONSCIOUSNESS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+        ${this.CONSCIOUSNESS.map(c => `<button class="condition-btn ${v.consciousness===c?'selected sel-danger':''}" style="font-size:10px" onclick="MedicalOSC.setConsciousness('${v.id}','${c}')">${c}</button>`).join('')}
+      </div>
       <div class="sec-hdr">BLESSURES</div>
       <div class="injury-list">${this.INJURIES.map(i => `<div class="injury-item ${v.injuries.includes(i)?'selected':''}" onclick="MedicalOSC.toggleInjury('${v.id}','${i}')">${i}</div>`).join('')}</div>
       <div class="sec-hdr u-mt-8">MOYENS</div>
       <div class="injury-list">${this.MEANS.map(m => `<div class="injury-item ${v.means.includes(m)?'selected':''}" onclick="MedicalOSC.toggleMeans('${v.id}','${m}')">${m}</div>`).join('')}</div>
+      <div class="sec-hdr u-mt-8">RESCUE TEAM & LINKED EMERGENCY</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div class="sit-field">
+          <label class="sit-label">MEDICAL TEAM ASSIGNED</label>
+          <input class="sit-input" value="${escapeHtml(v.team||'')}" placeholder="Team members..." onchange="MedicalOSC.update('${v.id}','team',this.value)">
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">LINKED EMERGENCY</label>
+          <select class="sit-input" onchange="MedicalOSC.update('${v.id}','linkedEmergency',this.value)">
+            <option value="" ${v.linkedEmergency?'':'selected'}>— None —</option>
+            <option value="fire" ${v.linkedEmergency==='fire'?'selected':''}>🔥 Fire</option>
+            <option value="flood" ${v.linkedEmergency==='flood'?'selected':''}>💧 Flooding</option>
+            <option value="pollution" ${v.linkedEmergency==='pollution'?'selected':''}>🛢️ Pollution</option>
+            <option value="abandon" ${v.linkedEmergency==='abandon'?'selected':''}>🆘 Abandon Ship</option>
+          </select>
+        </div>
+      </div>
+      <div class="sec-hdr u-mt-8">ENVIRONMENTAL CONDITIONS <span style="font-weight:400;font-size:10px">(if outdoor)</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div class="sit-field">
+          <label class="sit-label">TEMP (°C)</label>
+          <input class="sit-input" type="number" value="${escapeHtml((v.envConditions||{}).temp||'')}" placeholder="°C" onchange="MedicalOSC.updateEnv('${v.id}','temp',this.value)">
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">WIND</label>
+          <input class="sit-input" value="${escapeHtml((v.envConditions||{}).wind||'')}" placeholder="Force/Dir" onchange="MedicalOSC.updateEnv('${v.id}','wind',this.value)">
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">SEA STATE</label>
+          <select class="sit-input" onchange="MedicalOSC.updateEnv('${v.id}','sea',this.value)">
+            ${['Calm','Moderate','Rough'].map(s => `<option ${(v.envConditions||{}).sea===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="sit-field">
+          <label class="sit-label">EXPOSURE</label>
+          <select class="sit-input" onchange="MedicalOSC.updateEnv('${v.id}','exposure',this.value)">
+            ${['Sunlight','Shade','Night','Rain'].map(s => `<option ${(v.envConditions||{}).exposure===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
       <div class="sec-hdr u-mt-8">NOTES</div>
       <div class="sit-row"><textarea class="ftc-note" id="med-note-${v.id}" placeholder="Note..."></textarea><button class="ftc-log-btn" onclick="MedicalOSC.logNote('${v.id}')">LOG</button></div>
       <div class="ftc-hist">${(v.notes||[]).map(n => `<div class="ftc-hi"><span class="ftc-ht">${n.time}</span>${escapeHtml(n.text)}</div>`).join('')}</div>
@@ -2007,14 +2262,32 @@ const SpacesData = {
    with Zone Annotator polygons for direct zone picking.
    ============================================================ */
 const PlansOSC = {
+  // ids AND visuals must match LCC sentinel 3's PlansModule.markerCatalog exactly — a marker
+  // placed on either app's plan is the SAME shared data (STATE.plans.markers), and the two apps
+  // used to use completely different id namespaces for the very same fire/protection teams
+  // ('FTA'..'FTD'/'PT1'..'PT4' here vs 'F1'..'F4'/'P1'..'P4' there). A marker placed on one app was
+  // therefore never even recognized by the other's icon catalog lookup — it just fell back to a
+  // generic unlabeled pin, not "looks different", genuinely unrecognizable. F1-F4/P1-P4 reuse the
+  // exact same PNG assets Sentinel3 draws (assets/img/plans/FTA.png etc — already on disk, shared
+  // by both apps); the rest match Sentinel3's text+fill colored-badge style for the same reason.
   ICONS: [
-    { id:'FTA', emoji:'🔴', label:'FTA' }, { id:'FTB', emoji:'🟠', label:'FTB' },
-    { id:'FTC', emoji:'🟡', label:'FTC' }, { id:'FTD', emoji:'🟢', label:'FTD' },
-    { id:'PT1', emoji:'🔵', label:'PT1' }, { id:'PT2', emoji:'🟣', label:'PT2' },
-    { id:'PT3', emoji:'⚪', label:'PT3' }, { id:'PT4', emoji:'⚫', label:'PT4' },
-    { id:'CASUALTY', emoji:'🚑', label:'Casualty' }, { id:'MEDICAL', emoji:'⚕️', label:'Medical' },
-    { id:'MEETING', emoji:'👥', label:'Meeting' }, { id:'OSC', emoji:'🎖️', label:'OSC' },
+    { id:'F1', src:'assets/img/plans/FTA.png', label:'FTA' }, { id:'F2', src:'assets/img/plans/FTB.png', label:'FTB' },
+    { id:'F3', src:'assets/img/plans/FTC.png', label:'FTC' }, { id:'F4', src:'assets/img/plans/FTD.png', label:'FTD' },
+    { id:'P1', src:'assets/img/plans/PT1.png', label:'PT1' }, { id:'P2', src:'assets/img/plans/PT2.png', label:'PT2' },
+    { id:'P3', src:'assets/img/plans/PT3.png', label:'PT3' }, { id:'P4', src:'assets/img/plans/PT4.png', label:'PT4' },
+    { id:'CASUALTY', text:'C', fill:'#e74c3c', label:'Casualty' }, { id:'MEDICAL', text:'D', fill:'#2ecc71', label:'Medical' },
+    { id:'MEETING', text:'M', fill:'#f1c40f', label:'Meeting' }, { id:'OSC', text:'O', fill:'#8e44ad', label:'OSC' },
   ],
+  _iconImgCache: {},
+  _iconImg(src){
+    if (!this._iconImgCache[src]) {
+      const img = new Image();
+      img.onload = () => this.redraw();
+      img.src = src;
+      this._iconImgCache[src] = img;
+    }
+    return this._iconImgCache[src];
+  },
   selectedZoneId: '',
   selectedZone: null,
   placingId: null,
@@ -2056,31 +2329,40 @@ const PlansOSC = {
     return m ? String(Number(m[1])) : raw.toUpperCase();
   },
 
+  // Returns BOTH overlay facts independently ({evac, checked}) instead of one mutually-exclusive
+  // state — "checked" (blue cross — a local physically verified) and "evac" (green/red hachure —
+  // in-progress/evacuated zone) describe two DIFFERENT things about a space and can both be true
+  // at once (a zone can be marked evacuated AND have had its locals checked off). Used to return a
+  // single value with evac taking priority, so the checked-cross overlay silently never drew for
+  // any zone that also had an evacuation status.
   _getZoneOverlayState(space) {
     const key = this.zoneKey(space);
     const z = STATE.plans.zoneStates[key] || {};
-    if (z.evacuationStatus === 'in-progress' || z.evacuationStatus === 'evacuated') return z.evacuationStatus;
-    if (Array.isArray(STATE.evac?.selected)) {
+    let evac = null;
+    if (z.evacuationStatus === 'in-progress' || z.evacuationStatus === 'evacuated') {
+      evac = z.evacuationStatus;
+    } else if (Array.isArray(STATE.evac?.selected)) {
       const match = STATE.evac.selected.find(entry => this._normalizeDeckValue(entry.deck) === this._normalizeDeckValue(space.deck) && this._normalizeMvzValue(entry.mvz) === this._normalizeMvzValue(space.mvz));
-      if (match) return match.status === 'evacuated' ? 'evacuated' : 'in-progress';
+      if (match) evac = match.status === 'evacuated' ? 'evacuated' : 'in-progress';
     }
-    if (z.evacuated) return 'checked';
-    return null;
+    return { evac, checked: !!z.evacuated };
   },
 
+  // Unused now that F1-F4/P1-P4 draw their actual PNG image (see _drawTacticalMarker/
+  // iconSwatchHtml) — kept only in case something still calls it; regexes match the current ids.
   _tokenForIconId(iconId) {
-    if (/^FT[ABCD]$/.test(iconId || '')) return { kind: 'fire', text: String(iconId || '').slice(-1) };
-    if (/^PT[1-4]$/.test(iconId || '')) return { kind: 'protection', text: String(iconId || '').slice(-1) };
+    if (/^F[1-4]$/.test(iconId || '')) return { kind: 'fire', text: String(iconId || '').slice(-1) };
+    if (/^P[1-4]$/.test(iconId || '')) return { kind: 'protection', text: String(iconId || '').slice(-1) };
     return null;
   },
 
   iconSwatchHtml(icon) {
-    const tok = this._tokenForIconId(icon?.id || '');
-    if (tok) return `<span class="plan-token ${tok.kind}">${tok.text}</span>`;
-    return `<span>${icon?.emoji || '📍'}</span>`;
+    if (icon?.src) return `<img src="${icon.src}" alt="${escapeHtml(icon.label||'')}" style="width:22px;height:22px;object-fit:contain">`;
+    if (icon?.text) return `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:${icon.fill||'#666'};color:#0f1722;font-weight:700;font-size:11px">${icon.text}</span>`;
+    return `<span>📍</span>`;
   },
 
-  _drawZoneOverlayExtra(ctx, pts, overlayState, novec, zoom) {
+  _drawZoneOverlayExtra(ctx, pts, overlay, novec, zoom) {
     if (!pts || pts.length < 3) return;
     ctx.save();
     ctx.beginPath();
@@ -2090,7 +2372,9 @@ const PlansOSC = {
     ctx.clip();
     let bx0 = pts[0].x, by0 = pts[0].y, bx1 = pts[0].x, by1 = pts[0].y;
     pts.forEach(p => { bx0 = Math.min(bx0, p.x); by0 = Math.min(by0, p.y); bx1 = Math.max(bx1, p.x); by1 = Math.max(by1, p.y); });
-    if (overlayState === 'checked') {
+    // checked-cross and evac-hachure are independent facts about this zone — draw both if both
+    // apply, instead of the old either/or (evac used to always win, hiding the cross entirely).
+    if (overlay.checked) {
       const crossStep = Math.max(8, 16 / (zoom || 1));
       ctx.strokeStyle = 'rgba(14, 80, 140, 0.95)';
       ctx.lineWidth = Math.max(0.6, 0.8 / (zoom || 1));
@@ -2102,8 +2386,9 @@ const PlansOSC = {
           ctx.stroke();
         }
       }
-    } else if (overlayState === 'in-progress' || overlayState === 'evacuated') {
-      const outlineColor = overlayState === 'in-progress' ? 'rgba(216,60,46,0.95)' : 'rgba(34,197,94,0.95)';
+    }
+    if (overlay.evac === 'in-progress' || overlay.evac === 'evacuated') {
+      const outlineColor = overlay.evac === 'in-progress' ? 'rgba(216,60,46,0.95)' : 'rgba(34,197,94,0.95)';
       ctx.strokeStyle = outlineColor;
       ctx.lineWidth = Math.max(1.6, 2.4 / (zoom || 1));
       ctx.beginPath();
@@ -2126,48 +2411,54 @@ const PlansOSC = {
   },
 
   _drawTacticalMarker(ctx, icon, x, y) {
-    const tok = this._tokenForIconId(icon?.id || '');
-    if (!tok) {
-      ctx.font = '22px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(icon ? icon.emoji : '📍', x, y);
+    if (icon?.src) {
+      const img = this._iconImg(icon.src);
+      if (img.complete && img.naturalWidth) {
+        const size = 28;
+        ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
+      } else {
+        // Image not loaded yet (first draw) — placeholder pin; _iconImg's onload triggers a
+        // redraw once it's ready, so this only shows for a frame.
+        ctx.font = '22px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('📍', x, y);
+      }
       return;
     }
-    ctx.beginPath();
-    ctx.arc(x, y, 13, 0, Math.PI * 2);
-    if (tok.kind === 'fire') {
-      ctx.fillStyle = '#cc2f2f';
-      ctx.strokeStyle = '#ffd0d0';
+    if (icon?.text) {
+      ctx.beginPath();
+      ctx.arc(x, y, 13, 0, Math.PI * 2);
+      ctx.fillStyle = icon.fill || '#666';
+      ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-    } else {
-      ctx.fillStyle = '#ffd24a';
-      ctx.strokeStyle = '#8c6a00';
-      ctx.lineWidth = 2;
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#192534';
+      ctx.fillStyle = '#0f1722';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(icon.text, x, y + 0.5);
+      return;
     }
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = '22px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(tok.text, x, y + 0.5);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('📍', x, y);
   },
 
   _syncTeamLocationFromMarker(iconId, src){
     if (!iconId || !src) return;
     let teamId = null;
     let kind = null;
-    const ft = String(iconId).match(/^FT([ABCD])$/);
+    const ft = String(iconId).match(/^F([1-4])$/);
     if (ft) {
       kind = 'fire';
-      teamId = { A:1, B:2, C:3, D:4 }[ft[1]] || null;
+      teamId = Number(ft[1]);
     }
-    const pt = String(iconId).match(/^PT([1-4])$/);
+    const pt = String(iconId).match(/^P([1-4])$/);
     if (pt) {
       kind = 'protection';
       teamId = Number(pt[1]);
@@ -2336,7 +2627,7 @@ const PlansOSC = {
   },
 
   _isSinglePlacementIcon(iconId){
-    return /^FT[ABCD]$/.test(iconId || '') || /^PT[1-4]$/.test(iconId || '');
+    return /^F[1-4]$/.test(iconId || '') || /^P[1-4]$/.test(iconId || '');
   },
 
   _upsertMarker(iconId, x, y, sx, sy){
@@ -2435,8 +2726,8 @@ const PlansOSC = {
       ctx.lineWidth = sty.lineWidth;
       ctx.fill();
       ctx.stroke();
-      const overlayState = this._getZoneOverlayState(space);
-      if (overlayState || st.novec) this._drawZoneOverlayExtra(ctx, pts, overlayState, !!st.novec, this.view.zoom || 1);
+      const overlay = this._getZoneOverlayState(space);
+      if (overlay.evac || overlay.checked || st.novec) this._drawZoneOverlayExtra(ctx, pts, overlay, !!st.novec, this.view.zoom || 1);
     });
 
     // Tactical icon markers for the current deck.
@@ -2796,7 +3087,7 @@ const LocationOSC = {
     const mvzChips = ['ALL','1','2','3','4'].map(m => `<button class="modal-chip ${this._filterMvz===m?'active':''}" onclick="LocationOSC.setFilterMvz('${m}')">${m==='ALL'?'Tous MVZ':'MVZ '+m}</button>`).join('');
     return `
       <input class="sit-input" placeholder="Rechercher un local..." value="${escapeHtml(this._search)}" oninput="LocationOSC.setSearch(this.value)">
-      <div class="modal-filter-row" style="max-height:70px;overflow-y:auto">${deckChips}</div>
+      <div class="modal-filter-row">${deckChips}</div>
       <div class="modal-filter-row">${mvzChips}</div>
       <div class="loc-list">
         ${filtered.length ? filtered.map(s => `<button class="loc-list-item" onclick="LocationOSC.pickSpace(this.dataset.name)" data-name="${escapeHtml(s.name)}"><span class="loc-badge">${s.deck}${s.mvz?' Z'+s.mvz:''}</span><span>${escapeHtml(s.name)}</span></button>`).join('') : '<div style="color:var(--oe-cream-dim);font-size:12px;text-align:center;padding:20px">Aucun résultat</div>'}
