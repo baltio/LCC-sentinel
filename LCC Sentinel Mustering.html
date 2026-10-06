@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="description" content="LCC SENTINEL MUSTERING — Crew/PAX headcount for abandon ship — tablet companion to LCC Sentinel 3">
+<meta name="description" content="LCC SENTINEL MUSTERING — Crew/PAX headcount for abandon ship — tablet companion to LCC Sentinel 4">
 <meta name="theme-color" content="#06111F">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,13 +12,11 @@
 <link rel="manifest" href="manifest-mustering.json">
 <link rel="icon" type="image/png" sizes="96x96" href="assets/img/general/icon-96.png">
 <link rel="icon" type="image/x-icon" href="assets/img/general/LOGO_CC_RGBv2.ico">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="assets/fonts/fonts.css" rel="stylesheet">
 <!--
   ============================================================
   LCC SENTINEL MUSTERING — v0.1.0 (standalone mock)
-  Tablet companion to LCC Sentinel 3 — crew/PAX headcount
+  Tablet companion to LCC Sentinel 4 — crew/PAX headcount
   during abandon ship.
 
   This version is STANDALONE: no real network connection.
@@ -30,7 +28,7 @@
   ============================================================
 -->
 <style>
-/* ── design tokens — reused from LCC Sentinel 3 for visual consistency ── */
+/* ── design tokens — reused from LCC Sentinel 4 for visual consistency ── */
 :root {
   --oe-navy:        #06111F;
   --oe-navy-mid:    #0B1A2E;
@@ -631,12 +629,12 @@ button, input { font-family: inherit; }
           <div class="hint">Hides the browser's address bar and system UI — recommended for tablets/phones left running this app continuously.</div>
         </div>
         <div class="settings-card">
-          <h4>LCC Sentinel 3 server connection</h4>
+          <h4>LCC Sentinel 4 server connection</h4>
           <div class="row-between"><span>Connect to server (live mode)</span><label class="switch"><input type="checkbox" id="cfgEnabled"><span class="track"></span></label></div>
           <div class="field-group"><label>Server IP address</label><input id="cfgHost" placeholder="192.168.1.10"></div>
           <div class="field-group"><label>Port</label><input id="cfgPort" placeholder="8765"></div>
           <div class="field-group"><label>Token</label><input id="cfgToken" placeholder="7007"></div>
-          <div class="hint" id="cfgHint">Off: this tablet stays in standalone demo mode, with sync simulated across tabs of the same browser. On: it connects over WiFi to sentinel_server.py, authenticates, and loads the live crew/PAX rosters from LCC Sentinel 3 instead of the built-in demo data.</div>
+          <div class="hint" id="cfgHint">Off: this tablet stays in standalone demo mode, with sync simulated across tabs of the same browser. On: it connects over WiFi to sentinel_server.py, authenticates, and loads the live crew/PAX rosters from LCC Sentinel 4 instead of the built-in demo data.</div>
           <div class="field-group"><label>Backup server IP (optional)</label><input id="cfgBackupHost" placeholder="192.168.1.11 — leave blank if none"></div>
           <div class="field-group"><label>Backup port</label><input id="cfgBackupPort" placeholder="8765"></div>
           <div class="hint">If set, this tablet automatically switches to the backup server when the primary stops responding, and back again if the backup also drops.</div>
@@ -673,7 +671,7 @@ button, input { font-family: inherit; }
           <div class="hint">Resets all lists, statuses, history, and demo messages on this device.</div>
           <button class="btn-block danger" id="btnResetDemo">Reset demo data</button>
         </div>
-        <div class="hint" style="text-align:center;opacity:.6;">LCC Sentinel Mustering — v0.1.0 (standalone mock)<br>Companion to LCC Sentinel 3</div>
+        <div class="hint" style="text-align:center;opacity:.6;">LCC Sentinel Mustering — v0.1.0 (standalone mock)<br>Companion to LCC Sentinel 4</div>
       </div>
     </div>
 
@@ -682,7 +680,7 @@ button, input { font-family: inherit; }
       <div class="panel-head"><h3>Network</h3><button class="panel-close" data-close>✕</button></div>
       <div class="net-pop-body">
         <button class="btn-block" id="btnExportProximitySyncFromNet">📤 Export sync file (share to nearby tablet)</button>
-        <div class="hint" id="netPopStatus">Standalone mode — no connection to the LCC Sentinel 3 server. Multi-tablet sync demo simulated locally (open this file in another tab to test).</div>
+        <div class="hint" id="netPopStatus">Standalone mode — no connection to the LCC Sentinel 4 server. Multi-tablet sync demo simulated locally (open this file in another tab to test).</div>
         <div><div class="field-group"><label>Detected tablets (this device)</label></div><div id="peerList"></div></div>
         <button class="btn-block" id="btnOpenSettingsFromNet">Configure connection…</button>
       </div>
@@ -1361,7 +1359,7 @@ function defaultState() {
   Object.keys(LISTS).forEach(id => statuses[id] = {});
   return {
     theme: 'dark',
-    serverConfig: { host:'', port:'8765', token:'7007', enabled:false, backupHost:'', backupPort:'8765' },
+    serverConfig: { host:'10.115.19.23', port:'8765', token:'7007', enabled:false, backupHost:'', backupPort:'8765' },
     liveData: false,
     cachedRoster: null, // last live crew/PAX snapshot, kept in localStorage so it survives an offline reload
     currentUserNumber: null,
@@ -1371,9 +1369,9 @@ function defaultState() {
     chat: [],
     notifications: [],
     checklist: {}, // { itemId: { status:'ok'|'not_ok', note, ts, byUser } } — Evacuation Leader sign-off checklist
-    craftStatus: {}, // { craftId: 'standby'|'preparing'|'embarkation'|'ready'|'launched'|'not-available' } — mirrors Sentinel 3's AbandonModule craft status
+    craftStatus: {}, // { craftId: 'standby'|'preparing'|'embarkation'|'ready'|'launched'|'not-available' } — mirrors Sentinel 4's AbandonModule craft status
     craftStatusTs: {}, // { craftId: ts } — when craftStatus[craftId] was last set, local or remote; craftStatus itself has no per-entry timestamp, so this is what proximity sync compares to decide whether an imported status is newer (see applyProximitySyncPayload)
-    _lastRosterFingerprint: null, // JSON snapshot of the roster identity data last imported from Sentinel 3 — see importFromSentinel3's dirty-check
+    _lastRosterFingerprint: null, // JSON snapshot of the roster identity data last imported from Sentinel 4 — see importFromSentinel3's dirty-check
   };
 }
 
@@ -1455,7 +1453,7 @@ function normalize(s) { return (s||'').toString().toLowerCase().normalize('NFD')
    - mock-local: simulates a multi-tablet network via localStorage's `storage` event — tabs/windows
      opening this same file share localStorage and see each other's messages. Always active as a
      fallback so the app stays usable/testable without a server.
-   - live: a real WebSocket client to sentinel_server.py (same protocol as LCC Sentinel 3's own
+   - live: a real WebSocket client to sentinel_server.py (same protocol as LCC Sentinel 4's own
      NetworkModule — see AUTH/REQUEST_SYNC/FULL_STATE/STATE_SYNC/MUSTER_UPDATE/CHAT_MESSAGE below).
      Enabled from Settings (host/port/token + the "live mode" switch). All Mustering tablets share
      one PIN (server-side PROFILES['7007']); each tablet's own identity (safety number/role) rides
@@ -1467,7 +1465,7 @@ const SyncAdapter = {
   peers: {},
   ws: null,
   reconnectTimer: null,
-  // Primary/backup failover — mirrors LCC Sentinel 3's NetworkModule. Never persisted: every fresh
+  // Primary/backup failover — mirrors LCC Sentinel 4's NetworkModule. Never persisted: every fresh
   // page load retries the primary first. usingBackup alone decides which host/port connectLive()
   // targets. unreachableSince marks WHEN the currently-targeted server started failing (cleared back
   // to null the moment a connection actually opens — see _connectLiveAttempt's ws.onopen); once
@@ -1556,7 +1554,7 @@ const SyncAdapter = {
         showToast('Connexion perdue — mode déconnecté');
         showAppModal({
           title: '🔌 Connexion perdue',
-          body: `La connexion au serveur LCC Sentinel 3 a été coupée. La tablette continue de fonctionner en <strong>mode déconnecté</strong> — vos pointages restent enregistrés localement, mais ne sont plus synchronisés tant que la connexion n'est pas rétablie. Une reconnexion automatique est déjà tentée en arrière-plan.`,
+          body: `La connexion au serveur LCC Sentinel 4 a été coupée. La tablette continue de fonctionner en <strong>mode déconnecté</strong> — vos pointages restent enregistrés localement, mais ne sont plus synchronisés tant que la connexion n'est pas rétablie. Une reconnexion automatique est déjà tentée en arrière-plan.`,
           confirmText: '🔄 Réessayer maintenant',
           cancelText: '✓ Continuer déconnecté',
           onConfirm: () => SyncAdapter.connectLive(),
@@ -1580,7 +1578,7 @@ const SyncAdapter = {
       case 'AUTH_OK':
         this.mode = 'live';
         renderNetBadge();
-        showToast(this.usingBackup ? 'Connected to BACKUP server' : 'Connected to LCC Sentinel 3 server');
+        showToast(this.usingBackup ? 'Connected to BACKUP server' : 'Connected to LCC Sentinel 4 server');
         this.ws.send(JSON.stringify({ type: 'REQUEST_SYNC' }));
         break;
       case 'AUTH_FAIL':
@@ -1595,7 +1593,7 @@ const SyncAdapter = {
       case 'MUSTER_UPDATE': {
         // Wire type is shared for both checkin and craft-status messages (see SyncAdapter.send's
         // wireType map) — re-split back into the two LOCAL event types by payload.kind, same as the
-        // mock-local bus already does natively. Without this, craft_status_update (Sentinel 3's
+        // mock-local bus already does natively. Without this, craft_status_update (Sentinel 4's
         // lifeboat status dropdown, or another tablet's Commander setting status) always fell through
         // to the checkin_update handler, which expects listId/personId and silently no-ops on a
         // craftId/status payload — so live-mode craft status never actually propagated.
@@ -1662,7 +1660,7 @@ function renderNetBadge() {
     : `STANDALONE<small>Local demo</small>`;
 }
 
-/* ═══════════════════════════ IMPORT FROM SENTINEL 3 ═══════════════════════════
+/* ═══════════════════════════ IMPORT FROM SENTINEL 4 ═══════════════════════════
    Rebuilds crewA/crewB/paxA/paxB (and therefore the crewManifest/paxManifest/combinedA/combinedB
    views, which read through to these) from a live snapshot.muster.assemblies + snapshot.lists
    payload — the same shape NetworkModule.buildStateSnapshot() already sends in FULL_STATE/STATE_SYNC.
@@ -1671,7 +1669,7 @@ function renderNetBadge() {
 
    This is the ROSTER (identity data — names/cabins/who's-on-which-list) sync path only. It's meant
    to fire once initially and then only when the roster itself actually changes (e.g. the bridge PC
-   re-imports a new crew/PAX list) — NOT on every one of Sentinel 3's periodic broadcasts, which fire
+   re-imports a new crew/PAX list) — NOT on every one of Sentinel 4's periodic broadcasts, which fire
    for ANY unrelated change anywhere in the app (a Fire toggle, a Polar count...). Per-person
    status/check-in sync is a separate, already-immediate path (checkin_update, sent the instant
    anyone toggles someone) and isn't affected by any of this. */
@@ -1684,7 +1682,7 @@ function importFromSentinel3(snapshot) {
 
   // Dirty-check: skip the whole rebuild (and the UI refresh that goes with it) unless the roster
   // content actually differs from what's already loaded. Without this, importFromSentinel3 used to
-  // run on every one of Sentinel 3's periodic snapshots — several times a minute — and each run
+  // run on every one of Sentinel 4's periodic snapshots — several times a minute — and each run
   // called switchList() internally, which resets the search box / active filter / scroll position,
   // so the tablet appeared to "jump back to the main tab" constantly during real use.
   const rosterFingerprint = JSON.stringify({
@@ -1725,7 +1723,7 @@ function importFromSentinel3(snapshot) {
   if (assemblies.paxA) fillFromCabins('paxA', assemblies.paxA.cabins);
   if (assemblies.paxB) fillFromCabins('paxB', assemblies.paxB.cabins);
 
-  // Seed presence from Sentinel 3's own checked-in state, but never clobber a status already set locally.
+  // Seed presence from Sentinel 4's own checked-in state, but never clobber a status already set locally.
   ['crewA', 'crewB'].forEach(listId => {
     STATE.statuses[listId] = STATE.statuses[listId] || {};
     LISTS[listId].persons.forEach(p => {
@@ -1811,7 +1809,7 @@ function loadRosterFromFile(file) {
    export a small JSON file and hand it to the other tablet via Android's native Share sheet (Quick
    Share/Nearby — Bluetooth for discovery, WiFi Direct for the transfer itself, works with zero
    internet or WiFi AP) or just by picking it up from Downloads. Covers every list status (so every
-   list feeding LCC Sentinel 3's Fire/Muster/Abandon pages — teams, zones, assemblies, lifeboat/
+   list feeding LCC Sentinel 4's Fire/Muster/Abandon pages — teams, zones, assemblies, lifeboat/
    rescue rosters are ALL just entries in STATE.statuses/history, there's no separate per-page data),
    plus lifeboat/rescue craft status (Abandon page) and the evacuation checklist. There's no separate
    "Polar" list here — the only polar-related list is teamPolarKits (Polar Kit prep team), which is
@@ -2060,8 +2058,8 @@ function computeCounts(listId) {
   return { total: entries.length, present, missing, unknown, boarded, ashore };
 }
 
-/* ═══════════════════════════ READINESS (feeds LCC Sentinel 3 — MUSTER / ABANDON pages) ═══════════════════════════
-   These are the derived signals that LCC Sentinel 3's Muster and Abandon pages need once this app is
+/* ═══════════════════════════ READINESS (feeds LCC Sentinel 4 — MUSTER / ABANDON pages) ═══════════════════════════
+   These are the derived signals that LCC Sentinel 4's Muster and Abandon pages need once this app is
    wired to sentinel_server.py: per-zone "leader in place" / "guides in position", and per-station
    "leader in place" / "safety watch in place" / "list completed". Two different notions of "done":
      - allPresent()      -> everyone on the list has been physically checked PRESENT (used for guide
@@ -2381,7 +2379,7 @@ function renderList() {
       const s = (STATE.statuses[real]||{})[p.id] || 'unknown';
       // On the combined MANIFEST view, several source lists of different tiers get mixed together —
       // spell out which one a plain "present" came from (same "why absent is normal" idea as
-      // Sentinel 3's manifest); on a single-source list every row is the same tier, so the hint would
+      // Sentinel 4's manifest); on a single-source list every row is the same tier, so the hint would
       // just be noise there.
       const extraStatus = (s === 'ashore' || isCraftStatus(s)) ? ` · <b>${statusLabel(s)}</b>`
         : (s === 'present' && isManifestView) ? ` · <b>${tierLabel(tierForList(real))}</b>` : '';
@@ -2491,7 +2489,7 @@ SyncAdapter.on('checkin_update', (msg) => {
   pushNotification(`🔄 Update received (${msg.from || '?'}): ${e.name} → ${statusLabel(e.to)}`);
 });
 
-/* Craft ids a status can be set to, beyond present/missing/unknown/ashore — mirrors Sentinel 3's
+/* Craft ids a status can be set to, beyond present/missing/unknown/ashore — mirrors Sentinel 4's
    AbandonModule.craft ids exactly, so "boarded on X" is a single source of truth (see
    applyStatus()/reassignPerson()) instead of a second, separately-tracked list membership. */
 const CRAFT_LABELS = { LB01:'Lifeboat 1', LB02:'Lifeboat 2', LB03:'Lifeboat 3', LB04:'Lifeboat 4', RB01:'Rescue Boat 1', RB02:'Rescue Boat 2' };
@@ -2504,9 +2502,9 @@ function statusLabel(s) {
   return 'Unverified';
 }
 
-/* Ship-wide colour code, shared with LCC Sentinel 3 (see MusterModule.getCrewMemberDisplayStatus
+/* Ship-wide colour code, shared with LCC Sentinel 4 (see MusterModule.getCrewMemberDisplayStatus
    there) — same 8 tiers, same hex values, so green/violet/etc. always mean the same thing on both
-   apps. Sentinel 3 derives its tiers from several parallel per-person dicts (zone presence, assembly
+   apps. Sentinel 4 derives its tiers from several parallel per-person dicts (zone presence, assembly
    presence, craft, Polar…) tracked simultaneously for the SAME person; Mustering has no such
    multi-dict model — each person lives on exactly ONE list (their home list, see the "single home
    list per person" rule) with a single flat status. So here the tier comes from WHICH underlying
@@ -2660,7 +2658,7 @@ function renderBoardingSection(listId) {
 }
 
 /* ═══════════════════════════ CRAFT STATUS (Lifeboat/Rescue boat commander) ═══════════════════════════
-   Mirrors Sentinel 3's AbandonModule craft status (standby/preparing/embarkation/ready/launched/
+   Mirrors Sentinel 4's AbandonModule craft status (standby/preparing/embarkation/ready/launched/
    not-available). Shown on any list that declares a craftId (lifeboat1..4, rescueboat1..2). */
 
 const CRAFT_STATUSES = [
@@ -2874,7 +2872,7 @@ function sendChat(text) {
 }
 
 SyncAdapter.on('chat_message', (msg) => {
-  // Sentinel 3 sends {text}, not {txt}/{from} — pushing msg.payload verbatim used to store an
+  // Sentinel 4 sends {text}, not {txt}/{from} — pushing msg.payload verbatim used to store an
   // entry renderChat()/escapeHtml() couldn't read, throwing on the very next chat render (ours
   // or theirs) and silently blocking every chat send after that until reload. Normalize here so
   // any sender's shape lands as this tablet's own {ts,from,txt}.
@@ -2980,12 +2978,12 @@ function renderNetPop() {
   const cachedNote = STATE.cachedRoster ? ` Showing crew/PAX rosters last synced ${fmtDateTime(STATE.cachedRoster.savedAt)}.` : '';
   if (STATE.serverConfig.enabled) {
     statusEl.textContent = SyncAdapter.mode === 'live'
-      ? `Connected to LCC Sentinel 3 at ${STATE.serverConfig.host}:${STATE.serverConfig.port}.${STATE.liveData ? ' Crew/PAX rosters loaded live.' : ''}`
+      ? `Connected to LCC Sentinel 4 at ${STATE.serverConfig.host}:${STATE.serverConfig.port}.${STATE.liveData ? ' Crew/PAX rosters loaded live.' : ''}`
       : SyncAdapter.mode === 'connecting'
       ? `Connecting to ${STATE.serverConfig.host}:${STATE.serverConfig.port}…${cachedNote}`
       : `Live mode is on but not connected — retrying ${STATE.serverConfig.host}:${STATE.serverConfig.port}.${cachedNote}`;
   } else {
-    statusEl.textContent = 'Standalone mode — no connection to the LCC Sentinel 3 server. Multi-tablet sync demo simulated locally (open this file in another tab to test).' + cachedNote;
+    statusEl.textContent = 'Standalone mode — no connection to the LCC Sentinel 4 server. Multi-tablet sync demo simulated locally (open this file in another tab to test).' + cachedNote;
   }
   const list = document.getElementById('peerList');
   const peers = Object.values(SyncAdapter.peers);
@@ -3122,7 +3120,7 @@ function init() {
     SyncAdapter.unreachableSince = null;
     if (STATE.serverConfig.enabled && STATE.serverConfig.host) {
       SyncAdapter.connectLive();
-      showToast('Connecting to LCC Sentinel 3 server…');
+      showToast('Connecting to LCC Sentinel 4 server…');
     } else {
       SyncAdapter.disconnectLive();
       showToast('Configuration saved — standalone mode');
@@ -3179,7 +3177,7 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('./sw-mustering.js').then(function(reg) {
       console.log('[SW] Registered, scope:', reg.scope);
-      // See LCC sentinel 3.html's identical comment — a tablet can sit on this page for a long
+      // See LCC sentinel 4.html's identical comment — a tablet can sit on this page for a long
       // shift without a fresh navigation, and that's the only time the browser re-checks sw-mustering.js
       // on its own otherwise (plus a background check roughly every 24h).
       setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);

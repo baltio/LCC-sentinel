@@ -1,16 +1,28 @@
 <!DOCTYPE html>
+<!-- Page d'accueil : racine de GitHub Pages ET du serveur du bord (https://10.115.19.23:8080/). -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>CHARCOT SENTINEL</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LCC SENTINEL 4</title>
+<link href="assets/fonts/fonts.css" rel="stylesheet">
 <style>
-  body { font-family: sans-serif; background:#0a1628; color:#eee; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0; gap:16px; }
-  a { color:#5CB8D6; font-size:1.2em; text-decoration:none; padding:12px 24px; border:1px solid #5CB8D6; border-radius:6px; }
-  a:hover { background:#5CB8D6; color:#0a1628; }
+  :root { --bg:#06111F; --fg:#E4EEF4; --dim:#8BA5B8; --accent:#5CB8D6; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--fg); font-family:'Barlow',Arial,sans-serif;
+         display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:24px 16px; }
+  h1 { font-family:'Barlow Condensed',Arial,sans-serif; letter-spacing:.12em; margin:0 0 8px; font-size:28px; }
+  a { display:block; width:100%; max-width:420px; padding:16px 20px; border:1px solid var(--accent); border-radius:8px;
+      color:var(--fg); text-decoration:none; }
+  a strong { display:block; color:var(--accent); font-family:'Barlow Condensed',Arial,sans-serif; font-size:20px; letter-spacing:.08em; }
+  a span { color:var(--dim); font-size:13px; }
+  a:hover, a:focus { background:rgba(92,184,214,.12); }
 </style>
 </head>
 <body>
-<a href="./LCC%20sentinel%203.html">CHARCOT SENTINEL 3</a>
-<a href="./LCC%20Sentinel%20Mustering.html">SENTINEL MUSTERING</a>
+  <h1>LCC SENTINEL 4</h1>
+  <a href="./LCC%20sentinel%204.html"><strong>LCC SENTINEL 4</strong><span>Gestion des urgences — Bridge, ECR, Back Up…</span></a>
+  <a href="./LCC%20OSC.html"><strong>LCC OSC</strong><span>Tablette On-Scene Coordinator — fonctionne aussi sans réseau</span></a>
+  <a href="./LCC%20Sentinel%20Mustering.html"><strong>SENTINEL MUSTERING</strong><span>Tablettes de comptage équipage / passagers</span></a>
 </body>
 </html>
