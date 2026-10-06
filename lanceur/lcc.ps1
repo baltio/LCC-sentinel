@@ -15,6 +15,10 @@
                        raccourci Bureau, demarrage automatique du serveur.
                        Fonctionne SANS internet si le dossier "installation" (cree par
                        -Action Preparer) est present.
+    -Action MettreAJour  A lancer DEPUIS le nouveau dossier prepare (cle USB) sur le PC serveur deja
+                       installe : arrete le serveur, sauvegarde l'ancienne version, copie la nouvelle
+                       (sans toucher a l'etat en cours, au certificat ni aux listes), relance.
+                       -> METTRE_A_JOUR.bat
     -Action Preparer   A lancer sur un PC AVEC internet : cree un dossier propre, pret a
                        copier sur le PC serveur (seulement les fichiers utiles + installateur
                        Python + modules telecharges a l'avance). -> PREPARER_INSTALLATION.bat
@@ -28,8 +32,10 @@
 =================================================================
 #>
 param(
-    [ValidateSet('Lancer', 'Serveur', 'Arreter', 'Installer', 'Preparer')]
+    [ValidateSet('Lancer', 'Serveur', 'Arreter', 'Installer', 'Preparer', 'MettreAJour')]
     [string]$Action = 'Lancer',
+    [string]$Cible = '',
+    [switch]$SansRelance,  # MettreAJour : ne pas redemarrer le serveur / ouvrir l'appli a la fin   # MettreAJour : dossier installe (par defaut : celui du raccourci Bureau, sinon C:\LCC_SENTINEL_4)
     [string]$Destination = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'LCC_SENTINEL_4')
 )
 
@@ -317,6 +323,88 @@ function Invoke-Installer {
     Invoke-Lancer
 }
 
+function Get-VersionLogiciel([string]$dossier) {
+    $html = Join-Path $dossier 'LCC sentinel 4.html'
+    if (-not (Test-Path -LiteralPath $html)) { return '?' }
+    $m = Select-String -LiteralPath $html -Pattern 'CHARCOT SENTINEL v(\d+\.\d+\.\d+)-charcot' | Select-Object -First 1
+    if ($m) { return $m.Matches[0].Groups[1].Value } else { return '?' }
+}
+
+function Invoke-MettreAJour {
+    Write-Host ''
+    Write-Host '  ============================================================'
+    Write-Host '  LCC SENTINEL 4 - Mise a jour du PC serveur'
+    Write-Host '  ============================================================'
+    Write-Host ''
+    # 1. Ou est installe le logiciel ? Le raccourci Bureau cree par l'installateur pointe dessus.
+    $cible = $Cible
+    if (-not $cible) {
+        $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'LCC SENTINEL 4.lnk'
+        if (Test-Path -LiteralPath $lnk) { $cible = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).WorkingDirectory }
+    }
+    if (-not $cible) { $cible = 'C:\LCC_SENTINEL_4' }
+    if (-not (Test-Path -LiteralPath (Join-Path $cible 'sentinel_server.py'))) {
+        Write-Host "  Aucune installation trouvee ($cible)." -ForegroundColor Red
+        Write-Host '  Pour une premiere installation : copier ce dossier sur C:\ puis lancer INSTALLER_LCC_SENTINEL.bat.'
+        return
+    }
+    $source = (Resolve-Path -LiteralPath $Root).Path.TrimEnd('\')
+    $cible = (Resolve-Path -LiteralPath $cible).Path.TrimEnd('\')
+    if ($source -eq $cible) {
+        Write-Host '  Lancez METTRE_A_JOUR.bat depuis le NOUVEAU dossier (cle USB), pas depuis le logiciel installe.' -ForegroundColor Red
+        return
+    }
+    $vAvant = Get-VersionLogiciel $cible
+    $vApres = Get-VersionLogiciel $source
+    Write-Host "  Logiciel installe : $cible  (version $vAvant)"
+    Write-Host "  Nouvelle version  : $source  (version $vApres)"
+    Write-Host ''
+
+    # 2. Arret du serveur (et de sa relance automatique)
+    Write-Host '  [1/5] Arret du serveur...'
+    Invoke-Arreter
+    Start-Sleep -Seconds 3
+
+    # 3. Sauvegarde des fichiers du logiciel actuel (pas assets/ : volumineux et non modifies par
+    #    l'utilisateur) -> retour arriere possible en recopiant ce dossier sur l'installation.
+    $sauvegarde = Join-Path $DataDir ('sauvegardes\v{0}_{1:yyyy-MM-dd_HHmm}' -f $vAvant, (Get-Date))
+    & robocopy $cible $sauvegarde *.html *.json *.js *.py *.bat *.txt /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy (Join-Path $cible 'lanceur') (Join-Path $sauvegarde 'lanceur') /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    Write-Host "  [2/5] Ancienne version sauvegardee : $sauvegarde" -ForegroundColor Green
+
+    # 4. Copie. Le dossier prepare ne contient NI sentinel_state.json (etat / croisiere en cours), NI
+    #    ssl_*.pem (certificat deja accepte par les tablettes), NI lists_data/ : ils restent intacts.
+    #    Pas de /MIR : rien n'est supprime dans l'installation.
+    & robocopy $source $cible /E /XF sentinel_state*.json ssl_*.pem /XD lists_data /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+        Write-Host "  [3/5] ERREUR de copie (code robocopy $LASTEXITCODE). Ancienne version dans : $sauvegarde" -ForegroundColor Red
+        return
+    }
+    Write-Host '  [3/5] Nouvelle version copiee' -ForegroundColor Green
+
+    # 5. Modules Python (sans internet, depuis le dossier prepare) — sans effet s'ils sont deja a jour.
+    $py = Find-Python
+    $wheels = Join-Path $source 'installation\wheels'
+    if ($py -and (Test-Path -LiteralPath $wheels)) {
+        & $py -m pip install --quiet --no-index --find-links $wheels websockets cryptography 2>$null
+    }
+    Write-Host '  [4/5] Modules Python verifies' -ForegroundColor Green
+
+    # 6. Relance via le lanceur INSTALLE (serveur + application)
+    if ($SansRelance) {
+        Write-Host '  [5/5] Serveur laisse arrete (-SansRelance) : relancer avec l''icone LCC SENTINEL 4.' -ForegroundColor Yellow
+    } else {
+    Write-Host '  [5/5] Redemarrage du serveur et ouverture de l''application...'
+    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+        '-File', "`"$(Join-Path $cible 'lanceur\lcc.ps1')`"", '-Action', 'Lancer')
+    }
+    Write-Journal "Mise a jour $vAvant -> $vApres depuis $source"
+    Write-Host ''
+    Write-Host "  Mise a jour terminee : version $vAvant -> $vApres" -ForegroundColor Green
+    Write-Host '  Les tablettes recoivent la nouvelle version en rechargeant la page (ou au prochain lancement).'
+}
+
 function Invoke-Preparer {
     Write-Host ''
     Write-Host "  Preparation du dossier d'installation : $Destination"
@@ -331,7 +419,7 @@ function Invoke-Preparer {
     $fichiers = @('index.html', 'LCC sentinel 4.html', 'LCC sentinel 3.html', 'LCC OSC.html', 'LCC Sentinel Mustering.html',
                   'manifest.json', 'manifest-osc.json', 'manifest-mustering.json',
                   'sw.js', 'sw-osc.js', 'sw-mustering.js', 'sentinel_server.py',
-                  'INSTALLER_LCC_SENTINEL.bat', 'LANCER_LCC_SENTINEL.bat', 'ARRETER_SERVEUR.bat',
+                  'INSTALLER_LCC_SENTINEL.bat', 'LANCER_LCC_SENTINEL.bat', 'ARRETER_SERVEUR.bat', 'METTRE_A_JOUR.bat',
                   'LISEZ-MOI_INSTALLATION.txt')
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     foreach ($f in $fichiers) { Copy-Item -LiteralPath (Join-Path $Root $f) -Destination $Destination }
@@ -379,6 +467,7 @@ try {
         'Arreter'   { Invoke-Arreter }
         'Installer' { Invoke-Installer }
         'Preparer'  { Invoke-Preparer }
+        'MettreAJour' { Invoke-MettreAJour }
     }
 } catch {
     Write-Journal "ERREUR ($Action): $_"

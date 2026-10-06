@@ -24,6 +24,15 @@ C. TABLETTES (Wi-Fi du bord), une fois par tablette, dans Chrome
       https://10.115.19.23:8080/LCC%20sentinel%204.html
    4. Choisir le poste et saisir son code.
 
-D. EN CAS DE PROBLEME
+D. MISE A JOUR (PC deja installe)
+   1. Brancher la cle USB contenant le NOUVEAU dossier LCC_SENTINEL_4.
+   2. Double-cliquer  METTRE_A_JOUR.bat  DANS LE DOSSIER DE LA CLE (pas celui de C:\).
+      -> arret du serveur, sauvegarde de l'ancienne version, copie de la nouvelle, redemarrage.
+      -> la croisiere en cours, le certificat et les listes ne sont PAS touches.
+   3. Tablettes : recharger la page (ou fermer / rouvrir l'appli).
+   Retour arriere : l'ancienne version est dans %LOCALAPPDATA%\LCC_Sentinel\sauvegardes
+   (recopier son contenu dans C:\LCC_SENTINEL_4, serveur arrete).
+
+E. EN CAS DE PROBLEME
    - Journaux : %LOCALAPPDATA%\LCC_Sentinel\logs
    - Tablettes non connectees : verifier qu'elles sont sur le Wi-Fi du bord et refaire C.1 / C.2.
