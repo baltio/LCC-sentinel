@@ -736,7 +736,9 @@ let lastKnownFullSnapshot = null;
    ancien (et inversement). Restaure ICI, avant que les modules ne lisent STATE. */
 const PersistOSC = {
   KEY: 'lcc_osc_state_v1',
-  FIELDS: ['fireTeams','protectionTeams','meetingTeams','evac','fireSit','medical','plans','oscMessages',
+  // evac : seule la sélection est sauvegardée (evacSelected) — decks/mvzs sont des constantes du
+  // code qui doivent pouvoir évoluer avec une mise à jour de l'appli.
+  FIELDS: ['fireTeams','protectionTeams','meetingTeams','fireSit','medical','plans','oscMessages',
            'notifications','meetingTeamStatuses','touched','meetingTeamStatusesTouchedAt'],
   lastJson: '',
   disabled: false,
@@ -745,6 +747,7 @@ const PersistOSC = {
       const saved = JSON.parse(localStorage.getItem(this.KEY) || 'null');
       if (!saved || typeof saved !== 'object') return;
       this.FIELDS.forEach(k => { if (saved[k] !== undefined && saved[k] !== null) STATE[k] = saved[k]; });
+      if (Array.isArray(saved.evacSelected)) STATE.evac.selected = saved.evacSelected;
       this.lastJson = JSON.stringify(saved);
     } catch(e) { console.warn('[OSC] Etat local illisible, ignore:', e); }
   },
@@ -753,6 +756,7 @@ const PersistOSC = {
     try {
       const data = {};
       this.FIELDS.forEach(k => { data[k] = STATE[k]; });
+      data.evacSelected = STATE.evac.selected;
       const json = JSON.stringify(data);
       if (json === this.lastJson) return;
       localStorage.setItem(this.KEY, json);
@@ -1260,6 +1264,11 @@ const NetOSC = {
     clearInterval(this.syncTimer);
     this.syncTimer = setInterval(() => {
       if (!this.authenticated) return;
+      // Rien envoyer tant que l'état du serveur n'a pas été reçu et fusionné pour CETTE connexion :
+      // le serveur remplace tout son état par chaque STATE_SYNC, donc un envoi fait avant (état
+      // restauré d'une tablette restée hors-ligne, ou sans les branches des autres postes)
+      // écraserait les données plus récentes de tout le navire.
+      if (!lastKnownFullSnapshot) return;
       const snapshot = this.buildStateSnapshot();
       const json = JSON.stringify(snapshot);
       if (json === this.lastSyncedJson) return;
@@ -1276,7 +1285,8 @@ const NetOSC = {
   },
   flushQueue(){
     if (!this.offlineQueue.length) return;
-    this.offlineQueue.forEach(p => this.sendRaw(p));
+    // Les états complets (STATE_SYNC) en file sont périmés par définition — voir sendStateSyncNow().
+    this.offlineQueue.filter(p => p.type !== 'STATE_SYNC').forEach(p => this.sendRaw(p));
     this.offlineQueue = [];
   },
   buildStateSnapshot(){
@@ -1296,6 +1306,10 @@ const NetOSC = {
     };
   },
   sendStateSyncNow(){
+    // Pas connecté, ou état serveur pas encore reçu : ne PAS mettre en file d'attente un état complet
+    // (il serait rejoué à la reconnexion avant la fusion et écraserait l'état du navire) — la synchro
+    // périodique l'enverra d'elle-même une fois le FULL_STATE fusionné.
+    if (!this.authenticated || !lastKnownFullSnapshot) return;
     const snapshot = this.buildStateSnapshot();
     const json = JSON.stringify(snapshot);
     this.lastSyncedJson = json;
@@ -1308,6 +1322,7 @@ const NetOSC = {
         this.clients = msg.payload?.clients || [];
         this.updateHeaderUI('online');
         this.flushQueue();
+        lastKnownFullSnapshot = null; // attendre le FULL_STATE de cette connexion avant tout STATE_SYNC
         this.sendRaw({ type:'REQUEST_SYNC' });
         this.startStateSync();
         UI.notify('Connecté au serveur Sentinel');
