@@ -1,7 +1,7 @@
 {
   "name": "LCC OSC — On-Scene Coordinator",
   "short_name": "LCC OSC",
-  "description": "Tablet companion to LCC Sentinel 3 for the On-Scene Coordinator (Fire/Protection teams, Meeting Point, Evacuation, Medical, Bridge Info, Plans)",
+  "description": "Tablet companion to LCC Sentinel 4 for the On-Scene Coordinator (Fire/Protection teams, Meeting Point, Evacuation, Medical, Bridge Info, Plans)",
   "start_url": "./LCC%20OSC.html",
   "scope": "./",
   "display": "fullscreen",

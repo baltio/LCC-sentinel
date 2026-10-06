@@ -1,8 +1,8 @@
 {
-  "name": "CHARCOT SENTINEL — Emergency Management System",
-  "short_name": "LCC SENTINEL",
+  "name": "LCC SENTINEL 4 — Emergency Management System",
+  "short_name": "LCC SENTINEL 4",
   "description": "Système de gestion des urgences — LE COMMANDANT CHARCOT",
-  "start_url": "./LCC%20sentinel%203.html",
+  "start_url": "./LCC%20sentinel%204.html",
   "scope": "./",
   "display": "fullscreen",
   "orientation": "landscape",

@@ -46,7 +46,7 @@ d'une session, il doit contenir :
 - ce qui reste à faire
 - bugs connus
 - prochaine étape
-- fichiers importants modifiés (ex : `LCC sentinel 3.html`, `Source/index.html`)
+- fichiers importants modifiés (ex : `LCC sentinel 4.html`, `Source/index.html`)
 
 ## GIT
 
@@ -63,7 +63,7 @@ d'une session, il doit contenir :
 
 Ce projet a son propre système de version intégré au HTML, distinct des commits Git :
 
-- La version vit dans `LCC sentinel 3.html` et `Source/index.html` sous la forme
+- La version vit dans `LCC sentinel 4.html` et `Source/index.html` sous la forme
   `CHARCOT SENTINEL vX.Y.Z-charcot`.
 - `SAVE_VERSION.ps1` (ou `SAVE_VERSION.bat`) archive une copie horodatée dans `versions/`,
   incrémente la version et journalise l'entrée dans `versions/CHANGELOG.txt`.
@@ -113,7 +113,7 @@ pas déjà la pratique validée avec l'utilisateur).
 
 ## IA
 
-Avant toute génération importante sur `LCC sentinel 3.html` :
+Avant toute génération importante sur `LCC sentinel 4.html` :
 
 - relire `docs/architecture.md` pour respecter les conventions existantes,
 - ne jamais casser une fonctionnalité opérationnelle existante (ce logiciel est utilisé en

@@ -30,7 +30,7 @@ echo.
 echo  Pour restaurer manuellement :
 echo    1. Ouvrez le dossier  versions\
 echo    2. Copiez le fichier souhaité dans le dossier racine
-echo    3. Renommez-le "LCC sentinel 3.html"
+echo    3. Renommez-le "LCC sentinel 4.html"
 echo.
 echo  Chaque sauvegarde archive aussi les modules annexes au même
 echo  horodatage (manifest.json, sw.js, sentinel_server.py, Mustering
@@ -61,8 +61,8 @@ powershell -ExecutionPolicy Bypass -File "%~dp0SAVE_VERSION.ps1" -Bump patch -Me
 
 echo.
 echo  Restauration en cours...
-copy /Y "%VERSIONS_DIR%\%CHOICE%" "%~dp0LCC sentinel 3.html" >nul
+copy /Y "%VERSIONS_DIR%\%CHOICE%" "%~dp0LCC sentinel 4.html" >nul
 echo  ✅ Restauré : %CHOICE%
-echo     → LCC sentinel 3.html
+echo     → LCC sentinel 4.html
 echo.
 pause

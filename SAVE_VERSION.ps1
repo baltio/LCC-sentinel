@@ -15,7 +15,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$MainFile    = Join-Path $PSScriptRoot "LCC sentinel 3.html"
+$MainFile    = Join-Path $PSScriptRoot "LCC sentinel 4.html"
 $SourceFile  = Join-Path $PSScriptRoot "Source\index.html"
 $VersionsDir = Join-Path $PSScriptRoot "versions"
 

@@ -8,20 +8,21 @@
      Linters (webhint's viewport hint) flag this as an accessibility concern (WCAG 1.4.4 — users
      who need to zoom can't), which is a fair point in general, but doesn't apply well to a
      purpose-built kiosk device operated by trained crew rather than the public. Same choice as
-     LCC sentinel 3 — revisit if this ever runs on a general-purpose/BYOD device instead of a
+     LCC sentinel 4 — revisit if this ever runs on a general-purpose/BYOD device instead of a
      dedicated tablet. -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>LCC OSC</title>
 <meta name="theme-color" content="#06111F">
+<link href="assets/fonts/fonts.css" rel="stylesheet">
 <link rel="manifest" href="manifest-osc.json">
 <link rel="icon" href="assets/img/general/LOGO_CC_RGBv2.ico">
 <link rel="apple-touch-icon" href="assets/img/general/icon-192.png">
 <style>
 /* ============================================================
-   LCC OSC — On-Scene Coordinator tablet companion to LCC Sentinel 3
+   LCC OSC — On-Scene Coordinator tablet companion to LCC Sentinel 4
    Single self-contained file. Shares network protocol + PIN (3003)
    with sentinel_server.py so team/fire-sit/medical/plans state stays
-   live-synced with LCC Sentinel 3 and the other Sentinel stations.
+   live-synced with LCC Sentinel 4 and the other Sentinel stations.
    ============================================================ */
 :root{
   --oe-navy:#06111F; --oe-navy-mid:#0B1A2E; --oe-navy-light:#112640; --oe-navy-border:#1A3A5C;
@@ -614,6 +615,9 @@ button,input,select,textarea{font-family:var(--font-ui);}
     </div>
   </div>
   <button class="btn btn-ghost btn-block" onclick="UI.resetDisplaySettings()">RÉINITIALISER</button>
+  <div class="sec-hdr u-mt-8">DONNÉES DE LA TABLETTE</div>
+  <div class="u-fs11-dim">Sauvegardées automatiquement sur la tablette (même sans réseau).</div>
+  <button class="btn btn-ghost btn-block" onclick="PersistOSC.clearAndReload()">EFFACER LES DONNÉES (NOUVELLE INTERVENTION)</button>
   <div class="sec-hdr u-mt-8">POSTES CONNECTÉS</div>
   <div id="net-drawer-clients" class="u-fs11-dim">—</div>
 </div>
@@ -644,7 +648,7 @@ button,input,select,textarea{font-family:var(--font-ui);}
    LCC OSC — application logic
    ============================================================ */
 
-/* ── Data model (same shapes as LCC Sentinel 3 for network compat) ── */
+/* ── Data model (same shapes as LCC Sentinel 4 for network compat) ── */
 const STATE = {
   fireTeams: [
     { id:1, name:'FIRE TEAM ALPHA',  leader:'207', partner:'219', dresser:'415', status:'missing', memberStates:{'207':'missing','219':'missing','415':'missing'}, location:'', o2Start:null, o2Duration:30, notes:[], memberPressures:{} },
@@ -677,7 +681,7 @@ const STATE = {
     { id:'CROWD_TEAM', name:'Crowd Control Team',    members:['801','304','305','901','902'], missing:[], status:'missing' },
   ],
   evac: {
-    // Must match LCC sentinel 3's FireSit.evacDecks EXACTLY, character for character — zone
+    // Must match LCC sentinel 4's FireSit.evacDecks EXACTLY, character for character — zone
     // matching between the two apps is by string equality on `deck` (no normalization), and
     // Sentinel3 uses no leading zero ('DECK 9', not 'DECK 09'). A mismatch here meant decks 1-9
     // (only 10 happened to match) never matched between the two apps: a zone toggled on one side
@@ -686,9 +690,9 @@ const STATE = {
     mvzs: ['MVZ 4','MVZ 3','MVZ 2','MVZ 1'],
     selected: [], // {deck, mvz, status:'in-progress'|'evacuated'}
   },
-  // Read-only mirror of LCC Sentinel 3's Fire page left column ("Bridge Info")
+  // Read-only mirror of LCC Sentinel 4's Fire page left column ("Bridge Info")
   fireSit: {
-    fields: {}, // id -> value, same ids as LCC sentinel 3.html FireSit.inputIds
+    fields: {}, // id -> value, same ids as LCC sentinel 4.html FireSit.inputIds
     stamps: {}, // id -> "HH:MM:SS"
     staircaseActive: [],
     pressureActive: [],
@@ -701,7 +705,7 @@ const STATE = {
   notifications: [],
   o2Intervals: {},
   // Meeting Point COMPLETE/MISSING status, kept as a SEPARATE flat dict (teamId -> status) instead
-  // of a field on each meetingTeams item — this mirrors LCC Sentinel 3's FireModule.teamStatuses
+  // of a field on each meetingTeams item — this mirrors LCC Sentinel 4's FireModule.teamStatuses
   // exactly, which is where Sentinel3's own Meeting-Point-equivalent roster page reads/writes this
   // status. Sentinel3 never looks at a `.status` field on the roster array items themselves, so
   // storing it there (as this used to) meant the COMPLETE/MISSING buttons never synced in either
@@ -713,16 +717,59 @@ const STATE = {
   // one ~5s sync cycle race: whichever side's periodic snapshot lands on the server last simply
   // overwrites the other's more recent edit to an unrelated field (e.g. B sets status while A's
   // stale copy still has the old status — A's next sync wipes B's change). Same technique
-  // LCC Sentinel 3 already uses for MusterModule.zoneMemberStates — see mergeTeamArray() below.
+  // LCC Sentinel 4 already uses for MusterModule.zoneMemberStates — see mergeTeamArray() below.
   touched: { fireTeams: {}, protectionTeams: {}, meetingTeams: {}, medicalVictims: {} },
   // Flat (not per-team-nested) touched map for meetingTeamStatuses, matching mergeDictByKey's shape
-  // (teamId -> timestamp) — see FireModule.teamStatusesTouchedAt in LCC sentinel 3.html.
+  // (teamId -> timestamp) — see FireModule.teamStatusesTouchedAt in LCC sentinel 4.html.
   meetingTeamStatusesTouchedAt: {},
 };
 
 /* Last full snapshot received from the network — kept verbatim so our own
    STATE_SYNC never truncates branches (polar/muster/abandon/…) we don't manage. */
 let lastKnownFullSnapshot = null;
+
+/* Persistance locale de STATE. Avant, tout vivait uniquement en memoire : une tablette utilisee
+   hors reseau (simple prise de notes) perdait equipes, notes et victimes des que l'appli etait
+   fermee, rechargee ou tuee en arriere-plan par Android. Les horloges `touched` sont sauvegardees
+   avec les donnees : au retour du reseau, mergeTeamArray/mergeDictByKey comparent donc les vraies
+   heures de modification et une note prise hors ligne n'est pas ecrasee par un etat serveur plus
+   ancien (et inversement). Restaure ICI, avant que les modules ne lisent STATE. */
+const PersistOSC = {
+  KEY: 'lcc_osc_state_v1',
+  FIELDS: ['fireTeams','protectionTeams','meetingTeams','evac','fireSit','medical','plans','oscMessages',
+           'notifications','meetingTeamStatuses','touched','meetingTeamStatusesTouchedAt'],
+  lastJson: '',
+  disabled: false,
+  restore(){
+    try {
+      const saved = JSON.parse(localStorage.getItem(this.KEY) || 'null');
+      if (!saved || typeof saved !== 'object') return;
+      this.FIELDS.forEach(k => { if (saved[k] !== undefined && saved[k] !== null) STATE[k] = saved[k]; });
+      this.lastJson = JSON.stringify(saved);
+    } catch(e) { console.warn('[OSC] Etat local illisible, ignore:', e); }
+  },
+  save(){
+    if (this.disabled) return;
+    try {
+      const data = {};
+      this.FIELDS.forEach(k => { data[k] = STATE[k]; });
+      const json = JSON.stringify(data);
+      if (json === this.lastJson) return;
+      localStorage.setItem(this.KEY, json);
+      this.lastJson = json;
+    } catch(e) { console.warn('[OSC] Sauvegarde locale impossible:', e); }
+  },
+  clearAndReload(){
+    if (!confirm('Effacer toutes les donnees de cette tablette (equipes, notes, victimes, plans) et repartir a zero ?')) return;
+    this.disabled = true;
+    try { localStorage.removeItem(this.KEY); } catch(e) {}
+    location.reload();
+  },
+};
+PersistOSC.restore();
+setInterval(() => PersistOSC.save(), 2000);
+document.addEventListener('visibilitychange', () => { if (document.hidden) PersistOSC.save(); });
+window.addEventListener('pagehide', () => PersistOSC.save());
 
 function nowTime(){ return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
 
@@ -794,7 +841,7 @@ function withTouchedAt(arr, touchedBucket, idKey){
   return (arr || []).map(item => ({ ...item, __touchedAt: touchedBucket[item[idKey]] || {} }));
 }
 /* Same LWW idea as mergeTeamArray but for a flat dict keyed by id -> scalar value (e.g.
-   meetingTeamStatuses: teamId -> 'complete'|'missing'), matching LCC sentinel 3's
+   meetingTeamStatuses: teamId -> 'complete'|'missing'), matching LCC sentinel 4's
    NetworkModule.mergeDictByKey (used there for FireModule.teamStatuses). */
 function mergeDictByKey(localDict, incomingDict, touchedAtMap, incomingUpdatedAt, incomingTouchedAtMap){
   if (!incomingDict || typeof incomingDict !== 'object') return localDict;
@@ -1049,7 +1096,7 @@ const Login = {
 
 /* ============================================================
    NetOSC — WebSocket client, compatible with sentinel_server.py
-   and LCC Sentinel 3's protocol (AUTH / STATE_SYNC / FULL_STATE).
+   and LCC Sentinel 4's protocol (AUTH / STATE_SYNC / FULL_STATE).
    Snapshot pass-through avoids truncating branches (polar, muster,
    abandon, …) this app doesn't understand — see plan §6.
    ============================================================ */
@@ -1066,7 +1113,9 @@ const NetOSC = {
   clients: [],
 
   init(){
-    const host = localStorage.getItem('lcc_osc_net_host') || '';
+    // Défaut : serveur du bord (sentinel_server.py SHIP_SERVER_IP) — une tablette neuve se connecte
+    // sans rien saisir ; une IP saisie dans le tiroir réseau reste prioritaire.
+    const host = localStorage.getItem('lcc_osc_net_host') || '10.115.19.23';
     document.getElementById('net-host-input').value = host;
     if (localStorage.getItem('lcc_osc_standalone') === '1' || !host) { this.goStandalone(true); return; }
     this.connect(host);
@@ -1127,7 +1176,7 @@ const NetOSC = {
       return;
     }
     // A bare IP/hostname with no ":port" is the single most natural thing to type in this field —
-    // e.g. reading it off a QR code or off Sentinel 3's own network status, which shows just the
+    // e.g. reading it off a QR code or off Sentinel 4's own network status, which shows just the
     // IP. Without a fallback, the browser silently defaults to port 443/80 (nothing listens there;
     // sentinel_server.py's WebSocket is on 8765 by default), and the app just hangs on
     // "Connecting..." forever with no error explaining why. Only append the default port when the
@@ -1142,7 +1191,7 @@ const NetOSC = {
     // location.protocol can't tell us what scheme the SERVER actually needs — it's 'file:' with no
     // https/wss inference possible when this app is opened by double-clicking it from disk instead
     // of loading it through http(s)://host:8080/. That silently broke "connect from a fresh
-    // browser": opened via file://, this always guessed plain ws://, and (unlike LCC sentinel 3,
+    // browser": opened via file://, this always guessed plain ws://, and (unlike LCC sentinel 4,
     // which already had this fallback) there was no retry with the other scheme — it just kept
     // guessing wrong forever against sentinel_server.py's TLS-only WebSocket port. Try the scheme
     // guessed from how the page loaded first, and if that one never even opens, retry once with
@@ -1291,7 +1340,7 @@ const NetOSC = {
         break;
       }
       case 'FIRE_TEAM_UPDATE': {
-        // Broadcast by LCC Sentinel 3's own Fire/Meeting-Point pages on every roster edit — was
+        // Broadcast by LCC Sentinel 4's own Fire/Meeting-Point pages on every roster edit — was
         // never handled here at all (fell through to default/ignored), so a station on Sentinel3
         // clicking COMPLETE/MISSING or checking someone in only reached LCC OSC via the periodic
         // ~5s full resync, never instantly. Same merge machinery as applySnapshot's fire branch.
@@ -1988,7 +2037,7 @@ const MedicalOSC = {
   addVictim(){
     const id = 'v' + Date.now();
     const number = STATE.medical.victims.length + 1;
-    // Same field shape as LCC sentinel 3's MedicalModule.addVictim() — categories/consciousness/
+    // Same field shape as LCC sentinel 4's MedicalModule.addVictim() — categories/consciousness/
     // team/linkedEmergency/envConditions used to be entirely missing here, so a victim sheet
     // created or edited on Sentinel3 synced that data over the network fine (it just rides the
     // snapshot) but LCC OSC never displayed or let anyone edit it.
@@ -2262,7 +2311,7 @@ const SpacesData = {
    with Zone Annotator polygons for direct zone picking.
    ============================================================ */
 const PlansOSC = {
-  // ids AND visuals must match LCC sentinel 3's PlansModule.markerCatalog exactly — a marker
+  // ids AND visuals must match LCC sentinel 4's PlansModule.markerCatalog exactly — a marker
   // placed on either app's plan is the SAME shared data (STATE.plans.markers), and the two apps
   // used to use completely different id namespaces for the very same fire/protection teams
   // ('FTA'..'FTD'/'PT1'..'PT4' here vs 'F1'..'F4'/'P1'..'P4' there). A marker placed on one app was
@@ -2853,7 +2902,7 @@ const ModalOSC = {
 
 /* ============================================================
    PredefOSC — "Actions prédéfinies" quick-log popup, same default
-   action set as LCC Sentinel 3's PredefNotes module
+   action set as LCC Sentinel 4's PredefNotes module
    ============================================================ */
 const PredefOSC = {
   ACTIONS: [
@@ -3300,7 +3349,7 @@ const LocationOSC = {
 
 /* ============================================================
    ChatOSC — header chat button — Bridge Comms preset/custom
-   messages, same preset list as LCC Sentinel 3's OSCModule
+   messages, same preset list as LCC Sentinel 4's OSCModule
    ============================================================ */
 const ChatOSC = {
   PRESETS: [
