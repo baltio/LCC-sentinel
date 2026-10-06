@@ -29,6 +29,7 @@ import asyncio
 from collections import defaultdict
 import json
 import logging
+import posixpath
 import socket
 import ssl
 import sys
@@ -36,6 +37,7 @@ import threading
 from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import unquote
 
 # stdout/stderr default to the Windows console codepage (cp1252 on a French
 # install) as soon as they're redirected to a file/pipe instead of a real
@@ -79,7 +81,7 @@ def parse_args():
                               "principal, desactive sinon. 0 = desactive.")
     parser.add_argument('--no-pause', action='store_true',
                          help="Ne jamais attendre 'Entree' en cas d'erreur (lancement automatique par "
-                              "SERVEUR_AUTO.bat, qui relance le serveur tout seul).")
+                              "lanceur/lcc.ps1 -Action Serveur, qui relance le serveur tout seul).")
     return parser.parse_args()
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -717,6 +719,19 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
             self.end_headers()
 
         def do_GET(self):
+            # Le dossier servi est celui du logiciel : sans ce filtre, n'importe quel appareil du
+            # Wi-Fi pouvait telecharger la cle privee du certificat (ssl_key.pem — permet d'usurper
+            # le serveur), l'etat d'urgence complet, le code serveur ou les journaux d'installation.
+            # Normalise comme le fait translate_path() (decodage %xx, \ -> /, ./ et ../) pour qu'un
+            # chemin encode (ex: /ssl_key%2Epem, /./lanceur/) ne contourne pas le filtre.
+            chemin = posixpath.normpath(unquote(self.path.split('?', 1)[0].split('#', 1)[0]).replace('\\', '/')).lower()
+            nom = chemin.rsplit('/', 1)[-1]
+            if (nom.endswith(('.pem', '.py', '.pyc', '.bat', '.ps1', '.log'))
+                    or nom.startswith('sentinel_state')
+                    or chemin.startswith(('/lanceur', '/installation', '/.git', '/lists_data', '/__pycache__', '/versions'))):
+                self.send_response(404)
+                self.end_headers()
+                return
             # Coordonnees reseau du serveur, pour qu'une appli ouverte via http://localhost (lanceur)
             # genere quand meme des liens/QR utilisables par les tablettes (IP LAN + ports reseau),
             # pas des liens "localhost" qui ne menent nulle part depuis une tablette.
@@ -854,7 +869,10 @@ async def main():
     # ── HTTPS : génère le cert si absent, sinon réutilise ──
     if not CERT_FILE.exists() or not KEY_FILE.exists():
         use_https = generate_self_signed_cert(local_ip)
-    elif (known_ips := cert_ip_addresses()) and local_ip not in known_ips:
+    elif ((known_ips := cert_ip_addresses()) and local_ip not in known_ips
+          and not local_ip.startswith(('127.', '169.254.'))):
+        # (Jamais sur une adresse de secours : PC demarre avant que le reseau soit pret -> 127.x ou
+        # adresse automatique 169.254.x — regenerer forcerait toutes les tablettes a re-accepter.)
         # Certificat cree sur un autre PC (dossier copie / synchronise) : il ne couvre pas l'IP de
         # celui-ci. Regenere en gardant ses anciennes IP. Les tablettes devront re-accepter
         # l'avertissement de securite une fois.

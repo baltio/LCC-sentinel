@@ -123,7 +123,10 @@ foreach ($file in $filesToUpdate) {
 # happen, independently of whatever changed in the HTML they cache. See both files' own comments.
 $ServiceWorkers = @(
     @{ Path = "sw.js";              Pattern = "CACHE_NAME = 'charcot-sentinel-v[0-9.]+'";  Prefix = "CACHE_NAME = 'charcot-sentinel-v" },
-    @{ Path = "sw-mustering.js";    Pattern = "CACHE_NAME = 'lcc-mustering-v[0-9.]+'";      Prefix = "CACHE_NAME = 'lcc-mustering-v" }
+    @{ Path = "sw-mustering.js";    Pattern = "CACHE_NAME = 'lcc-mustering-v[0-9.]+'";      Prefix = "CACHE_NAME = 'lcc-mustering-v" },
+    # LCC OSC : sans ce bump, une tablette OSC installee ne recevait JAMAIS de mise a jour (sw-osc.js
+    # identique -> le navigateur ne re-telecharge rien et sert l'ancienne appli depuis son cache).
+    @{ Path = "sw-osc.js";          Pattern = "CACHE_NAME = 'lcc-osc-v[0-9.]+'";            Prefix = "CACHE_NAME = 'lcc-osc-v" }
 )
 foreach ($sw in $ServiceWorkers) {
     $swPath = Join-Path $PSScriptRoot $sw.Path
