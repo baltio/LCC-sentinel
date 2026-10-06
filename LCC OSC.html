@@ -742,6 +742,18 @@ const PersistOSC = {
            'notifications','meetingTeamStatuses','touched','meetingTeamStatusesTouchedAt'],
   lastJson: '',
   disabled: false,
+  SINCE_KEY: 'lcc_osc_state_since',   // quand le jeu de données local a commencé (1re saisie depuis le dernier effacement)
+  CRUISE_KEY: 'lcc_osc_cruise_id',    // n° de croisière connu (horodatage ISO du dernier RESET CRUISE)
+  getCruiseId(){ try { return localStorage.getItem(this.CRUISE_KEY) || null; } catch(e) { return null; } },
+  setCruiseId(id){ try { if (id) localStorage.setItem(this.CRUISE_KEY, String(id)); } catch(e) {} },
+  /* Remise à zéro pour une nouvelle croisière : PIN et IP serveur conservés. */
+  wipeForCruise(cruiseId, by){
+    this.disabled = true;
+    try { localStorage.removeItem(this.KEY); localStorage.removeItem(this.SINCE_KEY); } catch(e) {}
+    this.setCruiseId(cruiseId);
+    UI.notify('RESET CRUISE (' + (by || '?') + ') — remise à zéro…', 'warning');
+    setTimeout(() => location.reload(), 1500);
+  },
   restore(){
     try {
       const saved = JSON.parse(localStorage.getItem(this.KEY) || 'null');
@@ -759,6 +771,7 @@ const PersistOSC = {
       data.evacSelected = STATE.evac.selected;
       const json = JSON.stringify(data);
       if (json === this.lastJson) return;
+      if (!localStorage.getItem(this.SINCE_KEY)) localStorage.setItem(this.SINCE_KEY, new Date().toISOString());
       localStorage.setItem(this.KEY, json);
       this.lastJson = json;
     } catch(e) { console.warn('[OSC] Sauvegarde locale impossible:', e); }
@@ -766,7 +779,7 @@ const PersistOSC = {
   clearAndReload(){
     if (!confirm('Effacer toutes les donnees de cette tablette (equipes, notes, victimes, plans) et repartir a zero ?')) return;
     this.disabled = true;
-    try { localStorage.removeItem(this.KEY); } catch(e) {}
+    try { localStorage.removeItem(this.KEY); localStorage.removeItem(this.SINCE_KEY); } catch(e) {}
     location.reload();
   },
 };
@@ -1276,7 +1289,11 @@ const NetOSC = {
       this.send({ type:'STATE_SYNC', payload:{ snapshot } });
     }, 5000);
   },
-  sendRaw(packet){ if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(packet)); },
+  sendRaw(packet){
+    // Le serveur refuse un état portant un n° de croisière plus ancien que le sien (voir RESET CRUISE).
+    if (packet && packet.type === 'STATE_SYNC' && packet.payload) packet.payload.cruiseId = PersistOSC.getCruiseId();
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(packet));
+  },
   send(data){
     const profile = this.getStoredProfile();
     const packet = { ...data, ts: new Date().toISOString(), user: profile.name || 'OSC' };
@@ -1317,7 +1334,19 @@ const NetOSC = {
   },
   handleMessage(msg){
     switch(msg.type){
-      case 'AUTH_OK':
+      case 'AUTH_OK': {
+        // RESET CRUISE fait pendant que la tablette était hors réseau : effacer les données locales
+        // commencées AVANT ce reset (ancienne croisière), sans rien envoyer. Des notes prises hors réseau
+        // APRÈS le reset (jeu de données commencé après) sont gardées et synchronisées normalement.
+        const serverCruise = msg.payload?.cruiseId || null;
+        const localCruise = PersistOSC.getCruiseId();
+        if (serverCruise && (!localCruise || localCruise < serverCruise)) {
+          let since = null;
+          try { since = localStorage.getItem(PersistOSC.SINCE_KEY); } catch(e) {}
+          if (since && since < serverCruise) { PersistOSC.wipeForCruise(serverCruise, 'serveur — reset fait pendant l’absence de la tablette'); break; }
+          PersistOSC.setCruiseId(serverCruise);
+        }
+      }
         this.authenticated = true;
         this.clients = msg.payload?.clients || [];
         this.updateHeaderUI('online');
@@ -1377,6 +1406,12 @@ const NetOSC = {
           ChatOSC.receive();
           UI.notify(`Bridge: ${msg.payload.text}`);
         }
+        break;
+      case 'RESET_CRUISE':
+        // RESET CRUISE lancé depuis un poste Sentinel : effacer les données de cette tablette
+        // (équipes, notes, victimes, plans) — le PIN et l'IP du serveur sont conservés.
+        if (msg.payload?.cruiseId && msg.payload.cruiseId === PersistOSC.getCruiseId()) break;
+        PersistOSC.wipeForCruise(msg.payload?.cruiseId, msg.payload?.by || msg.user);
         break;
       case 'FIRE_SIT_UPDATE':
         this.applyFireSitPayload(msg.payload);

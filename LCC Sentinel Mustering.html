@@ -1438,6 +1438,23 @@ function seedDemoData(s) {
   return s;
 }
 
+/* RESET CRUISE (new cruise, launched from a Sentinel station): clear every check-in / status / history /
+   chat / checklist / craft status, but KEEP the crew/PAX lists (cachedRoster) and this tablet's settings
+   (server, theme, logged-in safety number). The cruise id (ISO time of the reset) is remembered so a
+   tablet that was offline during the reset can tell on reconnect that its data belongs to the old cruise. */
+const CRUISE_KEY = 'lcc_mustering_cruise_id';
+function getCruiseId() { try { return localStorage.getItem(CRUISE_KEY) || null; } catch(e) { return null; } }
+function setCruiseId(id) { try { if (id) localStorage.setItem(CRUISE_KEY, String(id)); } catch(e) {} }
+function resetForNewCruise(cruiseId, by) {
+  Object.keys(STATE.statuses || {}).forEach(id => { STATE.statuses[id] = {}; });
+  STATE.history = []; STATE.chat = []; STATE.notifications = [];
+  STATE.checklist = {}; STATE.craftStatus = {}; STATE.craftStatusTs = {};
+  saveState();
+  setCruiseId(cruiseId);
+  showToast('RESET CRUISE (' + (by || '?') + ') — check-ins cleared, lists kept');
+  setTimeout(() => location.reload(), 1500);
+}
+
 function saveState() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch(e) {}
 }
@@ -1575,7 +1592,21 @@ const SyncAdapter = {
   },
   dispatchLive(msg) {
     switch (msg.type) {
-      case 'AUTH_OK':
+      case 'AUTH_OK': {
+        // A RESET CRUISE happened while this tablet was offline: if its local check-ins predate it
+        // (old cruise), clear them BEFORE syncing anything. Check-ins recorded offline AFTER the
+        // reset are kept.
+        const serverCruise = (msg.payload && msg.payload.cruiseId) || null;
+        const localCruise = getCruiseId();
+        if (serverCruise && (!localCruise || localCruise < serverCruise)) {
+          const resetAt = Date.parse(serverCruise);
+          const history = STATE.history || [];
+          const hasOld = history.some(h => h && h.ts && h.ts < resetAt)
+            || (!history.length && Object.values(STATE.statuses || {}).some(o => o && Object.keys(o).length));
+          if (hasOld) { resetForNewCruise(serverCruise, 'server — reset done while this tablet was offline'); break; }
+          setCruiseId(serverCruise);
+        }
+      }
         this.mode = 'live';
         renderNetBadge();
         showToast(this.usingBackup ? 'Connected to BACKUP server' : 'Connected to LCC Sentinel 4 server');
@@ -1590,6 +1621,12 @@ const SyncAdapter = {
       case 'STATE_SYNC':
         importFromSentinel3(msg.payload && msg.payload.snapshot);
         break;
+      case 'RESET_CRUISE': {
+        const cruiseId = msg.payload && msg.payload.cruiseId;
+        if (cruiseId && cruiseId === getCruiseId()) break; // already in this cruise
+        resetForNewCruise(cruiseId, (msg.payload && msg.payload.by) || msg.user);
+        break;
+      }
       case 'MUSTER_UPDATE': {
         // Wire type is shared for both checkin and craft-status messages (see SyncAdapter.send's
         // wireType map) — re-split back into the two LOCAL event types by payload.kind, same as the
