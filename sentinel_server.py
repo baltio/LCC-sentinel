@@ -12,7 +12,7 @@
   un autre port) que les postes basculent dessus si le principal tombe :
     python sentinel_server.py --port 8766 --role SECOURS
   Renseigner cette IP + port 8766 comme "serveur de secours" dans les
-  Settings reseau de l'application (Sentinel 3 et Mustering).
+  Settings reseau de l'application (Sentinel 4 et Mustering).
 
   SYNCHRONISATION ENTRE LES 2 SERVEURS — en plus de la recuperation via les
   tablettes/PC qui se reconnectent, chaque serveur peut pousser son etat vers
@@ -51,7 +51,8 @@ except ImportError:
     print("\n[ERREUR] Le module 'websockets' n'est pas installe.")
     print("  Executez : pip install websockets")
     print("  Ou double-cliquez sur INSTALL.bat\n")
-    input("Appuyez sur Entree pour quitter...")
+    if '--no-pause' not in sys.argv:
+        input("Appuyez sur Entree pour quitter...")
     raise SystemExit(1)
 
 def parse_args():
@@ -69,6 +70,16 @@ def parse_args():
     parser.add_argument('--peer-port', type=int, default=8765, help="Port WebSocket de l'autre serveur (defaut: 8765)")
     parser.add_argument('--peer-interval', type=int, default=300,
                          help="Intervalle en secondes entre deux poussees d'etat vers l'autre serveur (defaut: 300 = 5 min)")
+    parser.add_argument('--local-http-port', type=int, default=None,
+                         help="Port HTTP non chiffre, accessible UNIQUEMENT depuis ce PC (127.0.0.1), utilise par "
+                              "LANCER_LCC_SENTINEL.bat. Defaut: 8081 pour le serveur principal (port 8765), "
+                              "desactive sinon. 0 = desactive.")
+    parser.add_argument('--local-port', type=int, default=None,
+                         help="Port WebSocket non chiffre local (127.0.0.1) associe. Defaut: 8764 pour le serveur "
+                              "principal, desactive sinon. 0 = desactive.")
+    parser.add_argument('--no-pause', action='store_true',
+                         help="Ne jamais attendre 'Entree' en cas d'erreur (lancement automatique par "
+                              "SERVEUR_AUTO.bat, qui relance le serveur tout seul).")
     return parser.parse_args()
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -76,6 +87,9 @@ def parse_args():
 # commande juste avant le lancement (voir le bloc __main__ en bas) — les valeurs
 # ci-dessous ne servent que de defaut si le script est importe sans passer par la.
 HOST = '0.0.0.0'   # Ecouter sur toutes les interfaces reseau
+# IP fixe du PC serveur a bord (valeur par defaut aussi pre-remplie dans les applis : Sentinel 4,
+# OSC, Mustering). A changer ici ET dans les 3 applis si le serveur change de PC.
+SHIP_SERVER_IP = '10.115.19.23'
 PORT = 8765
 HTTP_PORT = 8080    # Serveur HTTP pour l'application PWA
 ROLE = 'PRINCIPAL'
@@ -137,9 +151,29 @@ PEER_HOST = None
 PEER_PORT = 8765
 PEER_INTERVAL = 300
 
+# ── Acces local (ce PC uniquement) ──────────────────────────────────────────────
+# Chrome refuse le service worker (mode hors-ligne) et l'installation PWA sur une origine dont le
+# certificat auto-signe a juste ete "accepte" par clic (verifie : "An unknown error occurred when
+# fetching the script" + installabilite "not-from-secure-origin"). http://localhost est en revanche
+# une origine sure par definition — d'ou ces 2 ports en clair, lies a 127.0.0.1 donc injoignables
+# depuis le reseau, utilises par LANCER_LCC_SENTINEL.bat sur le PC qui fait tourner le serveur.
+LOCAL_HOST = '127.0.0.1'
+LOCAL_HTTP_PORT = 0
+LOCAL_WS_PORT = 0
+NO_PAUSE = False
+
 # ── Utilitaires ───────────────────────────────────────────────────────────────
 def get_local_ip():
-    """Retourne l'adresse IP locale la plus probable (hors loopback)."""
+    """Retourne l'adresse IP locale la plus probable (hors loopback).
+    L'IP du PC serveur du bord (SHIP_SERVER_IP) est prioritaire quand elle est presente sur ce PC :
+    sans cela, sur un PC a plusieurs cartes reseau (ou sans route par defaut en mer), une autre
+    adresse pouvait etre choisie et finir dans les QR codes / liens donnes aux tablettes."""
+    try:
+        local_ips = {i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
+        if SHIP_SERVER_IP in local_ips:
+            return SHIP_SERVER_IP
+    except Exception:
+        pass
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(('8.8.8.8', 80))
@@ -160,7 +194,7 @@ def get_local_ip():
 def now_iso():
     # Millisecond resolution matters: this timestamp becomes shared_snapshot_meta['updatedAt'],
     # which clients compare against their own per-field "last touched" clocks to decide whether
-    # to keep a local edit or accept an incoming one (see LCC sentinel 3's / LCC OSC's
+    # to keep a local edit or accept an incoming one (see LCC sentinel 4's / LCC OSC's
     # mergeTeamArray). With whole-second resolution (the previous %S-only format), two different
     # stations' edits landing within the same wall-clock second got IDENTICAL timestamps — found
     # via a 5-station simultaneous-conflicting-edit stress test: a station would correctly accept
@@ -586,8 +620,22 @@ async def handler(ws, path='/'):
 
 # ── Certificat SSL auto-signé ────────────────────────────────────────────────
 
-def generate_self_signed_cert(local_ip):
-    """Génère un certificat SSL auto-signé pour HTTPS local. Retourne True si OK."""
+def cert_ip_addresses():
+    """IP couvertes par le certificat existant (vide si illisible / module absent)."""
+    try:
+        from cryptography import x509
+        cert = x509.load_pem_x509_certificate(CERT_FILE.read_bytes())
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        return {str(ip) for ip in san.get_values_for_type(x509.IPAddress)}
+    except Exception:
+        return set()
+
+
+def generate_self_signed_cert(local_ip, extra_ips=()):
+    """Génère un certificat SSL auto-signé pour HTTPS local. Retourne True si OK.
+    extra_ips : autres IP a couvrir (celles de l'ancien certificat + SHIP_SERVER_IP), pour qu'un
+    certificat partage par OneDrive entre plusieurs PC finisse par les couvrir tous au lieu d'etre
+    regenere a chaque demarrage sur l'un puis l'autre."""
     try:
         from cryptography import x509
         from cryptography.x509.oid import NameOID
@@ -603,10 +651,11 @@ def generate_self_signed_cert(local_ip):
         ])
         san_list = [x509.DNSName('localhost'),
                     x509.IPAddress(ipaddress.IPv4Address('127.0.0.1'))]
-        try:
-            san_list.append(x509.IPAddress(ipaddress.IPv4Address(local_ip)))
-        except Exception:
-            pass
+        for ip in sorted({local_ip, SHIP_SERVER_IP, *extra_ips} - {'127.0.0.1'}):
+            try:
+                san_list.append(x509.IPAddress(ipaddress.IPv4Address(ip)))
+            except Exception:
+                pass
         cert = (
             x509.CertificateBuilder()
             .subject_name(subject)
@@ -638,8 +687,12 @@ def generate_self_signed_cert(local_ip):
 
 LISTS_FOLDER = Path(__file__).parent / 'lists_data'
 
-def start_http_server(use_https=False):
-    """Sert les fichiers statiques (HTML, assets) sur HTTP_PORT dans un thread."""
+def start_http_server(use_https=False, host=None, port=None, network_https=None):
+    """Sert les fichiers statiques (HTML, assets) sur HTTP_PORT dans un thread.
+    network_https : si les ports RESEAU sont en HTTPS (differe de use_https pour l'acces local)."""
+    host = HOST if host is None else host
+    port = HTTP_PORT if port is None else port
+    network_https = use_https if network_https is None else network_https
     www_root = Path(__file__).parent
 
     class SilentHandler(SimpleHTTPRequestHandler):
@@ -664,6 +717,22 @@ def start_http_server(use_https=False):
             self.end_headers()
 
         def do_GET(self):
+            # Coordonnees reseau du serveur, pour qu'une appli ouverte via http://localhost (lanceur)
+            # genere quand meme des liens/QR utilisables par les tablettes (IP LAN + ports reseau),
+            # pas des liens "localhost" qui ne menent nulle part depuis une tablette.
+            if self.path == '/api/server-info':
+                body = json.dumps({
+                    'ip': get_local_ip(),
+                    'port': PORT,
+                    'httpPort': HTTP_PORT,
+                    'https': bool(network_https),
+                }).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             # Liste les fichiers JSON disponibles
             if self.path == '/api/lists-files':
                 LISTS_FOLDER.mkdir(exist_ok=True)
@@ -733,7 +802,7 @@ def start_http_server(use_https=False):
     # opening the PWA around the same moment), and the plain single-threaded HTTPServer serves
     # one request at a time: every OTHER tablet's request just queues behind whichever transfer
     # is already in flight, which reads as a random, unexplained hang/timeout to that user.
-    server = ThreadingHTTPServer((HOST, HTTP_PORT), SilentHandler)
+    server = ThreadingHTTPServer((host, port), SilentHandler)
     if use_https:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
@@ -785,6 +854,12 @@ async def main():
     # ── HTTPS : génère le cert si absent, sinon réutilise ──
     if not CERT_FILE.exists() or not KEY_FILE.exists():
         use_https = generate_self_signed_cert(local_ip)
+    elif (known_ips := cert_ip_addresses()) and local_ip not in known_ips:
+        # Certificat cree sur un autre PC (dossier copie / synchronise) : il ne couvre pas l'IP de
+        # celui-ci. Regenere en gardant ses anciennes IP. Les tablettes devront re-accepter
+        # l'avertissement de securite une fois.
+        log.info("[HTTPS] Certificat sans l'IP %s (couvre: %s) — regeneration", local_ip, ', '.join(sorted(known_ips)))
+        use_https = generate_self_signed_cert(local_ip, known_ips) or True
     else:
         use_https = True
         log.info('[HTTPS] Certificat existant utilisé : %s', CERT_FILE.name)
@@ -793,6 +868,16 @@ async def main():
     ws_scheme   = 'wss'   if use_https else 'ws'
 
     http_server = start_http_server(use_https=use_https)
+
+    # Un echec ici (port deja pris) ne doit jamais empecher le serveur principal de tourner :
+    # les tablettes passent par les ports reseau ci-dessus, pas par ceux-ci.
+    local_http_server = None
+    if LOCAL_HTTP_PORT:
+        try:
+            local_http_server = start_http_server(use_https=False, host=LOCAL_HOST, port=LOCAL_HTTP_PORT,
+                                                  network_https=use_https)
+        except OSError as exc:
+            log.warning(f'[LOCAL] Port HTTP local {LOCAL_HTTP_PORT} indisponible: {exc}')
 
     sep = '=' * 62
     print(f'\n{sep}')
@@ -804,7 +889,7 @@ async def main():
         print(f'  Sync vers pair : {PEER_HOST}:{PEER_PORT} toutes les {PEER_INTERVAL}s')
     print(f'  IP du serveur  : {local_ip}')
     print(f'  WebSocket      : {ws_scheme}://{local_ip}:{PORT}')
-    print(f'  Application    : {http_scheme}://{local_ip}:{HTTP_PORT}/LCC%20sentinel%203.html')
+    print(f'  Application    : {http_scheme}://{local_ip}:{HTTP_PORT}/LCC%20sentinel%204.html')
     if use_https:
         print(f'  [HTTPS] Certificat auto-signé — 2 ports distincts, 2 avertissements à accepter')
         print(f'          (voir "CERTIFICAT HTTPS" ci-dessous, a faire 1 fois par appareil/navigateur)')
@@ -838,11 +923,14 @@ async def main():
     print(f'    Etat persistant: {STATE_FILE.name} ({"restaure" if restored else "nouveau"})')
     print()
     print(f'  OUVRIR L\'APP DANS CHROME :')
-    print(f'    {http_scheme}://{local_ip}:{HTTP_PORT}/LCC%20sentinel%203.html')
+    print(f'    {http_scheme}://{local_ip}:{HTTP_PORT}/LCC%20sentinel%204.html')
     if use_https:
         print(f'    → Voir "CERTIFICAT HTTPS" ci-dessus (2 etapes) avant de vous connecter')
         print(f'    → Puis menu Chrome (⋮) → Installer l\'application (PWA)')
-    print(f'    (ou {http_scheme}://localhost:{HTTP_PORT}/LCC%20sentinel%203.html en local)')
+    print(f'    (ou {http_scheme}://localhost:{HTTP_PORT}/LCC%20sentinel%204.html en local)')
+    if local_http_server:
+        print(f'  SUR CE PC (sans avertissement de certificat, hors-ligne OK) :')
+        print(f'    http://localhost:{LOCAL_HTTP_PORT}/LCC%20sentinel%204.html  (WebSocket local : {LOCAL_WS_PORT})')
     print()
     print(f'  CTRL+C pour arreter le serveur')
     print(sep)
@@ -853,6 +941,12 @@ async def main():
         ws_ssl.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
 
     async with websockets.serve(handler, HOST, PORT, ssl=ws_ssl):
+        local_ws_server = None
+        if LOCAL_WS_PORT:
+            try:
+                local_ws_server = await websockets.serve(handler, LOCAL_HOST, LOCAL_WS_PORT)
+            except OSError as exc:
+                log.warning(f'[LOCAL] Port WebSocket local {LOCAL_WS_PORT} indisponible: {exc}')
         autosave_task = asyncio.create_task(autosave_loop())
         peer_task = asyncio.create_task(peer_sync_loop()) if PEER_HOST else None
         diag_task = asyncio.create_task(diagnostic_report_loop())
@@ -869,6 +963,10 @@ async def main():
             log_diagnostic_report()
             save_persistent_state(force=True)
             http_server.shutdown()
+            if local_http_server:
+                local_http_server.shutdown()
+            if local_ws_server:
+                local_ws_server.close()
 
 if __name__ == '__main__':
     args = parse_args()
@@ -884,6 +982,12 @@ if __name__ == '__main__':
     PEER_HOST = (args.peer_host or '').strip() or None
     PEER_PORT = args.peer_port
     PEER_INTERVAL = max(30, args.peer_interval)  # 30s plancher, pour eviter un abus de --peer-interval 1
+    # Ports locaux actifs par defaut uniquement sur le principal (port 8765) : un secours lance sur le
+    # meme PC (--port 8766) entrerait sinon en conflit sur 8081/8764.
+    is_default_port = PORT == 8765
+    LOCAL_HTTP_PORT = args.local_http_port if args.local_http_port is not None else (8081 if is_default_port else 0)
+    LOCAL_WS_PORT = args.local_port if args.local_port is not None else (8764 if is_default_port else 0)
+    NO_PAUSE = args.no_pause
 
     try:
         asyncio.run(main())
@@ -892,4 +996,6 @@ if __name__ == '__main__':
     except OSError as e:
         print(f'\n[ERREUR] Impossible de demarrer : {e}')
         print(f'  Le port {PORT} est peut-etre deja utilise.')
-        input('Appuyez sur Entree pour quitter...')
+        if not NO_PAUSE:
+            input('Appuyez sur Entree pour quitter...')
+        raise SystemExit(1)

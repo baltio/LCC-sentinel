@@ -1,0 +1,29 @@
+LCC SENTINEL 4 - INSTALLATION DU PC SERVEUR (sans internet)
+============================================================
+
+A. INSTALLATION (une seule fois)
+   1. Copier ce dossier LCC_SENTINEL_4 en entier sur le disque du PC :  C:\LCC_SENTINEL_4
+      (pas sur le Bureau, pas dans OneDrive, pas lance depuis la cle USB)
+   2. Verifier que l'IP du PC est 10.115.19.23 (adresse FIXE).
+   3. Double-cliquer  C:\LCC_SENTINEL_4\INSTALLER_LCC_SENTINEL.bat
+      -> accepter la fenetre "administrateur" (pare-feu)
+      -> a la fin, l'application s'ouvre et l'icone "LCC SENTINEL 4" est sur le Bureau.
+   4. Dans l'application : choisir le poste (ex. BRIDGE) et saisir son code.
+
+B. UTILISATION
+   - Ouvrir le logiciel : icone "LCC SENTINEL 4" du Bureau.
+   - Le serveur demarre tout seul a l'ouverture de session Windows et redemarre
+     tout seul en cas de plantage. Apres un redemarrage du PC : ouvrir la session,
+     puis cliquer sur l'icone.
+   - Arreter le serveur (maintenance uniquement) : ARRETER_SERVEUR.bat
+
+C. TABLETTES (Wi-Fi du bord), une fois par tablette, dans Chrome
+   1. Ouvrir  https://10.115.19.23:8080/   -> "Parametres avances" -> "Continuer"
+   2. Ouvrir  https://10.115.19.23:8765/   -> meme chose (page blanche ensuite = normal)
+   3. Ouvrir l'appli (ou scanner le QR code affiche dans Settings > Reseau du PC serveur) :
+      https://10.115.19.23:8080/LCC%20sentinel%204.html
+   4. Choisir le poste et saisir son code.
+
+D. EN CAS DE PROBLEME
+   - Journaux : %LOCALAPPDATA%\LCC_Sentinel\logs
+   - Tablettes non connectees : verifier qu'elles sont sur le Wi-Fi du bord et refaire C.1 / C.2.

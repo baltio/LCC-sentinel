@@ -1,12 +1,12 @@
 ﻿/* ============================================================
    LCC SENTINEL MUSTERING — Service Worker PWA
    Cache-first strategy so the app shell (HTML/CSS/JS) loads with
-   no network at all — separate from LCC Sentinel 3's own sw.js.
+   no network at all — separate from LCC Sentinel 4's own sw.js.
    Live crew/PAX roster data is a separate concern, cached in
    localStorage by the app itself (STATE.cachedRoster).
    ============================================================ */
 
-// Bumped by SAVE_VERSION.ps1 on every release, in step with Sentinel 3's own sw.js — see its
+// Bumped by SAVE_VERSION.ps1 on every release, in step with Sentinel 4's own sw.js — see its
 // comment for why this byte-diff is what makes an update visible to the browser at all.
 const CACHE_NAME = 'lcc-mustering-v2.0.37';
 
@@ -15,6 +15,7 @@ const APP_SHELL_URL = './LCC Sentinel Mustering.html';
 const PRECACHE_URLS = [
   APP_SHELL_URL,
   './manifest-mustering.json',
+  './assets/fonts/fonts.css',
   './assets/img/general/icon-192.png',
   './assets/img/general/icon-512.png',
   './assets/img/general/icon-96.png',

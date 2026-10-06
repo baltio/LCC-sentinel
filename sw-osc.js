@@ -1,14 +1,14 @@
 /* ============================================================
    LCC OSC — Service Worker PWA
    Cache-first strategy so the app shell (HTML/CSS/JS) loads with
-   no network at all — separate from LCC Sentinel 3's own sw.js
+   no network at all — separate from LCC Sentinel 4's own sw.js
    and LCC Sentinel Mustering's sw-mustering.js.
    Live team/fire-sit/medical/plans data is synced over WebSocket
    by the app itself (NetOSC), not cached here.
    ============================================================ */
 
 // Bump on every release so the browser detects the update (byte-diff triggers install).
-const CACHE_NAME = 'lcc-osc-v1.0.0';
+const CACHE_NAME = 'lcc-osc-v1.0.1';
 
 const APP_SHELL_URL = './LCC OSC.html';
 
@@ -17,6 +17,7 @@ const PRECACHE_URLS = [
   './manifest-osc.json',
   './assets/js/oe_crew_data.js',
   './assets/js/oe_spaces_data.js',
+  './assets/fonts/fonts.css',
   './assets/img/general/icon-192.png',
   './assets/img/general/icon-512.png',
   './assets/img/general/icon-96.png',

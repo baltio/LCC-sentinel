@@ -11,11 +11,11 @@ Pollution, Medical, Muster, Abandon, OSC, Plans, Lists, Messages, Log, Report, S
 
 ## Fichiers principaux
 
-- `LCC sentinel 3.html` — application principale, ouverte en usage réel/exercice. Contient la
+- `LCC sentinel 4.html` — application principale, ouverte en usage réel/exercice. Contient la
   chaîne de version `CHARCOT SENTINEL vX.Y.Z-charcot`.
 - `Source/index.html` — copie source équivalente, tenue synchronisée avec le fichier principal
   par `SAVE_VERSION.ps1` (les deux sont mis à jour ensemble à chaque bump de version).
-- `manifest.json` — manifeste PWA (icônes, nom, `start_url` pointant vers `LCC sentinel 3.html`).
+- `manifest.json` — manifeste PWA (icônes, nom, `start_url` pointant vers `LCC sentinel 4.html`).
 - `sw.js` — service worker PWA.
 - `sentinel_server.py` — serveur Python (WebSocket + HTTP) pour la synchronisation
   multi-postes en temps réel (Bridge, ECR, OSC, Back Up, Meeting Point), avec profils par PIN
@@ -35,7 +35,7 @@ Pollution, Medical, Muster, Abandon, OSC, Plans, Lists, Messages, Log, Report, S
 ## Versioning applicatif
 
 Voir la section "VERSIONING APPLICATIF" de `.ai/MASTER_WORKFLOW.md`. En résumé :
-`SAVE_VERSION.ps1` détecte `CHARCOT SENTINEL vX.Y.Z-charcot` dans `LCC sentinel 3.html`,
+`SAVE_VERSION.ps1` détecte `CHARCOT SENTINEL vX.Y.Z-charcot` dans `LCC sentinel 4.html`,
 archive une copie horodatée de ce fichier et de `Source/index.html` dans `versions/`,
 incrémente la version dans les deux fichiers, et journalise dans `versions/CHANGELOG.txt`.
 
@@ -50,12 +50,35 @@ de version applicative.
   (alarmes, logs, snapshot partagé), avec sauvegarde automatique toutes les
   `AUTOSAVE_INTERVAL` secondes.
 
+### IP du serveur du bord
+
+`10.115.19.23` — `SHIP_SERVER_IP` dans `sentinel_server.py` (IP annoncée en priorité dans les
+liens/QR, et toujours incluse dans le certificat HTTPS), et IP par défaut des appareils jamais
+configurés dans `LCC sentinel 4.html` (`NetworkModule.config`), `LCC OSC.html` (`NetOSC.init`) et
+`LCC Sentinel Mustering.html` (`serverConfig`). À changer aux 4 endroits si le serveur change de PC.
+Au démarrage, le serveur régénère `ssl_cert.pem` si le certificat ne couvre pas l'IP du PC courant
+(en conservant les IP qu'il couvrait déjà).
+
+### Lanceur du PC serveur
+
+`lanceur/lcc.ps1` (appelé par `INSTALLER_LCC_SENTINEL.bat`, `LANCER_LCC_SENTINEL.bat`,
+`ARRETER_SERVEUR.bat` et les raccourcis qu'il crée) :
+- installation unique : Python + modules, pare-feu, raccourci Bureau « LCC SENTINEL »,
+  démarrage auto du serveur à l'ouverture de session (dossier Démarrage) ;
+- surveillance : relance `sentinel_server.py --no-pause` s'il s'arrête (journaux dans
+  `%LOCALAPPDATA%\LCC_Sentinel\logs`, hors OneDrive) ;
+- ouverture de l'appli en fenêtre Chrome/Edge sur `http://localhost:8081` + WebSocket local
+  `8764` — ports en clair liés à `127.0.0.1` uniquement (`--local-http-port` / `--local-port`).
+  Sur localhost, Chrome accepte service worker et installation PWA, ce qu'il refuse sur l'origine
+  HTTPS auto-signée (vérifié). `/api/server-info` permet à cette instance locale de générer des
+  QR/liens tablettes avec l'IP réseau et les ports HTTPS.
+
 ## Points d'attention pour toute modification
 
 - Le fichier HTML principal est volumineux (~2,4 Mo) — toujours localiser précisément la
   section à modifier (grep sur un id/label plutôt que relecture complète) avant d'éditer.
 - Toute modification fonctionnelle doit être répercutée dans les deux copies
-  (`LCC sentinel 3.html` et `Source/index.html`) si elles doivent rester synchronisées, sauf
+  (`LCC sentinel 4.html` et `Source/index.html`) si elles doivent rester synchronisées, sauf
   si l'utilisateur indique explicitement qu'elles divergent intentionnellement.
 - Ce logiciel est utilisé en conditions réelles et en exercice à bord — ne jamais casser une
   fonctionnalité opérationnelle existante sans validation explicite.
