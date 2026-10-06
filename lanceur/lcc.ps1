@@ -236,9 +236,11 @@ function Invoke-Installer {
 
     # 1. Python
     # Depuis une cle USB, les raccourcis pointeraient vers la cle : copier d'abord le dossier sur le disque.
-    $lecteur = [System.IO.DriveInfo]::new([System.IO.Path]::GetPathRoot($Root))
-    if ($lecteur.DriveType -ne 'Fixed') {
-        Write-Host "  Ce dossier est sur un lecteur amovible ou reseau ($($lecteur.Name))." -ForegroundColor Red
+    # DriveInfo refuse les chemins reseau (\\serveur\partage) : les traiter comme "pas un disque local".
+    $racine = [System.IO.Path]::GetPathRoot($Root)
+    try { $typeLecteur = [System.IO.DriveInfo]::new($racine).DriveType } catch { $typeLecteur = 'Network' }
+    if ($typeLecteur -ne 'Fixed') {
+        Write-Host "  Ce dossier est sur un lecteur amovible ou reseau ($racine)." -ForegroundColor Red
         Write-Host '  Copiez d''abord le dossier LCC_SENTINEL_4 sur le disque du PC (ex: C:\LCC_SENTINEL_4),'
         Write-Host '  puis relancez INSTALLER_LCC_SENTINEL.bat depuis la copie.'
         return
