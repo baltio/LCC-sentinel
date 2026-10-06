@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    LCC OSC — Service Worker PWA
    Cache-first strategy so the app shell (HTML/CSS/JS) loads with
    no network at all — separate from LCC Sentinel 4's own sw.js
@@ -8,7 +8,7 @@
    ============================================================ */
 
 // Bump on every release so the browser detects the update (byte-diff triggers install).
-const CACHE_NAME = 'lcc-osc-v1.0.1';
+const CACHE_NAME = 'lcc-osc-v2.0.38';
 
 const APP_SHELL_URL = './LCC OSC.html';
 
