@@ -8,7 +8,7 @@
    ============================================================ */
 
 // Bump on every release so the browser detects the update (byte-diff triggers install).
-const CACHE_NAME = 'lcc-osc-v2.0.38';
+const CACHE_NAME = 'lcc-osc-v2.0.39';
 
 const APP_SHELL_URL = './LCC OSC.html';
 

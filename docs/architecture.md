@@ -59,6 +59,17 @@ configurés dans `LCC sentinel 4.html` (`NetworkModule.config`), `LCC OSC.html` 
 Au démarrage, le serveur régénère `ssl_cert.pem` si le certificat ne couvre pas l'IP du PC courant
 (en conservant les IP qu'il couvrait déjà).
 
+### RESET CRUISE (nouvelle croisière)
+
+Settings > RESET CRUISE (`ResetCruise` dans `LCC sentinel 4.html`) : remet tout à zéro sauf les listes
+(`oe_sentinel_lists_state`, `oe_sentinel_lists_pax_backup`) et les réglages (`ResetCruise.PRESERVE_KEYS`).
+Connecté, il envoie `RESET_CRUISE` : le serveur vide état / alarmes / journal, adopte un **n° de
+croisière** (horodatage ISO, persisté dans `sentinel_state.json`) et relaie l'ordre aux postes et au
+serveur pair. Chaque appli garde ce n° (`oe_cruise_id`, `lcc_osc_cruise_id`, `lcc_mustering_cruise_id`) :
+un poste absent pendant le reset voit un n° plus récent à l'`AUTH_OK` et se remet à zéro avant tout
+envoi (OSC / Mustering : seulement si leurs données locales datent d'avant le reset). Le serveur refuse
+les `STATE_SYNC` portant un n° plus ancien que le sien et adopte un n° plus récent.
+
 ### Lanceur du PC serveur
 
 `lanceur/lcc.ps1` (appelé par `INSTALLER_LCC_SENTINEL.bat`, `LANCER_LCC_SENTINEL.bat`,

@@ -34,6 +34,7 @@ import socket
 import ssl
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -147,6 +148,17 @@ disconnect_diag = {
     'causes': defaultdict(int),
 }
 DIAG_REPORT_INTERVAL = 300
+
+# RESET CRUISE : pendant quelques secondes apres une remise a zero, les STATE_SYNC recus sont ignores —
+# ce sont les derniers envois periodiques (5s) de postes qui n'ont pas encore applique le reset, et ils
+# reinjecteraient l'ancienne croisiere dans l'etat qui vient d'etre vide.
+RESET_GUARD_S = 8
+reset_state = {'guard_until': 0.0}
+# Numero de croisiere = horodatage ISO du dernier RESET CRUISE (comparable en texte : plus grand = plus
+# recent). Persiste dans le fichier d'etat. Sert a ce qu'un poste eteint / hors reseau pendant le reset ne
+# reinjecte pas l'ancienne croisiere en se reconnectant : il voit un numero plus recent que le sien a
+# l'AUTH_OK et se remet a zero, et ses STATE_SYNC portant un ancien numero sont refuses ici.
+cruise = {'id': None}
 
 # ── Sync serveur-a-serveur (principal <-> secours) ──────────────────────────────
 PEER_HOST = None
@@ -286,8 +298,20 @@ def mark_state_dirty():
     global state_dirty
     state_dirty = True
 
+def start_new_cruise(cruise_id, by):
+    """Vide l'etat partage, les alarmes et le journal et adopte cruise_id (RESET CRUISE)."""
+    global shared_snapshot, shared_snapshot_meta
+    alarms.clear()
+    log_buffer.clear()
+    shared_snapshot = {}
+    shared_snapshot_meta = {'updatedBy': by, 'updatedAt': now_iso()}
+    cruise['id'] = cruise_id
+    reset_state['guard_until'] = time.monotonic() + RESET_GUARD_S
+    save_persistent_state(force=True)
+
 def build_full_state_payload():
     return {
+        'cruiseId': cruise['id'],
         'alarms': {k: {'active': v is not None, 'startTime': v} for k, v in alarms.items()},
         'logBuffer': log_buffer[-50:],
         'snapshot': shared_snapshot,
@@ -323,6 +347,9 @@ def load_persistent_state():
 
     if isinstance(data.get('snapshotMeta'), dict):
         shared_snapshot_meta = data['snapshotMeta']
+
+    if isinstance(data.get('cruiseId'), str):
+        cruise['id'] = data['cruiseId']
 
     return True
 
@@ -361,8 +388,9 @@ def get_client_list():
         if info.get('authenticated') and info.get('profileId') != 'relay'
     ]
 
-async def push_state_to_peer():
-    """Se connecte brievement a l'autre serveur (principal<->secours) comme un client normal et lui
+async def push_state_to_peer(message=None):
+    """message : a envoyer a la place du STATE_SYNC habituel (ex: RESET_CRUISE relaye au pair).
+    Se connecte brievement a l'autre serveur (principal<->secours) comme un client normal et lui
     pousse l'etat courant via STATE_SYNC — le meme message que les apps envoient deja, donc aucune
     logique nouvelle cote reception. Essaie wss puis ws (l'autre serveur peut etre en HTTP simple si
     son certificat n'a pas ete genere)."""
@@ -392,11 +420,11 @@ async def push_state_to_peer():
                 if reply.get('type') != 'AUTH_OK':
                     log.warning(f'[PEER-SYNC] Authentification refusee par {url}: {reply.get("payload")}')
                     return
-                await peer_ws.send(json.dumps({
+                await peer_ws.send(json.dumps(message or {
                     'type': 'STATE_SYNC',
-                    'payload': {'snapshot': shared_snapshot},
+                    'payload': {'snapshot': shared_snapshot, 'cruiseId': cruise['id']},
                 }))
-                log.info(f'[PEER-SYNC] Etat pousse vers {url}')
+                log.info(f'[PEER-SYNC] {(message or {}).get("type", "Etat")} pousse vers {url}')
                 return
         except Exception as exc:
             log.debug(f'[PEER-SYNC] {url} injoignable: {exc}')
@@ -431,7 +459,7 @@ async def broadcast(message: dict, exclude=None):
 
 # ── Gestionnaire de connexion ──────────────────────────────────────────────────
 async def handler(ws, path='/'):
-    global client_counter
+    global client_counter, shared_snapshot, shared_snapshot_meta
     client_counter += 1
     cid = f'C{client_counter:03d}'
     connected_at = datetime.now(timezone.utc)
@@ -506,7 +534,7 @@ async def handler(ws, path='/'):
                     # Repondre AUTH_OK au nouveau client
                     await send_to(ws, {
                         'type': 'AUTH_OK',
-                        'payload': {'clientId': cid, 'clients': client_list},
+                        'payload': {'clientId': cid, 'clients': client_list, 'cruiseId': cruise['id']},
                         'ts': now_iso(),
                     })
                     log.info(f'[OK] AUTH: {display_name} / {role} ({cid}) - {ip}')
@@ -534,11 +562,47 @@ async def handler(ws, path='/'):
                 })
                 log.debug(f'[SYNC] -> {cid}')
 
+            elif mtype == 'RESET_CRUISE':
+                # Nouvelle croisiere, declenchee depuis Settings > RESET CRUISE d'un poste Sentinel :
+                # vide l'etat partage, les alarmes et le journal du serveur, puis relaie l'ordre a tous
+                # les postes (Sentinel / OSC / Mustering se remettent a zero en gardant les listes) et
+                # au serveur pair — sinon sa synchro periodique ramenerait l'ancien etat.
+                reset_payload = msg.get('payload') or {}
+                new_id = str(reset_payload.get('cruiseId') or now_iso())
+                if cruise['id'] and new_id <= cruise['id']:
+                    # Deja applique (ex: relais du serveur pair) ou plus ancien que la croisiere en cours.
+                    log.info(f'[RESET] Ordre RESET CRUISE {new_id} deja applique / perime — ignore')
+                    continue
+                start_new_cruise(new_id, cid)
+                msg['payload'] = {**reset_payload, 'cruiseId': new_id}
+                msg.setdefault('ts', now_iso())
+                await broadcast(msg, exclude=ws)
+                if PEER_HOST and info.get('profileId') != 'relay':
+                    asyncio.create_task(push_state_to_peer(msg))
+                log.warning(f'[RESET] RESET CRUISE par {info.get("name")} ({cid}) — etat, alarmes et journal vides')
+
             elif mtype == 'STATE_SYNC':
+                if time.monotonic() < reset_state['guard_until']:
+                    continue
                 payload = (msg.get('payload') or {})
+                # Les versions recentes des applis joignent leur numero de croisiere (les anciennes non :
+                # acceptees comme avant). Plus ancien que celui du serveur = poste reste sur l'ancienne
+                # croisiere -> refuse. Plus recent = ce serveur a manque un RESET CRUISE (ex: serveur de
+                # secours injoignable a ce moment-la) -> il l'adopte et le relaie a ses postes.
+                if 'cruiseId' in payload and payload.get('cruiseId') != cruise['id']:
+                    incoming_id = payload.get('cruiseId')
+                    if incoming_id and (not cruise['id'] or str(incoming_id) > cruise['id']):
+                        start_new_cruise(str(incoming_id), cid)
+                        reset_state['guard_until'] = 0.0  # accepter l'etat de ce poste, deja dans la nouvelle croisiere
+                        await broadcast({'type': 'RESET_CRUISE', 'ts': now_iso(),
+                                         'payload': {'cruiseId': str(incoming_id), 'by': 'synchronisation (nouvelle croisiere)'}},
+                                        exclude=ws)
+                        log.warning(f'[RESET] Croisiere {incoming_id} adoptee depuis {info.get("name")} ({cid})')
+                    else:
+                        log.info(f'[RESET] STATE_SYNC refuse : {info.get("name")} ({cid}) encore sur la croisiere {incoming_id}')
+                        continue
                 snapshot = payload.get('snapshot')
                 if isinstance(snapshot, dict):
-                    global shared_snapshot, shared_snapshot_meta
                     shared_snapshot = snapshot
                     shared_snapshot_meta = {'updatedBy': cid, 'updatedAt': now_iso()}
                     mark_state_dirty()
