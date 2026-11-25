@@ -30,6 +30,14 @@ C. TABLETTES (Wi-Fi du bord), une fois par tablette, dans Chrome
    4. Choisir le poste et saisir son code.
 
 D. MISE A JOUR (PC deja installe)
+   METHODE SIMPLE (depuis l'appli, version 2.0.41 ou plus deja installee) :
+   1. Copier le fichier LCC_SENTINEL_4_MAJ_vX.Y.Z.zip sur le PC serveur (mail ou cle USB), SANS l'extraire.
+   2. Sur le PC serveur : LCC SENTINEL 4 > Settings > Onglet 2 > MISE A JOUR DU LOGICIEL
+      -> "CHOISIR LE FICHIER DE MISE A JOUR..." -> choisir le ZIP -> verifier la version -> INSTALLER.
+   3. Le serveur redemarre (10 s environ), l'appli se recharge sur la nouvelle version.
+   4. Tablettes : fermer / rouvrir l'appli (voir plus bas).
+
+   METHODE CLASSIQUE (premiere fois, ou mise a jour complete avec images / plans) :
    1. Brancher la cle USB contenant le NOUVEAU dossier LCC_SENTINEL_4.
    2. Double-cliquer  METTRE_A_JOUR.bat  DANS LE DOSSIER DE LA CLE (pas celui de C:\).
       -> arret du serveur, sauvegarde de l'ancienne version, copie de la nouvelle, redemarrage.

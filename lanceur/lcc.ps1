@@ -32,7 +32,7 @@
 =================================================================
 #>
 param(
-    [ValidateSet('Lancer', 'Serveur', 'Arreter', 'Installer', 'Preparer', 'MettreAJour', 'PreparerMAJ', 'Console')]
+    [ValidateSet('Lancer', 'Serveur', 'Arreter', 'Installer', 'Preparer', 'MettreAJour', 'PreparerMAJ', 'Console', 'ApresMAJ')]
     [string]$Action = 'Lancer',
     [string]$Cible = '',
     [switch]$SansRelance,  # MettreAJour : ne pas redemarrer le serveur / ouvrir l'appli a la fin   # MettreAJour : dossier installe (par defaut : celui du raccourci Bureau, sinon C:\LCC_SENTINEL_4)
@@ -483,8 +483,9 @@ function Invoke-PreparerMAJ {
     $taille = (Get-Item -LiteralPath $zip).Length / 1MB
     Write-Host ("  Paquet cree ({0:N1} Mo) : {1}" -f $taille, $zip) -ForegroundColor Green
     Write-Host ''
-    Write-Host '  Sur le PC serveur : clic droit sur le ZIP > Extraire tout, puis double-clic sur'
-    Write-Host '  METTRE_A_JOUR.bat dans le dossier extrait.'
+    Write-Host '  Sur le PC serveur : LCC SENTINEL 4 > Settings > Onglet 2 > MISE A JOUR DU LOGICIEL,'
+    Write-Host '  puis choisir ce fichier ZIP (sans l''extraire).'
+    Write-Host '  (Ou : clic droit sur le ZIP > Extraire tout, puis METTRE_A_JOUR.bat dans le dossier extrait.)'
 }
 
 function Invoke-Preparer {
@@ -547,6 +548,9 @@ try {
         'MettreAJour' { Invoke-MettreAJour }
         'PreparerMAJ' { Invoke-PreparerMAJ }
         'Console'   { Invoke-Console }
+        # Lance par sentinel_server.py apres une mise a jour faite depuis l'appli (Settings > Mise a jour) :
+        # etapes propres a ce PC que la copie de fichiers ne fait pas (raccourcis...).
+        'ApresMAJ'  { New-RaccourciConsole $PSCommandPath $Root; Write-Journal 'Mise a jour depuis l''appli : etapes du lanceur faites' }
     }
 } catch {
     Write-Journal "ERREUR ($Action): $_"

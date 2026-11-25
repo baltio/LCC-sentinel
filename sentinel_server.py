@@ -26,6 +26,13 @@
 
 import argparse
 import asyncio
+import io
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import zipfile
 from collections import defaultdict, deque
 import json
 import logging
@@ -832,6 +839,133 @@ def generate_self_signed_cert(local_ip, extra_ips=()):
 LISTS_FOLDER = Path(__file__).parent / 'lists_data'
 
 
+# ── Mise a jour depuis l'appli (Settings > Mise a jour du logiciel) ─────────────
+# Le PC serveur choisit le ZIP de PREPARER_MAJ.bat (LCC_SENTINEL_4_MAJ_vX.Y.Z.zip) : 1) /api/update/check
+# le verifie et le deballe dans un dossier temporaire, 2) /api/update/apply sauvegarde l'ancienne version
+# (meme dossier que METTRE_A_JOUR.bat), copie la nouvelle sans rien supprimer, puis ce serveur s'arrete :
+# la surveillance du lanceur le relance avec le nouveau code. Mise a jour = execution de code -> reserve
+# au PC serveur lui-meme (127.0.0.1, page servie par le port local) ; une page web quelconque ouverte sur
+# ce PC ne peut pas l'appeler (en-tete X-LCC-Update + Origin verifies, pas d'autorisation CORS).
+UPDATE_MAX_BYTES = 150 * 1024 * 1024
+UPDATE_MAIN_FILES = ('LCC sentinel 4.html', 'sentinel_server.py')
+VERSION_RE = re.compile(r'CHARCOT SENTINEL v(\d+\.\d+\.\d+)-charcot')
+update_stage = {'dir': None, 'version': None, 'files': 0}
+MAIN_LOOP = None
+
+
+def read_app_version(folder):
+    try:
+        m = VERSION_RE.search((Path(folder) / 'LCC sentinel 4.html').read_text(encoding='utf-8', errors='replace'))
+        return m.group(1) if m else '?'
+    except Exception:
+        return '?'
+
+
+def _update_skip(name):
+    """Jamais ecrases par une mise a jour : etat de la croisiere, certificat, listes, outils de dev."""
+    low = name.lower()
+    base = low.rsplit('/', 1)[-1]
+    return (base.startswith('sentinel_state') or (base.startswith('ssl_') and base.endswith('.pem'))
+            or low.startswith(('lists_data/', 'installation/', 'versions/', '.git/', '__pycache__/', '.venv/')))
+
+
+def stage_update(data):
+    """Verifie le ZIP et le deballe. Retourne (infos, None) ou (None, message d'erreur)."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return None, "Ce fichier n'est pas un ZIP valide."
+    # Compress-Archive (PowerShell 5.1, PREPARER_MAJ) ecrit des chemins avec '\'.
+    entries = []
+    for info in zf.infolist():
+        name = info.filename.replace('\\', '/')
+        if info.is_dir() or name.endswith('/'):
+            continue
+        entries.append((name, info))
+    names = [n for n, _ in entries]
+    # ZIP d'un dossier (un seul dossier racine contenant l'appli) : retirer ce niveau.
+    prefix = ''
+    if 'LCC sentinel 4.html' not in names:
+        tops = {n.split('/', 1)[0] for n in names if '/' in n}
+        if len(tops) == 1 and f'{next(iter(tops))}/LCC sentinel 4.html' in names:
+            prefix = next(iter(tops)) + '/'
+    missing = [f for f in UPDATE_MAIN_FILES if prefix + f not in names]
+    if missing:
+        return None, ("Ce n'est pas un paquet de mise a jour LCC SENTINEL 4 (manque : " + ', '.join(missing) +
+                      '). Utiliser le fichier LCC_SENTINEL_4_MAJ_vX.Y.Z.zip cree par PREPARER_MAJ.bat.')
+    if update_stage['dir']:
+        shutil.rmtree(update_stage['dir'], ignore_errors=True)
+    stage = Path(tempfile.mkdtemp(prefix='lcc_maj_'))
+    count = 0
+    for name, info in entries:
+        if not name.startswith(prefix):
+            continue
+        rel = name[len(prefix):]
+        parts = rel.split('/')
+        if (not rel or rel.startswith('/') or ':' in parts[0] or any(p in ('', '.', '..') for p in parts)
+                or _update_skip(rel)):
+            continue
+        target = stage.joinpath(*parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(info) as src, open(target, 'wb') as dst:
+            shutil.copyfileobj(src, dst)
+        count += 1
+    root = Path(__file__).parent
+    update_stage.update({'dir': stage, 'version': read_app_version(stage), 'files': count})
+    return {'version': update_stage['version'], 'currentVersion': read_app_version(root), 'files': count}, None
+
+
+def apply_staged_update():
+    """Sauvegarde l'ancienne version puis copie la nouvelle. Retourne (infos, None) ou (None, erreur)."""
+    stage = update_stage['dir']
+    if not stage or not Path(stage).exists():
+        return None, 'Aucun paquet verifie : choisir a nouveau le fichier.'
+    root = Path(__file__).parent
+    old_version = read_app_version(root)
+    data_dir = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel'
+    backup = data_dir / 'sauvegardes' / f"v{old_version}_{datetime.now().strftime('%Y-%m-%d_%H%M')}"
+    try:
+        backup.mkdir(parents=True, exist_ok=True)
+        for f in root.iterdir():
+            if f.is_file() and f.suffix.lower() in ('.html', '.json', '.js', '.py', '.bat', '.txt') and not _update_skip(f.name):
+                shutil.copy2(f, backup / f.name)
+        if (root / 'lanceur').is_dir():
+            shutil.copytree(root / 'lanceur', backup / 'lanceur', dirs_exist_ok=True)
+    except Exception as exc:
+        return None, f"Sauvegarde de l'ancienne version impossible ({exc}) : rien n'a ete modifie."
+    try:
+        for f in Path(stage).rglob('*'):
+            if f.is_file():
+                target = root / f.relative_to(stage)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, target)
+    except Exception as exc:
+        return None, f'Erreur pendant la copie ({exc}). Ancienne version sauvegardee dans : {backup}'
+    shutil.rmtree(stage, ignore_errors=True)
+    update_stage.update({'dir': None, 'version': None, 'files': 0})
+    log.warning(f'[MAJ] Logiciel mis a jour v{old_version} -> v{read_app_version(root)} (sauvegarde : {backup})')
+    # Etapes propres au lanceur (ex: raccourci « LCC SERVEUR - Console ») : action du NOUVEAU lcc.ps1.
+    launcher = root / 'lanceur' / 'lcc.ps1'
+    if os.name == 'nt' and launcher.exists():
+        try:
+            subprocess.Popen(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+                              '-File', str(launcher), '-Action', 'ApresMAJ'],
+                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        except Exception as exc:
+            log.warning(f'[MAJ] Etapes du lanceur non executees : {exc}')
+    # Relance : seulement sous la surveillance du lanceur (--no-pause), qui redemarre le serveur des qu'il
+    # s'arrete. Lance a la main (START_SERVER.bat), il faut le relancer soi-meme.
+    restarting = NO_PAUSE and MAIN_LOOP is not None
+    if restarting:
+        def _stop():
+            save_persistent_state(force=True)
+            log.warning('[MAJ] Redemarrage du serveur pour charger la nouvelle version')
+            os._exit(3)
+        MAIN_LOOP.call_soon_threadsafe(lambda: MAIN_LOOP.call_later(1.5, _stop))
+    return {'version': read_app_version(root), 'previousVersion': old_version, 'backup': str(backup),
+            'restarting': restarting}, None
+
+
 def build_server_status(network_https):
     """Donnees de la console serveur (console_serveur.html). Lu depuis le thread HTTP : copies
     (list(...)) des structures tenues par la boucle asyncio, pour ne jamais iterer pendant qu'elle
@@ -971,7 +1105,45 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
                 return
             super().do_GET()
 
+        def _json_reply(self, code, obj):
+            body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+            self.send_response(code)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _update_allowed(self):
+            # Uniquement le PC serveur, depuis l'appli servie par son port local (voir UPDATE_MAX_BYTES).
+            origin = self.headers.get('Origin') or ''
+            local_origins = {f'http://localhost:{LOCAL_HTTP_PORT}', f'http://127.0.0.1:{LOCAL_HTTP_PORT}'}
+            return (self.client_address[0] in ('127.0.0.1', '::1')
+                    and self.headers.get('X-LCC-Update') == '1'
+                    and (not origin or origin in local_origins))
+
         def do_POST(self):
+            if self.path in ('/api/update/check', '/api/update/apply'):
+                if not self._update_allowed():
+                    self._json_reply(403, {'ok': False, 'error': 'Mise a jour possible uniquement depuis le PC serveur.'})
+                    return
+                length = int(self.headers.get('Content-Length', 0) or 0)
+                if length > UPDATE_MAX_BYTES:
+                    self._json_reply(413, {'ok': False, 'error': 'Fichier trop gros pour un paquet de mise a jour.'})
+                    return
+                data = self.rfile.read(length) if length else b''
+                try:
+                    if self.path == '/api/update/check':
+                        info, err = stage_update(data)
+                    else:
+                        info, err = apply_staged_update()
+                except Exception as exc:
+                    info, err = None, f'Erreur inattendue : {exc}'
+                if err:
+                    log.warning(f'[MAJ] {err}')
+                    self._json_reply(400, {'ok': False, 'error': err})
+                else:
+                    self._json_reply(200, {'ok': True, **info})
+                return
             if self.path == '/api/save-lists':
                 try:
                     length = int(self.headers.get('Content-Length', 0))
@@ -1048,8 +1220,9 @@ async def main():
     root_logger.addHandler(recent_handler)
     for handler_obj in root_logger.handlers:
         handler_obj.addFilter(handshake_filter)
-    global server_started_at
+    global server_started_at, MAIN_LOOP
     server_started_at = now_iso()
+    MAIN_LOOP = asyncio.get_running_loop()
 
     # Plusieurs erreurs de handshake sont du bruit normal (probe HTTP sur port WS).
     # On garde quand meme les logs sentinel utiles via notre logger applicatif.
