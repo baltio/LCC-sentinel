@@ -543,7 +543,7 @@ button,input,select,textarea{font-family:var(--font-ui);}
     <div class="login-title">LCC OSC</div>
     <div class="login-role">On-Scene Coordinator — #103</div>
     <div class="login-pin-dots" id="login-pin-dots">
-      <div class="login-pin-dot"></div><div class="login-pin-dot"></div><div class="login-pin-dot"></div><div class="login-pin-dot"></div>
+      <div class="login-pin-dot"></div><div class="login-pin-dot"></div><div class="login-pin-dot"></div><div class="login-pin-dot"></div><div class="login-pin-dot"></div><div class="login-pin-dot"></div>
     </div>
     <div id="login-error"></div>
     <div class="pin-pad" id="pin-pad"></div>
@@ -1062,8 +1062,10 @@ const UI = {
 /* ============================================================
    Login — PIN pad, OSC profile fixed to token 3003
    ============================================================ */
+// PIN OSC : 6 chiffres propres au navire, vérifiés par le SERVEUR (plus écrits dans l'appli, qui est
+// publique). Un PIN refusé par le serveur ramène à cet écran (NetOSC, AUTH_FAIL).
+const PIN_LENGTH = 6;
 const Login = {
-  OSC_TOKEN: '3003',
   buffer: '',
   init(){
     const saved = localStorage.getItem('lcc_osc_profile');
@@ -1084,10 +1086,10 @@ const Login = {
   press(k){
     if (k === 'C') { this.buffer = ''; this.renderDots(false); return; }
     if (k === '⌫') { this.buffer = this.buffer.slice(0,-1); this.renderDots(false); return; }
-    if (this.buffer.length >= 4) return;
+    if (this.buffer.length >= PIN_LENGTH) return;
     this.buffer += k;
     this.renderDots(false);
-    if (this.buffer.length === 4) this.validate();
+    if (this.buffer.length === PIN_LENGTH) this.validate();
   },
   renderDots(err){
     const dots = document.querySelectorAll('.login-pin-dot');
@@ -1097,8 +1099,8 @@ const Login = {
     });
   },
   validate(){
-    if (this.buffer === this.OSC_TOKEN) {
-      const profile = { id:'osc', role:'OSC', name:'On-Scene Cmdr', initials:'OS', token:this.OSC_TOKEN, color:'#C0392B' };
+    if (/^\d{6}$/.test(this.buffer)) {
+      const profile = { id:'osc', role:'OSC', name:'On-Scene Cmdr', initials:'OS', token:this.buffer, color:'#C0392B' };
       localStorage.setItem('lcc_osc_profile', JSON.stringify(profile));
       // Nouvelle connexion par PIN = on veut le réseau : un « standalone » resté mémorisé (bouton
       // MODE STANDALONE d'une session précédente, ou token vide à l'époque) bloquait sinon toute
@@ -1455,6 +1457,14 @@ const NetOSC = {
         this.updateHeaderUI('standalone');
         const reason = msg.payload?.reason || 'PIN invalide ou refusé par le serveur.';
         UI.notify('Connexion refusée : ' + reason, 'error');
+        if (msg.payload?.invalidPin || msg.payload?.locked) {
+          // PIN refusé (ou tablette bloquée après trop d'essais) : redemander le PIN.
+          try { localStorage.removeItem('lcc_osc_profile'); } catch(e) {}
+          Login.buffer = '';
+          Login.renderDots(false);
+          document.getElementById('login-error').textContent = msg.payload?.locked ? 'Trop d\'essais — patienter' : 'PIN refusé par le serveur';
+          Login.show();
+        }
         break;
       }
       case 'CLIENT_LIST':

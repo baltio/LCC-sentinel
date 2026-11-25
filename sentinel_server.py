@@ -19,14 +19,18 @@
   l'autre toutes les 5 minutes, pour que le secours parte toujours d'une base
   recente meme si personne ne s'y est encore connecte. A faire dans LES DEUX
   SENS (chaque serveur pointe vers l'autre) :
-    Sur le principal : python sentinel_server.py --peer-host <ip_secours> --peer-port 8766
-    Sur le secours    : python sentinel_server.py --port 8766 --role SECOURS --peer-host <ip_principal> --peer-port 8765
+    Sur le principal : python sentinel_server.py --peer-host <ip_secours> --peer-port 8766 --peer-token <secret>
+    Sur le secours    : python sentinel_server.py --port 8766 --role SECOURS --peer-host <ip_principal> --peer-port 8765 --peer-token <secret>
+  (<secret> : le meme des deux cotes, 12 caracteres ou plus.) Un secours sur un AUTRE PC doit aussi
+  recevoir une copie du fichier des PIN (%LOCALAPPDATA%/LCC_Sentinel/pins.json, ou --pins-file).
 =================================================================
 """
 
 import argparse
 import asyncio
+import hmac
 import io
+import secrets
 import os
 import re
 import shutil
@@ -79,6 +83,12 @@ def parse_args():
                          help="IP de l'autre serveur (principal<->secours) vers lequel pousser l'etat "
                               "periodiquement, en plus de la recuperation via les postes qui se reconnectent.")
     parser.add_argument('--peer-port', type=int, default=8765, help="Port WebSocket de l'autre serveur (defaut: 8765)")
+    parser.add_argument('--peer-token', default=None,
+                         help="Secret partage entre les 2 serveurs (le meme des deux cotes, 12 caracteres ou plus) : "
+                              "obligatoire pour la synchronisation principal <-> secours.")
+    parser.add_argument('--pins-file', default=None,
+                         help="Fichier des codes PIN des postes (defaut : %%LOCALAPPDATA%%\\LCC_Sentinel\\pins.json). "
+                              "Un serveur de secours sur un autre PC doit utiliser une copie de ce fichier.")
     parser.add_argument('--peer-interval', type=int, default=300,
                          help="Intervalle en secondes entre deux poussees d'etat vers l'autre serveur (defaut: 300 = 5 min)")
     parser.add_argument('--local-http-port', type=int, default=None,
@@ -109,23 +119,112 @@ CERT_FILE  = Path(__file__).with_name('ssl_cert.pem')
 KEY_FILE   = Path(__file__).with_name('ssl_key.pem')
 AUTOSAVE_INTERVAL = 5
 
-# Profils autorises  →  code PIN (4 chiffres) : informations du poste
+# Postes autorises (par identifiant). Les codes PIN ne sont PLUS ecrits dans le code (il etait public
+# sur GitHub, avec des PIN 1001..7007 identiques partout) : ils sont tires au hasard (6 chiffres) au
+# premier demarrage et gardes dans PINS_FILE, propre a ce PC, hors du dossier du logiciel (jamais servi
+# sur le reseau, jamais dans Git ni dans un paquet de mise a jour). Consultables / renouvelables
+# depuis la console serveur (PC serveur uniquement).
 PROFILES = {
-    '1001': {'id': 'bridge',    'name': 'Bridge Officer',   'role': 'Bridge',        'initials': 'BR'},
-    '2002': {'id': 'ecr',       'name': 'Engine Control',   'role': 'ECR',           'initials': 'EC'},
-    '3003': {'id': 'osc',       'name': 'On-Scene Cmdr',    'role': 'OSC',           'initials': 'OS'},
-    '4004': {'id': 'backup',    'name': 'Back Up Station',  'role': 'Back Up',       'initials': 'BU'},
-    '5005': {'id': 'meetpoint', 'name': 'Meeting Point',    'role': 'Meeting Point', 'initials': 'MP'},
-    '6006': {'id': 'evac303',   'name': 'Evacuation leader 303', 'role': 'Evacuation leader 303', 'initials': 'E3'},
-    # Shared token for all LCC Sentinel Mustering tablets. Every tablet authenticates with the
-    # same PIN but sends its own safety-number identity in payload.profile (name/role/initials),
-    # which overrides these defaults — see the AUTH handler below.
-    '7007': {'id': 'mustering', 'name': 'Mustering Tablet',   'role': 'Mustering',     'initials': 'MU'},
-    # Internal-only token used by push_state_to_peer() when THIS server connects to its peer as a
-    # plain client to hand over a state snapshot — not a human PIN, filtered out of get_client_list()
-    # so it never shows up as a phantom operator in the bridge's connected-clients panel.
-    '0000': {'id': 'relay', 'name': 'Backup Sync', 'role': 'System', 'initials': 'SY'},
+    'bridge':    {'id': 'bridge',    'name': 'Bridge Officer',   'role': 'Bridge',        'initials': 'BR'},
+    'ecr':       {'id': 'ecr',       'name': 'Engine Control',   'role': 'ECR',           'initials': 'EC'},
+    'osc':       {'id': 'osc',       'name': 'On-Scene Cmdr',    'role': 'OSC',           'initials': 'OS'},
+    'backup':    {'id': 'backup',    'name': 'Back Up Station',  'role': 'Back Up',       'initials': 'BU'},
+    'meetpoint': {'id': 'meetpoint', 'name': 'Meeting Point',    'role': 'Meeting Point', 'initials': 'MP'},
+    'evac303':   {'id': 'evac303',   'name': 'Evacuation leader 303', 'role': 'Evacuation leader 303', 'initials': 'E3'},
+    # PIN commun a toutes les tablettes LCC Sentinel Mustering. Chaque tablette envoie sa propre
+    # identite (numero de securite) dans payload.profile (name/role/initials), qui remplace ces valeurs
+    # par defaut — voir le traitement AUTH plus bas.
+    'mustering': {'id': 'mustering', 'name': 'Mustering Tablet',   'role': 'Mustering',     'initials': 'MU'},
 }
+# Lien serveur <-> serveur de secours (push_state_to_peer) : pas un poste humain, masque de la liste des
+# postes. Son secret = --peer-token, identique sur les 2 serveurs ; sans --peer-token, ce lien est
+# desactive (avant, le jeton fixe '0000' permettait a n'importe qui de remplacer tout l'etat de crise).
+RELAY_PROFILE = {'id': 'relay', 'name': 'Backup Sync', 'role': 'System', 'initials': 'SY'}
+PEER_TOKEN = None
+PINS_FILE = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel' / 'pins.json'
+PINS = {}   # id du poste -> PIN
+
+# Anti force brute : au-dela de AUTH_MAX_FAILS echecs en AUTH_FAIL_WINDOW s depuis une meme IP, cette IP
+# est refusee AUTH_LOCK_S s (journalise). 6 chiffres = 1 000 000 de combinaisons, 5 essais / 5 min.
+AUTH_MAX_FAILS = 5
+AUTH_FAIL_WINDOW = 600
+AUTH_LOCK_S = 300
+auth_fails = defaultdict(list)   # ip -> horodatages (monotonic) des echecs recents
+auth_locked_until = {}           # ip -> fin du blocage (monotonic)
+
+
+def _new_pin(taken):
+    while True:
+        pin = f'{secrets.randbelow(1_000_000):06d}'
+        if pin not in taken:
+            return pin
+
+
+def load_pins():
+    """Charge PINS_FILE ; cree les PIN manquants (6 chiffres aleatoires, tous differents)."""
+    data = {}
+    try:
+        if PINS_FILE.exists():
+            raw = json.loads(PINS_FILE.read_text(encoding='utf-8'))
+            if isinstance(raw, dict):
+                data = {k: str(v) for k, v in raw.items() if k in PROFILES and str(v).isdigit() and len(str(v)) >= 6}
+    except Exception as exc:
+        log.warning(f'[PIN] Lecture de {PINS_FILE} impossible ({exc}) : nouveaux PIN generes')
+    changed = False
+    for pid in PROFILES:
+        if pid not in data or list(data.values()).count(data[pid]) > 1:
+            data[pid] = _new_pin(set(data.values()))
+            changed = True
+    PINS.clear()
+    PINS.update(data)
+    if changed:
+        save_pins()
+        log.warning(f'[PIN] Nouveaux codes PIN generes ({PINS_FILE}) — voir la console serveur')
+
+
+def save_pins():
+    PINS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PINS_FILE.write_text(json.dumps(PINS, indent=2), encoding='utf-8')
+
+
+def regenerate_pin(pid):
+    if pid not in PROFILES:
+        return None
+    PINS[pid] = _new_pin({v for k, v in PINS.items() if k != pid})
+    save_pins()
+    log.warning(f'[PIN] Nouveau PIN pour le poste {pid}')
+    return PINS[pid]
+
+
+def profile_for_token(token):
+    """Poste correspondant au PIN (comparaison a temps constant), ou None."""
+    token = str(token or '')
+    found = None
+    for pid, pin in PINS.items():
+        if hmac.compare_digest(pin.encode(), token.encode()):
+            found = PROFILES[pid]
+    if PEER_TOKEN and hmac.compare_digest(PEER_TOKEN.encode(), token.encode()):
+        found = RELAY_PROFILE
+    return found
+
+
+def pin_is_valid(token):
+    p = profile_for_token(token)
+    return bool(p) and p['id'] != 'relay'
+
+
+def auth_lock_remaining(ip):
+    return max(0.0, auth_locked_until.get(ip, 0.0) - time.monotonic())
+
+
+def note_auth_failure(ip):
+    now = time.monotonic()
+    recent = [t for t in auth_fails[ip] if now - t < AUTH_FAIL_WINDOW] + [now]
+    auth_fails[ip] = recent
+    if len(recent) >= AUTH_MAX_FAILS:
+        auth_locked_until[ip] = now + AUTH_LOCK_S
+        auth_fails[ip] = []
+        log.warning(f'[KO] {ip} bloquee {AUTH_LOCK_S // 60} min apres {AUTH_MAX_FAILS} PIN errones')
 
 # ── Etat serveur ───────────────────────────────────────────────────────────────
 clients      = {}   # websocket → {authenticated, clientId, name, role, ip, ...}
@@ -426,6 +525,9 @@ async def push_state_to_peer(message=None):
     son certificat n'a pas ete genere)."""
     if not PEER_HOST:
         return
+    if not PEER_TOKEN:
+        log.warning('[PEER-SYNC] --peer-token absent : synchronisation avec le serveur pair desactivee')
+        return
     for scheme in ('wss', 'ws'):
         url = f'{scheme}://{PEER_HOST}:{PEER_PORT}'
         try:
@@ -435,7 +537,7 @@ async def push_state_to_peer(message=None):
                 ssl_ctx.check_hostname = False
                 ssl_ctx.verify_mode = ssl.CERT_NONE  # certificat auto-signe, propre a chaque serveur
             async with websockets.connect(url, ssl=ssl_ctx, open_timeout=5) as peer_ws:
-                await peer_ws.send(json.dumps({'type': 'AUTH', 'payload': {'token': '0000', 'profile': {}}}))
+                await peer_ws.send(json.dumps({'type': 'AUTH', 'payload': {'token': PEER_TOKEN, 'profile': {}}}))
                 # The peer's AUTH handler broadcasts CLIENT_LIST to every authenticated client
                 # (itself included) BEFORE replying AUTH_OK to the one that just authenticated — a
                 # single recv() here used to grab that CLIENT_LIST instead and misread it as a
@@ -565,18 +667,34 @@ async def handler(ws, path='/'):
 
             # ── Authentification ─────────────────────────────────────────────
             if mtype == 'AUTH':
-                token        = (msg.get('payload') or {}).get('token', '').strip()
+                token        = str((msg.get('payload') or {}).get('token', '') or '').strip()
                 profile_data = (msg.get('payload') or {}).get('profile', {}) or {}
 
-                if token in PROFILES:
-                    prof = PROFILES[token]
+                # IP bloquee apres trop de PIN errones (anti force brute).
+                locked = auth_lock_remaining(ip)
+                if locked:
+                    clients[ws]['close_context'] = 'auth_fail_locked'
+                    await send_to(ws, {
+                        'type': 'AUTH_FAIL',
+                        'payload': {'reason': f'Trop de codes PIN errones : reessayer dans {int(locked // 60) + 1} min.', 'locked': True},
+                        'ts': now_iso(),
+                    })
+                    log.warning(f'[KO] AUTH REFUSE (IP bloquee): {cid} ({ip})')
+                    await ws.close(code=4003, reason='auth-locked')
+                    return
 
+                prof = profile_for_token(token)
+                # Le PIN doit etre celui du poste choisi dans l'appli (sinon : PIN d'un autre poste).
+                asked = profile_data.get('id') if isinstance(profile_data, dict) else None
+                if prof and asked in PROFILES and asked != prof['id']:
+                    prof = None
+
+                if prof:
                     # ── Anti-doublon de poste ──────────────────────────────────────
                     # Un seul user par profil a la fois (un seul Bridge, un seul OSC, ...).
-                    # Exemptions : '0000' (lien de secours serveur<->serveur, pas un poste
-                    # humain) et '7007' (Mustering — plusieurs tablettes partagent
-                    # volontairement le meme PIN, voir commentaire sur PROFILES ci-dessus).
-                    if token not in ('0000', '7007'):
+                    # Exemptions : lien serveur<->serveur (pas un poste humain) et Mustering
+                    # (plusieurs tablettes partagent volontairement le meme PIN).
+                    if prof['id'] not in ('relay', 'mustering'):
                         dup_ws, dup_info = None, None
                         for other_ws, other_info in clients.items():
                             if other_ws is ws:
@@ -598,6 +716,7 @@ async def handler(ws, path='/'):
                             await ws.close(code=4002, reason='auth-duplicate')
                             return
 
+                    auth_fails.pop(ip, None)
                     display_name = profile_data.get('name') or prof['name']
                     role         = profile_data.get('role') or prof['role']
                     initials     = profile_data.get('initials') or prof['initials']
@@ -626,12 +745,14 @@ async def handler(ws, path='/'):
 
                 else:
                     clients[ws]['close_context'] = 'auth_fail_empty_token' if not token else 'auth_fail_invalid_token'
+                    note_auth_failure(ip)
                     await send_to(ws, {
                         'type': 'AUTH_FAIL',
-                        'payload': {'reason': 'Token invalide — verifier le profil ou le mot de passe'},
+                        'payload': {'reason': 'Code PIN invalide pour ce poste.', 'invalidPin': True},
                         'ts': now_iso(),
                     })
-                    log.warning(f'[KO] AUTH FAIL: {cid} token={repr(token[:30])}')
+                    # Jamais le PIN saisi dans le journal.
+                    log.warning(f"[KO] AUTH FAIL: {cid} ({ip}) PIN invalide (poste demande : {asked or '?'})")
                     await ws.close(code=4001, reason='auth-fail')
                     return
 
@@ -865,7 +986,7 @@ def _update_skip(name):
     """Jamais ecrases par une mise a jour : etat de la croisiere, certificat, listes, outils de dev."""
     low = name.lower()
     base = low.rsplit('/', 1)[-1]
-    return (base.startswith('sentinel_state') or (base.startswith('ssl_') and base.endswith('.pem'))
+    return (base.startswith('sentinel_state') or base == 'pins.json' or (base.startswith('ssl_') and base.endswith('.pem'))
             or low.startswith(('lists_data/', 'installation/', 'versions/', '.git/', '__pycache__/', '.venv/')))
 
 
@@ -995,6 +1116,9 @@ def build_server_status(network_https):
         'disconnects': {'total': disconnect_diag['total'], 'auth': disconnect_diag['auth'],
                         'causes': dict(disconnect_diag['causes'])},
         'log': list(RECENT_LOG)[-250:],
+        'pins': [{'profile': pid, 'role': PROFILES[pid]['role'], 'pin': PINS.get(pid, '')} for pid in PROFILES],
+        'pinsFile': str(PINS_FILE),
+        'lockedIps': [ip for ip in list(auth_locked_until) if auth_lock_remaining(ip) > 0],
     }
 
 def start_http_server(use_https=False, host=None, port=None, network_https=None):
@@ -1035,7 +1159,7 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
             chemin = posixpath.normpath(unquote(self.path.split('?', 1)[0].split('#', 1)[0]).replace('\\', '/')).lower()
             nom = chemin.rsplit('/', 1)[-1]
             if (nom.endswith(('.pem', '.py', '.pyc', '.bat', '.ps1', '.log'))
-                    or nom.startswith('sentinel_state')
+                    or nom.startswith('sentinel_state') or nom == 'pins.json'
                     or chemin.startswith(('/lanceur', '/installation', '/.git', '/lists_data', '/__pycache__', '/versions'))):
                 self.send_response(404)
                 self.end_headers()
@@ -1070,6 +1194,11 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
                 self.wfile.write(body)
                 return
             # Liste les fichiers JSON disponibles
+            # Listes equipage / passagers (donnees nominatives) : PIN d'un poste exige, sauf sur le PC
+            # serveur lui-meme. Avant, n'importe quel appareil du Wi-Fi pouvait les lire sans PIN.
+            if self.path.startswith(('/api/lists-files', '/api/load-lists/')) and not self._lists_allowed():
+                self._json_reply(403, {'ok': False, 'error': 'Code PIN requis.'})
+                return
             if self.path == '/api/lists-files':
                 LISTS_FOLDER.mkdir(exist_ok=True)
                 files = sorted(
@@ -1113,6 +1242,10 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
             self.end_headers()
             self.wfile.write(body)
 
+        def _lists_allowed(self):
+            return (self.client_address[0] in ('127.0.0.1', '::1')
+                    or pin_is_valid(self.headers.get('X-LCC-Token', '')))
+
         def _update_allowed(self):
             # Uniquement le PC serveur, depuis l'appli servie par son port local (voir UPDATE_MAX_BYTES).
             origin = self.headers.get('Origin') or ''
@@ -1143,6 +1276,22 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
                     self._json_reply(400, {'ok': False, 'error': err})
                 else:
                     self._json_reply(200, {'ok': True, **info})
+                return
+            if self.path == '/api/pins/regenerate':
+                # Console serveur : nouveau PIN pour un poste (PC serveur uniquement, comme la mise a jour).
+                if not self._update_allowed():
+                    self._json_reply(403, {'ok': False, 'error': 'Possible uniquement depuis le PC serveur.'})
+                    return
+                try:
+                    length = int(self.headers.get('Content-Length', 0) or 0)
+                    pid = json.loads(self.rfile.read(length).decode('utf-8') or '{}').get('profile')
+                except Exception:
+                    pid = None
+                pin = regenerate_pin(pid)
+                self._json_reply(200 if pin else 400, {'ok': bool(pin), 'profile': pid, 'pin': pin})
+                return
+            if self.path == '/api/save-lists' and not self._lists_allowed():
+                self._json_reply(403, {'ok': False, 'error': 'Code PIN requis.'})
                 return
             if self.path == '/api/save-lists':
                 try:
@@ -1230,6 +1379,7 @@ async def main():
     logging.getLogger('websockets.asyncio.server').setLevel(logging.INFO)
 
     restored = load_persistent_state()
+    load_pins()
 
     # ── HTTPS : génère le cert si absent, sinon réutilise ──
     if not CERT_FILE.exists() or not KEY_FILE.exists():
@@ -1293,16 +1443,13 @@ async def main():
         print(f'    3. Relancer/recharger l\'application : la connexion doit passer')
         print(f'  {"-" * 55}')
         print(sep)
-    print(f'  PROFILS ET TOKENS D\'ACCES :')
-    print(f'  {"-" * 55}')
-    for token, p in PROFILES.items():
-        print(f'  [{p["role"]:<15}]  Code PIN : {token}')
-    print(f'  {"-" * 55}')
+    # Les PIN ne sont jamais affiches ici : cette sortie finit dans les journaux (serveur_*.log).
+    print(f'  CODES PIN DES POSTES : console serveur (http://localhost:{LOCAL_HTTP_PORT or 8081}/console_serveur.html)')
+    print(f'                         fichier {PINS_FILE}')
     print()
     print(f'  Dans les Settings de l\'application :')
     print(f'    IP du serveur  : {local_ip}')
     print(f'    Port WS        : {PORT}')
-    print(f'    Token          : (copier le token du profil souhaite)')
     print(f'    Etat persistant: {STATE_FILE.name} ({"restaure" if restored else "nouveau"})')
     print()
     print(f'  OUVRIR L\'APP DANS CHROME :')
@@ -1371,6 +1518,12 @@ if __name__ == '__main__':
     LOCAL_HTTP_PORT = args.local_http_port if args.local_http_port is not None else (8081 if is_default_port else 0)
     LOCAL_WS_PORT = args.local_port if args.local_port is not None else (8764 if is_default_port else 0)
     NO_PAUSE = args.no_pause
+    PEER_TOKEN = (args.peer_token or '').strip() or None
+    if PEER_TOKEN and len(PEER_TOKEN) < 12:
+        print('[ERREUR] --peer-token trop court (12 caracteres minimum).')
+        raise SystemExit(2)
+    if args.pins_file:
+        PINS_FILE = Path(args.pins_file)
 
     try:
         asyncio.run(main())

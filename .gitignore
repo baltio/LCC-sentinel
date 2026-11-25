@@ -20,3 +20,10 @@ Thumbs.db
 # Versions sauvegardées (optionnel — décommenter si vous ne voulez pas les versionner)
 # versions/
 assets/img/plans/DCP_887-101-065_G.pdf
+pins.json
+
+# Manifestes / listes nominatives (equipage, passagers) : JAMAIS dans Git (depot public)
+Source/crewbynumber.*
+Source/paxbycabin*
+Source/*manifest*
+Source/*Manifest*

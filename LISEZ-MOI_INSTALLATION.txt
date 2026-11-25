@@ -8,7 +8,11 @@ A. INSTALLATION (une seule fois)
    3. Double-cliquer  C:\LCC_SENTINEL_4\INSTALLER_LCC_SENTINEL.bat
       -> accepter la fenetre "administrateur" (pare-feu)
       -> a la fin, l'application s'ouvre et l'icone "LCC SENTINEL 4" est sur le Bureau.
-   4. Dans l'application : choisir le poste (ex. BRIDGE) et saisir son code.
+   4. Dans l'application : choisir le poste (ex. BRIDGE) et saisir son code PIN (6 chiffres).
+      Les codes PIN sont propres a ce navire : ils sont crees au premier demarrage du serveur et
+      affiches UNIQUEMENT dans la console du serveur (icone "LCC SERVEUR - Console").
+      Fichier : %LOCALAPPDATA%\LCC_Sentinel\pins.json (a garder confidentiel ; "Nouveau" dans la
+      console pour changer le code d'un poste). 5 codes faux = appareil bloque 5 minutes.
 
 B. UTILISATION
    - Ouvrir le logiciel : icone "LCC SENTINEL 4" du Bureau.

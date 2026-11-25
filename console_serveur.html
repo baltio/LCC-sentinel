@@ -76,6 +76,13 @@ td.mono { font-family: var(--mono); }
       <div class="note" id="certnote"></div>
     </section>
     <section>
+      <h2>Codes PIN des postes</h2>
+      <div id="pins"></div>
+      <div class="note">Propres à ce navire, gardés sur ce PC (<span id="pinsfile"></span>). « Nouveau » déconnecte les appareils
+        de ce poste à leur prochaine connexion : leur donner le nouveau code. Après 5 codes faux, un appareil est bloqué 5 min.</div>
+      <div class="note" id="locked"></div>
+    </section>
+    <section>
       <h2>État</h2>
       <dl class="kv">
         <dt>Rôle</dt><dd id="role">—</dd>
@@ -168,9 +175,27 @@ td.mono { font-family: var(--mono); }
         }).join('') + '</tbody></table>'
       : '<div class="empty">Aucun poste connecté.</div>';
 
+    var pins = s.pins || [];
+    var pinsHtml = '<table><tbody>' + pins.map(function (p) {
+      return '<tr><td>' + esc(p.role) + '</td><td class="mono" style="font-size:16px;color:var(--gold)">' + esc(p.pin) +
+             '</td><td style="text-align:right"><button class="btn" data-regen="' + esc(p.profile) + '">Nouveau</button></td></tr>';
+    }).join('') + '</tbody></table>';
+    if ($('pins').getAttribute('data-html') !== pinsHtml) { $('pins').innerHTML = pinsHtml; $('pins').setAttribute('data-html', pinsHtml); }
+    $('pinsfile').textContent = s.pinsFile || '';
+    $('locked').textContent = (s.lockedIps && s.lockedIps.length) ? 'Appareils bloqués (codes faux) : ' + s.lockedIps.join(', ') : '';
+
     lastLog = s.log || [];
     renderLog();
   }
+
+  $('pins').addEventListener('click', function (e) {
+    var id = e.target && e.target.getAttribute('data-regen');
+    if (!id || !confirm('Générer un nouveau code PIN pour ce poste ? L\'ancien ne fonctionnera plus.')) return;
+    fetch('/api/pins/regenerate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-LCC-Update': '1' }, body: JSON.stringify({ profile: id }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) { if (!r.ok) alert(r.error || 'Échec'); })
+      .catch(function () { alert('Serveur injoignable'); });
+  });
 
   function offline() {
     $('status').className = 'pill bad';
