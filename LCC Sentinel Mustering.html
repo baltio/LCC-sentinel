@@ -633,7 +633,7 @@ button, input { font-family: inherit; }
           <div class="row-between"><span>Connect to server (live mode)</span><label class="switch"><input type="checkbox" id="cfgEnabled"><span class="track"></span></label></div>
           <div class="field-group"><label>Server IP address</label><input id="cfgHost" placeholder="192.168.1.10"></div>
           <div class="field-group"><label>Port</label><input id="cfgPort" placeholder="8765"></div>
-          <div class="field-group"><label>Token</label><input id="cfgToken" placeholder="7007"></div>
+          <div class="field-group"><label>Code PIN Mustering (6 chiffres)</label><input id="cfgToken" placeholder="voir console du serveur" inputmode="numeric"></div>
           <div class="hint" id="cfgHint">Off: this tablet stays in standalone demo mode, with sync simulated across tabs of the same browser. On: it connects over WiFi to sentinel_server.py, authenticates, and loads the live crew/PAX rosters from LCC Sentinel 4 instead of the built-in demo data.</div>
           <div class="field-group"><label>Backup server IP (optional)</label><input id="cfgBackupHost" placeholder="192.168.1.11 — leave blank if none"></div>
           <div class="field-group"><label>Backup port</label><input id="cfgBackupPort" placeholder="8765"></div>
@@ -1359,7 +1359,7 @@ function defaultState() {
   Object.keys(LISTS).forEach(id => statuses[id] = {});
   return {
     theme: 'dark',
-    serverConfig: { host:'10.115.19.23', port:'8765', token:'7007', enabled:false, backupHost:'', backupPort:'8765' },
+    serverConfig: { host:'10.115.19.23', port:'8765', token:'', enabled:false, backupHost:'', backupPort:'8765' },
     liveData: false,
     cachedRoster: null, // last live crew/PAX snapshot, kept in localStorage so it survives an offline reload
     currentUserNumber: null,
@@ -1473,7 +1473,7 @@ function normalize(s) { return (s||'').toString().toLowerCase().normalize('NFD')
    - live: a real WebSocket client to sentinel_server.py (same protocol as LCC Sentinel 4's own
      NetworkModule — see AUTH/REQUEST_SYNC/FULL_STATE/STATE_SYNC/MUSTER_UPDATE/CHAT_MESSAGE below).
      Enabled from Settings (host/port/token + the "live mode" switch). All Mustering tablets share
-     one PIN (server-side PROFILES['7007']); each tablet's own identity (safety number/role) rides
+     one PIN (server-side PINS['mustering'], ship-specific, shown in the server console); each tablet's own identity (safety number/role) rides
      in payload.profile on AUTH, so the server's client list still shows who's who. */
 const SyncAdapter = {
   mode: 'mock-local', // 'mock-local' | 'connecting' | 'live'
@@ -1546,7 +1546,7 @@ const SyncAdapter = {
       hasOpened = true;
       this.unreachableSince = null; // reached this server — stop the failover clock
       const u = getUser(STATE.currentUserNumber);
-      ws.send(JSON.stringify({ type: 'AUTH', payload: { token: STATE.serverConfig.token || '7007',
+      ws.send(JSON.stringify({ type: 'AUTH', payload: { token: STATE.serverConfig.token || '',
         profile: { name: u ? `${u.number} — ${u.role}` : 'Mustering', role: u ? u.role : 'Mustering', initials: STATE.currentUserNumber || 'MU' } } }));
     };
     ws.onmessage = (ev) => { try { this.dispatchLive(JSON.parse(ev.data)); } catch(err) {} };
@@ -1615,7 +1615,8 @@ const SyncAdapter = {
       case 'AUTH_FAIL':
         this.mode = 'mock-local';
         renderNetBadge();
-        showToast('Server connection refused: ' + ((msg.payload && msg.payload.reason) || 'invalid token'));
+        showToast('Server connection refused: ' + ((msg.payload && msg.payload.reason) || 'invalid PIN') +
+          (msg.payload && msg.payload.invalidPin ? ' — enter the Mustering PIN in CONFIG (shown in the server console)' : ''));
         break;
       case 'FULL_STATE':
       case 'STATE_SYNC':
