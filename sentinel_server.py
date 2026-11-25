@@ -26,7 +26,7 @@
 
 import argparse
 import asyncio
-from collections import defaultdict
+from collections import defaultdict, deque
 import json
 import logging
 import posixpath
@@ -36,6 +36,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
+from http import HTTPStatus
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import unquote
@@ -129,6 +130,26 @@ shared_snapshot_meta = {'updatedBy': None, 'updatedAt': None}
 state_dirty = False
 client_counter = 0
 log = logging.getLogger('sentinel')
+
+# ── Console serveur (page console_serveur.html, PC serveur uniquement) ──────────
+# Le lanceur fait tourner le serveur dans une fenetre CACHEE : sans cette page, impossible de voir
+# depuis l'appli installee s'il tourne, avec quelle IP, ni qui est connecte. Derniers messages du
+# journal gardes en memoire + quelques reperes, lus par /api/server-status (127.0.0.1 seulement).
+RECENT_LOG = deque(maxlen=400)
+server_started_at = None
+last_save_at = {'at': None}
+
+
+class RecentLogHandler(logging.Handler):
+    def emit(self, record):
+        # Messages INFO de la librairie websockets (« connection open / closed », doublons des lignes
+        # [+] / [-] du serveur) : bruit dans la console ; ses avertissements restent affiches.
+        if record.name.startswith('websockets') and record.levelno < logging.WARNING:
+            return
+        try:
+            RECENT_LOG.append(self.format(record))
+        except Exception:
+            pass
 
 HANDSHAKE_NOISE_PATTERNS = (
     'opening handshake failed',
@@ -367,6 +388,7 @@ def save_persistent_state(force=False):
         return False
 
     state_dirty = False
+    last_save_at['at'] = now_iso()
     return True
 
 async def autosave_loop():
@@ -383,6 +405,7 @@ def get_client_list():
             'initials': info.get('initials', '?'),
             'ip':       info.get('ip', ''),
             'profileId':info.get('profileId', ''),
+            'since':    info.get('since', ''),
         }
         for ws, info in list(clients.items())
         if info.get('authenticated') and info.get('profileId') != 'relay'
@@ -457,6 +480,60 @@ async def broadcast(message: dict, exclude=None):
         return_exceptions=True
     )
 
+# ── Page "certificat accepte" du port WebSocket ────────────────────────────────
+# Le port WebSocket (8765) est une origine distincte du port de l'appli (8080) : son certificat
+# auto-signe doit etre accepte a part, en ouvrant https://IP:8765/ dans le navigateur. Avant, cette
+# page repondait une erreur (426) — rien n'indiquait que c'etait bon. Desormais une vraie page
+# confirme et renvoie a l'appli (parametre ?back=, meme machine uniquement). Les tablettes OSC y
+# arrivent par leur bouton RESEAU > AUTORISER LA CONNEXION.
+CERT_OK_PAGE = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LCC Sentinel - connexion autorisee</title>
+<style>body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#0b1a2b;color:#f3ead8;display:flex;
+min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center}
+.ok{font-size:44px;color:#4caf50}a{display:inline-block;margin-top:16px;padding:12px 22px;border-radius:8px;
+background:#c9a54c;color:#0b1a2b;font-weight:700;text-decoration:none}</style></head>
+<body><div><div class="ok">&#10003;</div><h2>Connexion au serveur autoris&eacute;e</h2>
+<p>Le certificat du serveur LCC Sentinel est accept&eacute; sur cet appareil.<br>
+Vous pouvez revenir &agrave; l'application : elle se connecte toute seule.</p>
+<a id="back" href="#" style="display:none">RETOUR &Agrave; L'APPLICATION</a></div>
+<script>
+(function(){
+  try {
+    var back = new URLSearchParams(location.search).get('back');
+    if (!back) return;
+    var u = new URL(back);
+    // Uniquement vers l'appli servie par ce meme PC (pas de redirection vers un autre site).
+    if (!/^https?:$/.test(u.protocol) || u.hostname !== location.hostname) return;
+    var a = document.getElementById('back');
+    a.href = u.href; a.style.display = 'inline-block';
+    setTimeout(function(){ location.replace(u.href); }, 1500);
+  } catch (e) {}
+})();
+</script></body></html>""".encode('utf-8')
+
+
+def ws_process_request(*args):
+    """Requete HTTP ordinaire (navigateur) sur le port WebSocket -> page CERT_OK_PAGE ; une vraie
+    demande WebSocket (en-tete Upgrade) continue normalement. Compatible avec la nouvelle API de
+    websockets (>= 13 : (connection, request) -> Response) et l'ancienne ((path, headers) -> tuple)."""
+    if len(args) == 2 and hasattr(args[0], 'respond'):
+        _connection, request = args
+        if request.headers.get('Upgrade', '').lower() == 'websocket':
+            return None
+        from websockets.datastructures import Headers
+        from websockets.http11 import Response
+        return Response(200, 'OK', Headers([
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Content-Length', str(len(CERT_OK_PAGE))),
+            ('Cache-Control', 'no-store'),
+        ]), CERT_OK_PAGE)
+    _path, headers = args
+    if headers.get('Upgrade', '').lower() == 'websocket':
+        return None
+    return (HTTPStatus.OK, [('Content-Type', 'text/html; charset=utf-8'), ('Cache-Control', 'no-store')], CERT_OK_PAGE)
+
+
 # ── Gestionnaire de connexion ──────────────────────────────────────────────────
 async def handler(ws, path='/'):
     global client_counter, shared_snapshot, shared_snapshot_meta
@@ -526,6 +603,7 @@ async def handler(ws, path='/'):
                         'role':      role,
                         'initials':  initials,
                         'profileId': prof['id'],
+                        'since':     now_iso(),
                     }
 
                     client_list = get_client_list()
@@ -753,6 +831,38 @@ def generate_self_signed_cert(local_ip, extra_ips=()):
 
 LISTS_FOLDER = Path(__file__).parent / 'lists_data'
 
+
+def build_server_status(network_https):
+    """Donnees de la console serveur (console_serveur.html). Lu depuis le thread HTTP : copies
+    (list(...)) des structures tenues par la boucle asyncio, pour ne jamais iterer pendant qu'elle
+    les modifie."""
+    ip = get_local_ip()
+    infos = list(clients.values())
+    connected = [c for c in get_client_list()]
+    return {
+        'role': ROLE,
+        'ip': ip,
+        'wsPort': PORT,
+        'httpPort': HTTP_PORT,
+        'https': bool(network_https),
+        'localHttpPort': LOCAL_HTTP_PORT,
+        'appUrl': f"{'https' if network_https else 'http'}://{ip}:{HTTP_PORT}/",
+        'oscUrl': f"{'https' if network_https else 'http'}://{ip}:{HTTP_PORT}/LCC%20OSC.html",
+        'startedAt': server_started_at,
+        'now': now_iso(),
+        'clients': connected,
+        'pendingConnections': sum(1 for c in infos if not c.get('authenticated')),
+        'cruiseId': cruise['id'],
+        'snapshotMeta': dict(shared_snapshot_meta or {}),
+        'stateFile': STATE_FILE.name,
+        'lastSaveAt': last_save_at['at'],
+        'activeAlarms': [k for k, v in list(alarms.items()) if v is not None],
+        'peer': f'{PEER_HOST}:{PEER_PORT}' if PEER_HOST else None,
+        'disconnects': {'total': disconnect_diag['total'], 'auth': disconnect_diag['auth'],
+                        'causes': dict(disconnect_diag['causes'])},
+        'log': list(RECENT_LOG)[-250:],
+    }
+
 def start_http_server(use_https=False, host=None, port=None, network_https=None):
     """Sert les fichiers statiques (HTML, assets) sur HTTP_PORT dans un thread.
     network_https : si les ports RESEAU sont en HTTPS (differe de use_https pour l'acces local)."""
@@ -799,6 +909,19 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
             # Coordonnees reseau du serveur, pour qu'une appli ouverte via http://localhost (lanceur)
             # genere quand meme des liens/QR utilisables par les tablettes (IP LAN + ports reseau),
             # pas des liens "localhost" qui ne menent nulle part depuis une tablette.
+            # Etat complet pour la console serveur : uniquement depuis CE PC (journal, IP des postes).
+            if self.path.split('?', 1)[0] == '/api/server-status':
+                if self.client_address[0] not in ('127.0.0.1', '::1'):
+                    self.send_response(403)
+                    self.end_headers()
+                    return
+                body = json.dumps(build_server_status(network_https), ensure_ascii=False).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if self.path == '/api/server-info':
                 body = json.dumps({
                     'ip': get_local_ip(),
@@ -920,8 +1043,13 @@ async def main():
     )
     handshake_filter = HandshakeNoiseFilter()
     root_logger = logging.getLogger()
+    recent_handler = RecentLogHandler()
+    recent_handler.setFormatter(logging.Formatter('%(asctime)s  %(message)s', datefmt='%H:%M:%S'))
+    root_logger.addHandler(recent_handler)
     for handler_obj in root_logger.handlers:
         handler_obj.addFilter(handshake_filter)
+    global server_started_at
+    server_started_at = now_iso()
 
     # Plusieurs erreurs de handshake sont du bruit normal (probe HTTP sur port WS).
     # On garde quand meme les logs sentinel utiles via notre logger applicatif.
@@ -1022,7 +1150,7 @@ async def main():
         ws_ssl = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ws_ssl.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
 
-    async with websockets.serve(handler, HOST, PORT, ssl=ws_ssl):
+    async with websockets.serve(handler, HOST, PORT, ssl=ws_ssl, process_request=ws_process_request):
         local_ws_server = None
         if LOCAL_WS_PORT:
             try:

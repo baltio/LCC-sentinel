@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Console serveur LCC</title>
+<!-- Console du serveur LCC SENTINEL 4 : a ouvrir SUR LE PC SERVEUR (http://localhost:8081/console_serveur.html,
+     raccourci Bureau « LCC SERVEUR - Console »). Le serveur tourne en fenetre cachee ; cette page montre son
+     etat, l'IP a donner aux tablettes, les postes connectes et le journal. Donnees : /api/server-status
+     (refusee depuis le reseau). -->
+<style>
+:root {
+  --bg: #0b1a2b; --panel: #11243a; --border: #22405f; --text: #f3ead8; --dim: #a9b3bf;
+  --gold: #c9a54c; --ok: #4caf50; --warn: #e7b43c; --bad: #e05545; --mono: Consolas, "Cascadia Mono", monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); background: #0e2135; }
+h1 { font-size: 16px; margin: 0; letter-spacing: .06em; color: var(--gold); }
+.pill { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .05em; }
+.pill.ok { background: rgba(76,175,80,.18); color: var(--ok); border: 1px solid rgba(76,175,80,.5); }
+.pill.bad { background: rgba(224,85,69,.18); color: var(--bad); border: 1px solid rgba(224,85,69,.5); }
+.hdr-right { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+a.btn, button.btn { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; text-decoration: none; }
+a.btn.gold { background: var(--gold); color: #0b1a2b; border-color: var(--gold); font-weight: 700; }
+main { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 14px; padding: 14px 16px; }
+@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+section h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .1em; color: var(--gold); text-transform: uppercase; }
+.big-ip { font: 700 28px/1.2 var(--mono); color: var(--gold); word-break: break-all; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: 13px; }
+.kv dt { color: var(--dim); }
+.kv dd { margin: 0; font-family: var(--mono); word-break: break-all; }
+.note { color: var(--dim); font-size: 12px; margin-top: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+th { color: var(--dim); font-weight: 600; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+td.mono { font-family: var(--mono); }
+.empty { color: var(--dim); padding: 8px 0; }
+.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+#log { background: #07121e; border: 1px solid var(--border); border-radius: 6px; font: 12px/1.45 var(--mono); padding: 8px 10px; height: 46vh; min-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+#log .w { color: var(--warn); } #log .e { color: var(--bad); } #log .ok { color: var(--ok); }
+.log-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.log-tools input[type=search] { flex: 1; min-width: 140px; background: #07121e; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; }
+.log-tools label { font-size: 12px; color: var(--dim); display: flex; gap: 4px; align-items: center; }
+.alarm { color: var(--bad); font-weight: 700; }
+#offline { display: none; margin: 14px 16px 0; padding: 10px 14px; border-radius: 8px; background: rgba(224,85,69,.12); border: 1px solid rgba(224,85,69,.45); }
+</style>
+</head>
+<body>
+<header>
+  <h1>LCC SENTINEL 4 — CONSOLE SERVEUR</h1>
+  <span id="status" class="pill bad">…</span>
+  <span id="uptime" class="note" style="margin:0"></span>
+  <div class="hdr-right">
+    <a class="btn gold" href="/LCC%20sentinel%204.html?network=1&amp;serverHost=localhost&amp;serverPort=8764">Ouvrir Sentinel 4</a>
+  </div>
+</header>
+
+<div id="offline">
+  <b>Le serveur ne répond pas.</b> Il redémarre tout seul en cas d'arrêt (surveillance du lanceur) : patientez quelques
+  secondes. S'il reste arrêté, double-cliquez sur le raccourci Bureau <b>LCC SENTINEL 4</b> (il relance le serveur).
+  Journaux : <code>%LOCALAPPDATA%\LCC_Sentinel\logs</code>.
+</div>
+
+<main>
+  <div class="col">
+    <section>
+      <h2>À saisir sur les tablettes / LCC OSC</h2>
+      <div class="big-ip" id="ip">—</div>
+      <dl class="kv" style="margin-top:8px">
+        <dt>Port WebSocket</dt><dd id="wsport">—</dd>
+        <dt>Appli (Wi-Fi)</dt><dd id="appurl">—</dd>
+        <dt>LCC OSC</dt><dd id="oscurl">—</dd>
+      </dl>
+      <div class="note" id="certnote"></div>
+    </section>
+    <section>
+      <h2>État</h2>
+      <dl class="kv">
+        <dt>Rôle</dt><dd id="role">—</dd>
+        <dt>Démarré</dt><dd id="started">—</dd>
+        <dt>Alarmes actives</dt><dd id="alarms">—</dd>
+        <dt>Dernier état reçu</dt><dd id="snapmeta">—</dd>
+        <dt>Sauvegarde disque</dt><dd id="lastsave">—</dd>
+        <dt>Croisière</dt><dd id="cruise">—</dd>
+        <dt>Serveur pair</dt><dd id="peer">—</dd>
+        <dt>Déconnexions</dt><dd id="disc">—</dd>
+      </dl>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2>Postes connectés (<span id="count">0</span>)</h2>
+      <div id="clients"></div>
+    </section>
+    <section>
+      <h2>Journal du serveur</h2>
+      <div class="log-tools">
+        <input type="search" id="filter" placeholder="Filtrer (ex : AUTH, IP, RESET…)">
+        <label><input type="checkbox" id="follow" checked> Suivre</label>
+        <button class="btn" id="copy">Copier</button>
+      </div>
+      <div id="log"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]; }); }
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso);
+    return isNaN(d) ? esc(iso) : d.toLocaleString('fr-FR');
+  }
+  function fmtDur(ms) {
+    if (!(ms >= 0)) return '';
+    var s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return (h ? h + ' h ' : '') + m + ' min';
+  }
+  var lastLog = [];
+
+  function renderLog() {
+    var q = $('filter').value.trim().toLowerCase();
+    var lines = q ? lastLog.filter(function (l) { return l.toLowerCase().indexOf(q) >= 0; }) : lastLog;
+    $('log').innerHTML = lines.map(function (l) {
+      var cls = /\[KO\]|ERREUR|\[ERR\]|Traceback/i.test(l) ? 'e' : /WARN|\[RESET\]|refus|injoignable|Deconnexion/i.test(l) ? 'w' : /\[OK\] AUTH/.test(l) ? 'ok' : '';
+      return '<div' + (cls ? ' class="' + cls + '"' : '') + '>' + esc(l) + '</div>';
+    }).join('') || '<div class="empty">Aucun message.</div>';
+    if ($('follow').checked) $('log').scrollTop = $('log').scrollHeight;
+  }
+
+  function render(s) {
+    $('offline').style.display = 'none';
+    $('status').className = 'pill ok';
+    $('status').textContent = 'EN LIGNE';
+    var nowMs = s.now ? new Date(s.now).getTime() : Date.now();
+    $('uptime').textContent = s.startedAt ? 'depuis ' + fmtDur(nowMs - new Date(s.startedAt).getTime()) : '';
+    $('ip').textContent = s.ip || '—';
+    $('wsport').textContent = s.wsPort;
+    $('appurl').textContent = s.appUrl;
+    $('oscurl').textContent = decodeURI(s.oscUrl || '');
+    $('certnote').innerHTML = s.https
+      ? 'Sur une tablette neuve : ouvrir l’appli, accepter l’avertissement de sécurité, puis dans LCC OSC : RÉSEAU → « AUTORISER LA CONNEXION » si elle ne se connecte pas (une seule fois par tablette).'
+      : 'Serveur en HTTP simple (pas de certificat) : aucun avertissement à accepter sur les tablettes.';
+    $('role').textContent = s.role;
+    $('started').textContent = fmtTime(s.startedAt);
+    $('alarms').innerHTML = (s.activeAlarms && s.activeAlarms.length)
+      ? '<span class="alarm">' + s.activeAlarms.map(esc).join(', ').toUpperCase() + '</span>' : 'aucune';
+    var meta = s.snapshotMeta || {};
+    var who = (s.clients || []).filter(function (c) { return c.clientId === meta.updatedBy; })[0];
+    $('snapmeta').textContent = meta.updatedAt ? fmtTime(meta.updatedAt) + ' — ' + (who ? who.name + ' (' + who.role + ')' : (meta.updatedBy || '?')) : '—';
+    $('lastsave').textContent = (s.lastSaveAt ? fmtTime(s.lastSaveAt) : 'pas encore') + ' (' + s.stateFile + ')';
+    $('cruise').textContent = s.cruiseId ? fmtTime(s.cruiseId) : '—';
+    $('peer').textContent = s.peer || 'aucun';
+    var d = s.disconnects || {};
+    $('disc').textContent = (d.total || 0) + ' depuis le démarrage';
+
+    var list = s.clients || [];
+    $('count').textContent = list.length + (s.pendingConnections ? ' + ' + s.pendingConnections + ' en cours' : '');
+    $('clients').innerHTML = list.length
+      ? '<table><thead><tr><th>Poste</th><th>Rôle</th><th>IP</th><th>Connecté</th></tr></thead><tbody>' +
+        list.map(function (c) {
+          return '<tr><td>' + esc(c.name) + '</td><td>' + esc(c.role) + '</td><td class="mono">' + esc(c.ip) +
+                 '</td><td>' + (c.since ? fmtDur(nowMs - new Date(c.since).getTime()) : '') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<div class="empty">Aucun poste connecté.</div>';
+
+    lastLog = s.log || [];
+    renderLog();
+  }
+
+  function offline() {
+    $('status').className = 'pill bad';
+    $('status').textContent = 'HORS SERVICE';
+    $('offline').style.display = 'block';
+  }
+
+  function poll() {
+    fetch('/api/server-status', { cache: 'no-store' })
+      .then(function (r) { if (r.status === 403) throw new Error('forbidden'); return r.json(); })
+      .then(render)
+      .catch(function (e) {
+        if (e && e.message === 'forbidden') {
+          $('offline').innerHTML = '<b>Console disponible uniquement sur le PC serveur</b> (http://localhost:8081/console_serveur.html).';
+          $('offline').style.display = 'block';
+          return;
+        }
+        offline();
+      })
+      .then(function () { setTimeout(poll, 2000); });
+  }
+
+  $('filter').addEventListener('input', renderLog);
+  $('copy').addEventListener('click', function () {
+    var txt = lastLog.join('\n');
+    if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(function () {});
+  });
+  poll();
+})();
+</script>
+</body>
+</html>

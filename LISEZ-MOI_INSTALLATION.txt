@@ -16,10 +16,15 @@ B. UTILISATION
      tout seul en cas de plantage. Apres un redemarrage du PC : ouvrir la session,
      puis cliquer sur l'icone.
    - Arreter le serveur (maintenance uniquement) : ARRETER_SERVEUR.bat
+   - VOIR LE SERVEUR (il tourne en fenetre cachee) : icone "LCC SERVEUR - Console" du Bureau
+     (ou CONSOLE_SERVEUR.bat, ou Settings > Reseau > "Ouvrir la console du serveur").
+     -> en ligne ou non, IP a saisir sur les tablettes, postes connectes, journal en direct.
 
 C. TABLETTES (Wi-Fi du bord), une fois par tablette, dans Chrome
    1. Ouvrir  https://10.115.19.23:8080/   -> "Parametres avances" -> "Continuer"
-   2. Ouvrir  https://10.115.19.23:8765/   -> meme chose (page blanche ensuite = normal)
+   2. Ouvrir  https://10.115.19.23:8765/   -> meme chose (page "Connexion au serveur autorisee")
+      LCC OSC : si la tablette ne se connecte pas, bouton RESEAU > "AUTORISER LA CONNEXION"
+      (fait l'etape 2 et revient a l'appli).
    3. Ouvrir l'appli (ou scanner le QR code affiche dans Settings > Reseau du PC serveur) :
       https://10.115.19.23:8080/LCC%20sentinel%204.html
    4. Choisir le poste et saisir son code.
@@ -37,5 +42,6 @@ D. MISE A JOUR (PC deja installe)
    (recopier son contenu dans C:\LCC_SENTINEL_4, serveur arrete).
 
 E. EN CAS DE PROBLEME
+   - Etat du serveur : icone "LCC SERVEUR - Console" (voir B).
    - Journaux : %LOCALAPPDATA%\LCC_Sentinel\logs
    - Tablettes non connectees : verifier qu'elles sont sur le Wi-Fi du bord et refaire C.1 / C.2.

@@ -32,7 +32,7 @@
 =================================================================
 #>
 param(
-    [ValidateSet('Lancer', 'Serveur', 'Arreter', 'Installer', 'Preparer', 'MettreAJour', 'PreparerMAJ')]
+    [ValidateSet('Lancer', 'Serveur', 'Arreter', 'Installer', 'Preparer', 'MettreAJour', 'PreparerMAJ', 'Console')]
     [string]$Action = 'Lancer',
     [string]$Cible = '',
     [switch]$SansRelance,  # MettreAJour : ne pas redemarrer le serveur / ouvrir l'appli a la fin   # MettreAJour : dossier installe (par defaut : celui du raccourci Bureau, sinon C:\LCC_SENTINEL_4)
@@ -53,9 +53,11 @@ $InstDir   = Join-Path $Root 'installation'   # installateur Python + modules ho
 $PythonVersion = '3.12.10'                    # derniere 3.12 avec installateur Windows officiel
 # Fichiers de l'appli (racine) copies par Preparer (dossier complet) et PreparerMAJ (petit paquet ZIP).
 $FichiersAppli = @('index.html', 'LCC sentinel 4.html', 'LCC sentinel 3.html', 'LCC OSC.html', 'LCC Sentinel Mustering.html',
+                   'console_serveur.html',
                    'manifest.json', 'manifest-osc.json', 'manifest-mustering.json',
                    'sw.js', 'sw-osc.js', 'sw-mustering.js', 'sentinel_server.py',
                    'INSTALLER_LCC_SENTINEL.bat', 'LANCER_LCC_SENTINEL.bat', 'ARRETER_SERVEUR.bat', 'METTRE_A_JOUR.bat',
+                   'CONSOLE_SERVEUR.bat',
                    'LISEZ-MOI_INSTALLATION.txt')
 
 $WsPort         = 8765
@@ -230,6 +232,34 @@ function Invoke-Lancer {
     Write-Journal "Application ouverte ($nav)"
 }
 
+# Console du serveur (console_serveur.html) : le serveur tourne en fenetre cachee — cette page montre
+# s'il tourne, l'IP a donner aux tablettes, les postes connectes et le journal. Demarre le serveur si besoin.
+function Invoke-Console {
+    if (-not (Test-ServeurPret)) {
+        Start-Surveillance
+        $limite = (Get-Date).AddSeconds(30)
+        while (-not (Test-ServeurPret) -and (Get-Date) -lt $limite) { Start-Sleep -Milliseconds 500 }
+    }
+    $nav = Find-Navigateur
+    if (-not $nav) { Show-Message 'Ni Google Chrome ni Microsoft Edge ne sont installes.' 'Error'; return }
+    # La page affiche d'elle-meme « HORS SERVICE » + la marche a suivre si le serveur n'a pas demarre.
+    Start-Process -FilePath $nav -ArgumentList @("--app=http://localhost:$LocalHttpPort/console_serveur.html", '--window-size=1200,800')
+    Write-Journal 'Console serveur ouverte'
+}
+
+function New-RaccourciConsole([string]$script, [string]$dossier) {
+    $shell = New-Object -ComObject WScript.Shell
+    $lnk = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'LCC SERVEUR - Console.lnk'))
+    $lnk.TargetPath = 'powershell.exe'
+    $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -Action Console"
+    $lnk.WorkingDirectory = $dossier
+    $lnk.WindowStyle = 7
+    $ico = Join-Path $dossier 'assets\img\general\LOGO_CC_RGBv2.ico'
+    if (Test-Path $ico) { $lnk.IconLocation = $ico }
+    $lnk.Description = 'Etat du serveur LCC SENTINEL : IP, postes connectes, journal'
+    $lnk.Save()
+}
+
 function Invoke-Arreter {
     New-Item -ItemType File -Force -Path $StopFlag | Out-Null
     foreach ($port in $WsPort, $LocalHttpPort) {
@@ -310,7 +340,8 @@ function Invoke-Installer {
     if (Test-Path $Icon) { $lnk.IconLocation = $Icon }
     $lnk.Description = 'Ouvre CHARCOT SENTINEL (demarre le serveur si besoin)'
     $lnk.Save()
-    Write-Host "  [4/5] Raccourci Bureau cree : $desktop\LCC SENTINEL 4.lnk" -ForegroundColor Green
+    New-RaccourciConsole $PSCommandPath $Root
+    Write-Host "  [4/5] Raccourcis Bureau crees : LCC SENTINEL 4 + LCC SERVEUR - Console" -ForegroundColor Green
 
     # 5. Demarrage automatique du serveur a l'ouverture de session Windows
     $startup = [Environment]::GetFolderPath('Startup')
@@ -391,6 +422,8 @@ function Invoke-MettreAJour {
     Get-ChildItem -LiteralPath $cible -Recurse -File -Include *.bat, *.ps1, *.html, *.js, *.py -ErrorAction SilentlyContinue |
         Unblock-File -ErrorAction SilentlyContinue
     Write-Host '  [3/5] Nouvelle version copiee' -ForegroundColor Green
+    # Raccourci de la console serveur (ajoute en v2.0.40) : aussi sur les PC deja installes.
+    try { New-RaccourciConsole (Join-Path $cible 'lanceur\lcc.ps1') $cible } catch {}
 
     # 5. Modules Python (sans internet, depuis le dossier prepare) — sans effet s'ils sont deja a jour.
     $py = Find-Python
@@ -513,6 +546,7 @@ try {
         'Preparer'  { Invoke-Preparer }
         'MettreAJour' { Invoke-MettreAJour }
         'PreparerMAJ' { Invoke-PreparerMAJ }
+        'Console'   { Invoke-Console }
     }
 } catch {
     Write-Journal "ERREUR ($Action): $_"
