@@ -32,7 +32,7 @@
 =================================================================
 #>
 param(
-    [ValidateSet('Lancer', 'Serveur', 'Arreter', 'Installer', 'Preparer', 'MettreAJour')]
+    [ValidateSet('Lancer', 'Serveur', 'Arreter', 'Installer', 'Preparer', 'MettreAJour', 'PreparerMAJ')]
     [string]$Action = 'Lancer',
     [string]$Cible = '',
     [switch]$SansRelance,  # MettreAJour : ne pas redemarrer le serveur / ouvrir l'appli a la fin   # MettreAJour : dossier installe (par defaut : celui du raccourci Bureau, sinon C:\LCC_SENTINEL_4)
@@ -51,6 +51,12 @@ $Icon      = Join-Path $Root 'assets\img\general\LOGO_CC_RGBv2.ico'
 $Title     = 'LCC SENTINEL 4'
 $InstDir   = Join-Path $Root 'installation'   # installateur Python + modules hors-ligne (-Action Preparer)
 $PythonVersion = '3.12.10'                    # derniere 3.12 avec installateur Windows officiel
+# Fichiers de l'appli (racine) copies par Preparer (dossier complet) et PreparerMAJ (petit paquet ZIP).
+$FichiersAppli = @('index.html', 'LCC sentinel 4.html', 'LCC sentinel 3.html', 'LCC OSC.html', 'LCC Sentinel Mustering.html',
+                   'manifest.json', 'manifest-osc.json', 'manifest-mustering.json',
+                   'sw.js', 'sw-osc.js', 'sw-mustering.js', 'sentinel_server.py',
+                   'INSTALLER_LCC_SENTINEL.bat', 'LANCER_LCC_SENTINEL.bat', 'ARRETER_SERVEUR.bat', 'METTRE_A_JOUR.bat',
+                   'LISEZ-MOI_INSTALLATION.txt')
 
 $WsPort         = 8765
 $HttpPort       = 8080
@@ -380,6 +386,10 @@ function Invoke-MettreAJour {
         Write-Host "  [3/5] ERREUR de copie (code robocopy $LASTEXITCODE). Ancienne version dans : $sauvegarde" -ForegroundColor Red
         return
     }
+    # Un ZIP recu par mail marque chaque fichier « provient d'internet » : retirer cette marque des
+    # fichiers installes, sinon Windows avertit (ou bloque) a chaque lancement des .bat / .ps1.
+    Get-ChildItem -LiteralPath $cible -Recurse -File -Include *.bat, *.ps1, *.html, *.js, *.py -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
     Write-Host '  [3/5] Nouvelle version copiee' -ForegroundColor Green
 
     # 5. Modules Python (sans internet, depuis le dossier prepare) — sans effet s'ils sont deja a jour.
@@ -405,6 +415,45 @@ function Invoke-MettreAJour {
     Write-Host '  Les tablettes recoivent la nouvelle version en rechargeant la page (ou au prochain lancement).'
 }
 
+function Invoke-PreparerMAJ {
+    # Petit paquet de mise a jour envoyable par mail : uniquement les fichiers de l'appli et du
+    # lanceur (~1 Mo zippe). PAS assets/ (images, plans ~190 Mo), PAS installation/ (Python ~40 Mo),
+    # PAS Source/ : ils restent tels quels sur le PC serveur (METTRE_A_JOUR ne copie que ce que le
+    # paquet contient, sans rien supprimer). Si des images / plans ont change : dossier complet (Preparer).
+    $version = Get-VersionLogiciel $Root
+    Write-Host ''
+    Write-Host "  Paquet de mise a jour LCC SENTINEL 4 - version $version"
+    Write-Host ''
+    # Version deja empaquetee ? Sans SAVE_VERSION, sw.js ne change pas et les navigateurs (PC serveur,
+    # tablettes) garderaient l'ancienne appli en cache malgre la mise a jour.
+    $memo = Join-Path $DataDir 'derniere_maj.txt'
+    $derniere = if (Test-Path $memo) { (Get-Content $memo -Raw).Trim() } else { '' }
+    if ($derniere -eq $version) {
+        Write-Host "  ATTENTION : un paquet v$version a deja ete prepare." -ForegroundColor Yellow
+        Write-Host '  Si le logiciel a ete modifie depuis, lancez d''abord SAVE_VERSION.ps1 (nouvelle version),' -ForegroundColor Yellow
+        Write-Host '  sinon le PC serveur et les tablettes garderont l''ancienne version en memoire.' -ForegroundColor Yellow
+        Write-Host ''
+    }
+    $nom = "LCC_SENTINEL_4_MAJ_v$version"
+    $staging = Join-Path $env:TEMP $nom
+    $zip = Join-Path ([Environment]::GetFolderPath('Desktop')) "$nom.zip"
+    if (Test-Path $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $staging | Out-Null
+    foreach ($f in $FichiersAppli) { Copy-Item -LiteralPath (Join-Path $Root $f) -Destination $staging }
+    & robocopy (Join-Path $Root 'lanceur') (Join-Path $staging 'lanceur') /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    # Polices embarquees : petites, et necessaires si une ancienne installation ne les a pas encore.
+    & robocopy (Join-Path $Root 'assets\fonts') (Join-Path $staging 'assets\fonts') /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+    Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
+    Remove-Item -LiteralPath $staging -Recurse -Force
+    Set-Content -Path $memo -Value $version -Encoding ASCII
+    $taille = (Get-Item -LiteralPath $zip).Length / 1MB
+    Write-Host ("  Paquet cree ({0:N1} Mo) : {1}" -f $taille, $zip) -ForegroundColor Green
+    Write-Host ''
+    Write-Host '  Sur le PC serveur : clic droit sur le ZIP > Extraire tout, puis double-clic sur'
+    Write-Host '  METTRE_A_JOUR.bat dans le dossier extrait.'
+}
+
 function Invoke-Preparer {
     Write-Host ''
     Write-Host "  Preparation du dossier d'installation : $Destination"
@@ -416,13 +465,8 @@ function Invoke-Preparer {
     # 1. Uniquement ce dont le logiciel a besoin pour tourner (pas l'historique versions/, les
     #    sources, .git, .venv, documents de travail...). Pas de ssl_*.pem : le serveur genere sur
     #    place un certificat avec la bonne IP. Pas de sentinel_state.json : etat vierge.
-    $fichiers = @('index.html', 'LCC sentinel 4.html', 'LCC sentinel 3.html', 'LCC OSC.html', 'LCC Sentinel Mustering.html',
-                  'manifest.json', 'manifest-osc.json', 'manifest-mustering.json',
-                  'sw.js', 'sw-osc.js', 'sw-mustering.js', 'sentinel_server.py',
-                  'INSTALLER_LCC_SENTINEL.bat', 'LANCER_LCC_SENTINEL.bat', 'ARRETER_SERVEUR.bat', 'METTRE_A_JOUR.bat',
-                  'LISEZ-MOI_INSTALLATION.txt')
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    foreach ($f in $fichiers) { Copy-Item -LiteralPath (Join-Path $Root $f) -Destination $Destination }
+    foreach ($f in $FichiersAppli) { Copy-Item -LiteralPath (Join-Path $Root $f) -Destination $Destination }
     & robocopy (Join-Path $Root 'assets') (Join-Path $Destination 'assets') /E /XF *.pdf /NFL /NDL /NJH /NJS /NP | Out-Null
     & robocopy (Join-Path $Root 'lanceur') (Join-Path $Destination 'lanceur') /E /NFL /NDL /NJH /NJS /NP | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $Destination 'Source') | Out-Null
@@ -468,6 +512,7 @@ try {
         'Installer' { Invoke-Installer }
         'Preparer'  { Invoke-Preparer }
         'MettreAJour' { Invoke-MettreAJour }
+        'PreparerMAJ' { Invoke-PreparerMAJ }
     }
 } catch {
     Write-Journal "ERREUR ($Action): $_"

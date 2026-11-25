@@ -30,6 +30,9 @@ D. MISE A JOUR (PC deja installe)
       -> arret du serveur, sauvegarde de l'ancienne version, copie de la nouvelle, redemarrage.
       -> la croisiere en cours, le certificat et les listes ne sont PAS touches.
    3. Tablettes : recharger la page (ou fermer / rouvrir l'appli).
+   Mise a jour recue PAR MAIL (fichier LCC_SENTINEL_4_MAJ_vX.Y.Z.zip, environ 1 Mo) :
+      copier le ZIP sur le PC serveur, clic droit > "Extraire tout...", puis double-cliquer
+      METTRE_A_JOUR.bat DANS LE DOSSIER EXTRAIT. (Les images / plans deja installes sont gardes.)
    Retour arriere : l'ancienne version est dans %LOCALAPPDATA%\LCC_Sentinel\sauvegardes
    (recopier son contenu dans C:\LCC_SENTINEL_4, serveur arrete).
 

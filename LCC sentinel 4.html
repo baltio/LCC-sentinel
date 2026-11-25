@@ -15566,6 +15566,11 @@ const AbandonModule = {
   ensureCraftAccounting() {
     this.craft.forEach(craft => {
       craft.crewRoster = this.buildCrewRosterForCraft(craft);
+      // Roster d'ORIGINE (listes) — sert à savoir d'où vient un crew réaffecté ailleurs : il reste
+      // affiché (grisé) dans son lifeboat d'origine et n'y est plus compté (voir movedOutCrew).
+      craft.nativeCrewRoster = craft.crewRoster.slice();
+      if (!craft.movedOutCrew || typeof craft.movedOutCrew !== 'object') craft.movedOutCrew = {};
+      Object.keys(craft.movedOutCrew).forEach(sn => { if (!craft.crewRoster.includes(sn)) delete craft.movedOutCrew[sn]; });
       craft.paxRoster = this.buildPaxRosterForCraft(craft);
       if (!Array.isArray(craft.nonListedCrewEntries)) craft.nonListedCrewEntries = [];
       if (!Array.isArray(craft.missingCrewEntries)) craft.missingCrewEntries = [];
@@ -15585,8 +15590,34 @@ const AbandonModule = {
       if (typeof craft.accountedPax !== 'number') craft.accountedPax = 0;
       if (typeof craft.completeValidated !== 'boolean') craft.completeValidated = false;
       this.ensureCraftPaxCabinCounts(craft);
-      this.syncCraftEmbarked(craft);
     });
+    // 2e passe : le roster vient d'être reconstruit depuis les listes, ce qui effaçait les crew
+    // réaffectés de leur lifeboat de destination — les y remettre d'après movedOutCrew.
+    this.craft.forEach(craft => {
+      Object.entries(craft.movedOutCrew || {}).forEach(([sn, toId]) => {
+        const target = this.craft.find(c => c.id === toId);
+        if (target && Array.isArray(target.crewRoster) && !target.crewRoster.includes(sn)) target.crewRoster.push(sn);
+      });
+    });
+    // Liferafts : comptes saisis à la main (CREW / PAX AT WATER) — ne pas les recalculer.
+    this.craft.forEach(craft => { if (craft.type === 'liferaft') this.syncCraftEmbarked(craft); else this.recomputeCraftCrewAccounting(craft); });
+  },
+
+  /* Lifeboat / rescue boat d'ORIGINE d'un crew (d'après les listes), ou null. */
+  getNativeCraftId(sn) {
+    const c = this.craft.find(x => Array.isArray(x.nativeCrewRoster) && x.nativeCrewRoster.includes(sn));
+    return c ? c.id : null;
+  },
+
+  isCrewMovedOut(craft, sn) {
+    return !!(craft && craft.movedOutCrew && craft.movedOutCrew[sn]);
+  },
+
+  /* Crew réellement à compter dans CE craft : ni réaffecté ailleurs, ni missing, ni ashore. */
+  getCraftCountableCrew(craft) {
+    const missing = new Set(craft.missingCrewEntries || []);
+    return (craft.crewRoster || []).filter(sn => !this.isCrewMovedOut(craft, sn) && !missing.has(sn)
+      && this.crewDirectory[sn]?.status !== 'ashore');
   },
 
   buildPlaceholderRoster(prefix, count) {
@@ -15625,6 +15656,61 @@ const AbandonModule = {
     const expected = pairCraft.reduce((sum, item) => sum + (item.assignedPax || 0), 0);
     const accounted = pairCraft.reduce((sum, item) => sum + (item.accountedPax || 0), 0);
     return { expected, accounted, missing: Math.max(0, expected - accounted) };
+  },
+
+  getPairPartnerId(craftId) {
+    return { LB01: 'LB03', LB03: 'LB01', LB02: 'LB04', LB04: 'LB02' }[craftId] || null;
+  },
+
+  /* PAX d'une Assembly Station à terre (Mustering ou page Muster) — ils n'ont pas à embarquer. */
+  getAssemblyPaxAshoreCount(letter) {
+    if (typeof MusterModule === 'undefined' || typeof MusterModule.getPaxManifestStatus !== 'function') return 0;
+    if (typeof ListsModule === 'undefined' || !Array.isArray(ListsModule.pax)) return 0;
+    return ListsModule.pax
+      .filter(p => String(p.musterZone || '').toUpperCase() === letter)
+      .filter(p => MusterModule.getPaxManifestStatus({ cabin: p.cabin, name: p.name, musterZone: letter }) === 'ashore')
+      .length;
+  },
+
+  /* Ce qui compte pour les PAX : TOUS les PAX de l'Assembly A doivent partir dans LB01 + LB03, et
+     ceux de l'Assembly B dans LB02 + LB04 — la répartition par lifeboat (EXPECTED PAX) n'est
+     qu'indicative. remaining = PAX de l'assembly encore à embarquer dans la paire. */
+  getPairPaxRemaining(craftId) {
+    const ids = this.getPaxPairForCraft(craftId);
+    if (!ids.length) return null;
+    const letter = this.getPaxAssemblyKeyForCraft(craftId) === 'paxA' ? 'A' : 'B';
+    const pair = ids.map(id => this.craft.find(c => c.id === id)).filter(Boolean);
+    const total = pair.reduce((sum, c) => sum + (c.assignedPax || 0), 0);
+    const ashore = this.getAssemblyPaxAshoreCount(letter);
+    const embarked = pair.reduce((sum, c) => sum + (c.accountedPax || 0), 0);
+    return { letter, total, ashore, embarked, remaining: Math.max(0, total - ashore - embarked) };
+  },
+
+  /* Alerte à la mise à l'eau d'un lifeboat : PAX de son assembly qu'il reste à embarquer dans
+     l'autre lifeboat de la paire (ou qui ne sont pas partis si les deux sont à l'eau). */
+  showLaunchPairAlert(craftId) {
+    const craft = this.craft.find(c => c.id === craftId);
+    const partner = this.craft.find(c => c.id === this.getPairPartnerId(craftId));
+    const info = this.getPairPaxRemaining(craftId);
+    if (!craft || !partner || !info) return;
+    const partnerLaunched = partner.status === 'launched';
+    let title, body, cls;
+    if (info.remaining > 0) {
+      title = partnerLaunched ? `⚠ ${info.remaining} PAX de l'Assembly ${info.letter} NON EMBARQUÉS` : `⚠ Il manque ${info.remaining} PAX à embarquer`;
+      body = partnerLaunched
+        ? `${craft.name} et ${partner.name} sont à l'eau, mais <b>${info.remaining} PAX de l'Assembly ${info.letter}</b> n'ont pas été comptés à bord.`
+        : `${craft.name} est à l'eau avec <b>${craft.accountedPax || 0} PAX</b>.<br>Il reste <b style="font-size:18px">${info.remaining} PAX</b> de l'Assembly ${info.letter} à embarquer dans <b>${partner.name}</b>.`;
+      cls = 'btn-danger';
+    } else {
+      title = `✓ Assembly ${info.letter} : tous les PAX sont embarqués`;
+      body = `${craft.name} est à l'eau. Plus aucun PAX de l'Assembly ${info.letter} à embarquer${partnerLaunched ? '' : ` dans ${partner.name}`}.`;
+      cls = 'btn-gold';
+    }
+    body += `<div style="margin-top:10px;font-size:11px;color:var(--oe-cream-dim)">Assembly ${info.letter} : ${info.total} PAX attendus − ${info.ashore} à terre − ${info.embarked} embarqués (${this.getPaxPairLabelForCraft(craftId)}) = <b>${info.remaining}</b> restants</div>`;
+    CharcotSentinel.log(CharcotSentinel.state.profile.name, `${craft.name} LAUNCHED — Assembly ${info.letter}: ${info.remaining} PAX remaining to embark`, 'ABANDON');
+    if (typeof CharcotSentinel.showModal === 'function') {
+      CharcotSentinel.showModal({ title, body, confirmText: 'OK', confirmClass: cls });
+    }
   },
 
   getAssemblyCabinsForCraft(craftId) {
@@ -15742,6 +15828,12 @@ const AbandonModule = {
   },
 
   syncCraftEmbarked(craft) {
+    if (craft.type === 'rescueboat') {
+      // Rescue boat : seuls les membres activés (bouton vert clair) sont embarqués. Avant, la fiche
+      // comptait d'office ses 2 membres ET le récap ajoutait encore les membres activés — jusqu'à
+      // 4 personnes comptées en trop dans EMBARKED.
+      craft.accountedCrew = Object.values(craft.rescueCrewStates || {}).filter(Boolean).length;
+    }
     craft.embarked = (craft.accountedCrew || 0) + (craft.accountedPax || 0);
   },
 
@@ -15749,17 +15841,24 @@ const AbandonModule = {
      as Mustering reassigns people), not the static assignedCrew plan — so a dynamically-added crew
      member is reflected immediately without needing to also bump assignedCrew. */
   recomputeCraftCrewAccounting(craft) {
-    craft.accountedCrew = Math.max(0, (craft.crewRoster || []).length - (craft.missingCrewEntries || []).length);
+    // Hors crew réaffectés ailleurs (comptés dans leur lifeboat de destination) et hors ASHORE
+    // (comptés à terre — ils étaient comptés à la fois embarqués et à terre). Les crew « non listés »
+    // ajoutés à la main sont à bord de ce lifeboat.
+    craft.accountedCrew = this.getCraftCountableCrew(craft).length + this.getCraftNonListedCrewCount(craft);
     this.syncCraftEmbarked(craft);
   },
 
-  syncCraftAccountingFromMissing(craft) {
+  /* options.pax : recalculer aussi les PAX depuis la grille « cabines manquantes » — uniquement
+     quand c'est CETTE grille qui vient d'être modifiée. Sinon (COMPLETE CREW, ré-ouverture de la
+     page via applyOperationalTotals…) le compte PAX réel (embarquements, saisie) était écrasé par
+     « attendu − cabines manquantes », faisant disparaître des PAX réellement embarqués. */
+  syncCraftAccountingFromMissing(craft, options = {}) {
     if (!craft.completeValidated) {
       this.syncCraftEmbarked(craft);
       return;
     }
-    craft.accountedCrew = Math.max(0, (craft.assignedCrew || 0) - this.getCraftMissingCount(craft, 'crew'));
-    craft.accountedPax = Math.max(0, (craft.assignedPax || 0) - this.getCraftPaxMissingCount(craft));
+    this.recomputeCraftCrewAccounting(craft);
+    if (options.pax) craft.accountedPax = Math.max(0, (craft.assignedPax || 0) - this.getCraftPaxMissingCount(craft));
     this.syncCraftEmbarked(craft);
   },
 
@@ -15768,12 +15867,8 @@ const AbandonModule = {
     if (!craft) return;
     const field = category === 'crew' ? 'accountedCrew' : 'accountedPax';
     const numericValue = Number.isFinite(value) ? value : 0;
-    if (category === 'pax') {
-      craft[field] = Math.max(0, numericValue);
-    } else {
-      const max = this.getCraftExpectedCount(craft, category);
-      craft[field] = Math.max(0, Math.min(max, numericValue));
-    }
+    // Pas de maximum : EXPECTED CREW / PAX ne sont qu'indicatifs par lifeboat.
+    craft[field] = Math.max(0, numericValue);
     this.syncCraftEmbarked(craft);
     this.renderCraft();
     this.renderRecap();
@@ -15799,7 +15894,17 @@ const AbandonModule = {
     if (!craft) return;
     craft.completeValidated = true;
     if (category === 'crew') {
-      craft.accountedCrew = Math.max(0, (craft.assignedCrew || 0) - this.getCraftMissingCount(craft, 'crew'));
+      // COMPLETE CREW = tout l'équipage de ce lifeboat est à bord : chacun passe en vert clair
+      // « LIFEBOAT » (statut 'present' → niveau 'craft' du code couleur commun), sauf les ASHORE
+      // et les crew réaffectés à un autre lifeboat (grisés ici, comptés là-bas).
+      (craft.crewRoster || []).forEach(sn => {
+        if (this.isCrewMovedOut(craft, sn) || this.crewDirectory[sn]?.status === 'ashore') return;
+        this.crewDirectory[sn] = { sn, name: this.crewDirectory[sn]?.name, status: 'present' };
+      });
+      craft.missingCrewEntries = (craft.missingCrewEntries || []).filter(sn =>
+        this.isCrewMovedOut(craft, sn) || this.crewDirectory[sn]?.status === 'ashore');
+      this.recomputeCraftCrewAccounting(craft);
+      if (typeof MusterModule !== 'undefined' && typeof MusterModule.refreshMusterCards === 'function') MusterModule.refreshMusterCards();
     } else {
       craft.accountedPax = Math.max(0, (craft.assignedPax || 0) - this.getCraftPaxMissingCount(craft));
     }
@@ -15855,7 +15960,7 @@ const AbandonModule = {
         // + localBoardedPax: PAX boarded manually from the LIST popup's roster before Mustering ever
         // linked them (see toggleLocalPaxBoard) — additive so a later live checkin can't silently
         // wipe out a manual count made while offline.
-        c.accountedPax = Math.min(c.assignedPax || 0, (c.boardedPaxIds || []).length + (c.localBoardedPax || []).length);
+        c.accountedPax = (c.boardedPaxIds || []).length + (c.localBoardedPax || []).length; // pas plafonné : EXPECTED PAX indicatif
         this.syncCraftEmbarked(c);
       });
       if (payload.to === 'ashore' && payload.from !== 'ashore') this.ashore.pax = (this.ashore.pax || 0) + 1;
@@ -15874,9 +15979,23 @@ const AbandonModule = {
     const homeCraftId = listToCraft[payload.listId] || null;
     const effectiveCraftId = CRAFT_IDS.has(payload.to) ? payload.to : homeCraftId;
 
+    // Réaffectation vers un autre lifeboat que celui d'origine (ou retour) : même logique que le
+    // « + FROM ANOTHER LIFEBOAT » local — grisé dans le lifeboat d'origine, compté à destination.
+    // Avant, il était ajouté à la destination SANS être retiré de son lifeboat d'origine : compté 2 fois.
+    const nativeCraftId = this.getNativeCraftId(payload.sn);
+    if (nativeCraftId && CRAFT_IDS.has(payload.to)) {
+      this.assignCrewToCraft(payload.sn, payload.to);
+    } else if (nativeCraftId && homeCraftId === nativeCraftId) {
+      this.assignCrewToCraft(payload.sn, null); // statut posé depuis la liste de son lifeboat d'origine = il y est
+    }
+
     if (effectiveCraftId) {
       const c = this.craft.find(x => x.id === effectiveCraftId);
       if (c) {
+        if (c.type === 'rescueboat') {
+          if (!c.rescueCrewStates) c.rescueCrewStates = {};
+          c.rescueCrewStates[payload.sn] = payload.to !== 'missing' && payload.to !== 'ashore' && payload.to !== 'unknown';
+        }
         if (!Array.isArray(c.crewRoster)) c.crewRoster = [];
         if (!c.crewRoster.includes(payload.sn)) c.crewRoster.push(payload.sn);
         if (!Array.isArray(c.missingCrewEntries)) c.missingCrewEntries = [];
@@ -15898,7 +16017,8 @@ const AbandonModule = {
       }
     }
     // Left a craft they were only DYNAMICALLY assigned to (not their native home) — drop them.
-    if (CRAFT_IDS.has(payload.from) && payload.from !== homeCraftId && payload.from !== effectiveCraftId) {
+    if (CRAFT_IDS.has(payload.from) && payload.from !== homeCraftId && payload.from !== effectiveCraftId
+        && payload.from !== nativeCraftId) {
       const oc = this.craft.find(x => x.id === payload.from);
       if (oc) {
         oc.crewRoster = (oc.crewRoster || []).filter(sn => sn !== payload.sn);
@@ -15986,6 +16106,19 @@ const AbandonModule = {
       const status = this.getCrewMemberStatus(craft, sn);
       const member = crewLookup.get(String(sn).trim());
       const name = member?.name || this.crewDirectory[sn]?.name || '';
+      if (status === 'moved') {
+        // Réaffecté à un autre lifeboat : grisé ici (compté dans le lifeboat de destination).
+        const dest = this.craft.find(c => c.id === craft.movedOutCrew[sn]);
+        const destName = dest ? dest.name : craft.movedOutCrew[sn];
+        const greyStyle = 'background:rgba(255,255,255,0.03);color:rgba(228,238,244,0.35);border-color:rgba(255,255,255,0.08);text-decoration:line-through';
+        if (mode === 'compact') {
+          return `<button class="tbtn" style="min-width:44px;font-size:calc(11px * var(--font-scale));padding:6px 8px;${greyStyle}" title="${name} — réaffecté à ${destName}" disabled>${sn}</button>`;
+        }
+        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 6px;border:1px dashed rgba(255,255,255,0.08);border-radius:6px;margin-bottom:4px;opacity:0.55">
+          <span style="font-family:var(--font-mono);font-size:calc(11px * var(--font-scale));color:var(--oe-cream-dim)"><s>${sn}${name ? ' · ' + name : ''}</s> → ${destName}</span>
+          <button class="tbtn" style="font-size:calc(9px * var(--font-scale));padding:3px 6px" onclick="AbandonModule.moveCrewToCraft('${id}','${sn}')">↩ Revenir ici</button>
+        </div>`;
+      }
       const excusedStyle = typeof DrillExcused !== 'undefined' && DrillExcused.isExcused(sn) ? ';outline:2px solid #9C27B0;outline-offset:1px' : '';
       const hint = unifiedRowInfo(sn, status);
       if (mode === 'compact') {
@@ -16066,7 +16199,7 @@ const AbandonModule = {
       <div class="u-display-grid_grid-template-columns-1fr-1fr_gap-12px">
         <div class="u-border-1px-solid-rgba-255-255-255-0-1_border-radius-8px_pa">
           <div class="u-display-flex_justify-content-space-between_align-items-cen-6">
-            <span class="u-font-size-calc-10px-font-scale_color-oe-gold">CREW (${(craft.crewRoster || []).length})</span>
+            <span class="u-font-size-calc-10px-font-scale_color-oe-gold">CREW (${(craft.crewRoster || []).filter(sn => !this.isCrewMovedOut(craft, sn)).length})</span>
             <button class="btn btn-ghost u-font-size-9px_padding-3px-8px" onclick="AbandonModule.toggleCrewMovePanel('${id}')">+ FROM ANOTHER LIFEBOAT</button>
           </div>
           <div id="crew-move-panel-${id}" class="hidden u-margin-bottom-10px_border-1px-dashed-rgba-255-255-255-0-15"></div>
@@ -16202,7 +16335,7 @@ const AbandonModule = {
     const others = [];
     this.craft.forEach(c => {
       if (c.id === id || !Array.isArray(c.crewRoster)) return;
-      c.crewRoster.forEach(sn => others.push({ sn, craftName: c.name }));
+      c.crewRoster.forEach(sn => { if (!this.isCrewMovedOut(c, sn)) others.push({ sn, craftName: c.name }); });
     });
     others.sort((a, b) => a.sn.localeCompare(b.sn, undefined, { numeric: true }));
     const rows = others.map(o => {
@@ -16228,23 +16361,50 @@ const AbandonModule = {
   moveCrewToCraft(toCraftId, sn) {
     const target = this.craft.find(c => c.id === toCraftId);
     if (!target) return;
-    const source = this.craft.find(c => c.id !== toCraftId && Array.isArray(c.crewRoster) && c.crewRoster.includes(sn));
-    if (source) {
-      source.crewRoster = source.crewRoster.filter(x => x !== sn);
-      source.missingCrewEntries = (source.missingCrewEntries || []).filter(x => x !== sn);
-      this.recomputeCraftCrewAccounting(source);
-    }
-    if (!Array.isArray(target.crewRoster)) target.crewRoster = [];
-    if (!target.crewRoster.includes(sn)) target.crewRoster.push(sn);
-    this.recomputeCraftCrewAccounting(target);
+    this.assignCrewToCraft(sn, toCraftId);
     this.renderCraft();
     this.renderRecap();
     this.updateTopBar();
-    CharcotSentinel.log(CharcotSentinel.state.profile.name, `Crew #${sn} moved ${source ? source.name + ' -> ' : ''}${target.name}`, 'ABANDON');
+    const nativeId = this.getNativeCraftId(sn);
+    CharcotSentinel.log(CharcotSentinel.state.profile.name, `Crew #${sn} moved ${nativeId && nativeId !== toCraftId ? '(' + nativeId + ') ' : ''}-> ${target.name}`, 'ABANDON');
     this.refreshCraftPopup(toCraftId);
   },
 
+  /* Réaffecte un crew à toCraftId (null = retour dans son lifeboat d'origine). Le crew reste dans le
+     roster de son lifeboat d'ORIGINE mais y est marqué réaffecté (movedOutCrew) : affiché grisé et
+     plus compté là, compté dans le lifeboat de destination. Un passage temporaire par un 3e lifeboat
+     est simplement retiré de celui-ci. Partagé par le « + FROM ANOTHER LIFEBOAT » local et les
+     checkins Mustering (applyRemoteUpdate). */
+  assignCrewToCraft(sn, toCraftId) {
+    const nativeId = this.getNativeCraftId(sn);
+    const native = nativeId ? this.craft.find(c => c.id === nativeId) : null;
+    // Retirer des lifeboats où il n'était que de passage (ni origine, ni nouvelle destination).
+    this.craft.forEach(c => {
+      if (c.id === nativeId || c.id === toCraftId || !Array.isArray(c.crewRoster) || !c.crewRoster.includes(sn)) return;
+      c.crewRoster = c.crewRoster.filter(x => x !== sn);
+      c.missingCrewEntries = (c.missingCrewEntries || []).filter(x => x !== sn);
+      this.recomputeCraftCrewAccounting(c);
+    });
+    if (native) {
+      if (!native.movedOutCrew) native.movedOutCrew = {};
+      if (toCraftId && toCraftId !== nativeId) {
+        native.movedOutCrew[sn] = toCraftId;
+        native.missingCrewEntries = (native.missingCrewEntries || []).filter(x => x !== sn);
+      } else {
+        delete native.movedOutCrew[sn];
+      }
+      this.recomputeCraftCrewAccounting(native);
+    }
+    const target = toCraftId ? this.craft.find(c => c.id === toCraftId) : null;
+    if (target) {
+      if (!Array.isArray(target.crewRoster)) target.crewRoster = [];
+      if (!target.crewRoster.includes(sn)) target.crewRoster.push(sn);
+      this.recomputeCraftCrewAccounting(target);
+    }
+  },
+
   getCrewMemberStatus(craft, sn) {
+    if (this.isCrewMovedOut(craft, sn)) return 'moved';
     if ((craft.missingCrewEntries || []).includes(sn)) return 'missing';
     const dir = this.crewDirectory[sn];
     if (dir && dir.status === 'ashore') return 'ashore';
@@ -16269,6 +16429,7 @@ const AbandonModule = {
     const craft = this.craft.find(c => c.id === id);
     if (!craft) return;
     const order = ['present', 'missing', 'ashore'];
+    if (this.getCrewMemberStatus(craft, sn) === 'moved') return;
     const next = order[(order.indexOf(this.getCrewMemberStatus(craft, sn)) + 1) % order.length];
     this.applyCrewMemberStatus(craft, sn, next);
     this.refreshCraftPopup(id);
@@ -16276,7 +16437,7 @@ const AbandonModule = {
 
   applyCrewMemberStatus(craft, sn, next) {
     const from = this.getCrewMemberStatus(craft, sn);
-    if (from === next) return;
+    if (from === next || from === 'moved') return;
     if (!Array.isArray(craft.missingCrewEntries)) craft.missingCrewEntries = [];
     const idx = craft.missingCrewEntries.indexOf(sn);
     if (next === 'missing') { if (idx === -1) craft.missingCrewEntries.push(sn); }
@@ -16318,7 +16479,7 @@ const AbandonModule = {
     const current = craft.paxCabinCounts[cabin] || 0;
     const next = current >= 4 ? 0 : current + 1;
     craft.paxCabinCounts[cabin] = next;
-    this.syncCraftAccountingFromMissing(craft);
+    this.syncCraftAccountingFromMissing(craft, { pax: true });
     const btn = document.getElementById(`abandon-pax-cabin-btn-${id}-${cabin}`);
     const status = document.getElementById(`abandon-pax-cabin-status-${id}-${cabin}`);
     if (btn) {
@@ -16527,6 +16688,15 @@ const AbandonModule = {
     const craft = this.craft.find(item => item.id === id);
     if (!craft) return;
     craft.rescueCrewStates[safetyNumber] = !craft.rescueCrewStates[safetyNumber];
+    // Embarqué dans le rescue boat = vert clair « LIFEBOAT » partout (Muster, listes…), comme un
+    // crew de lifeboat. Désactivé : retour au statut précédent (on n'efface que ce que ce bouton a posé).
+    if (craft.rescueCrewStates[safetyNumber]) {
+      this.crewDirectory[safetyNumber] = { sn: safetyNumber, name: this.crewDirectory[safetyNumber]?.name, status: 'present' };
+    } else if (this.crewDirectory[safetyNumber]?.status === 'present') {
+      delete this.crewDirectory[safetyNumber];
+    }
+    this.syncCraftEmbarked(craft);
+    if (typeof MusterModule !== 'undefined' && typeof MusterModule.refreshMusterCards === 'function') MusterModule.refreshMusterCards();
     this.renderCraft();
     this.renderRecap();
     this.updateTopBar();
@@ -16551,7 +16721,8 @@ const AbandonModule = {
   },
 
   updateTopBar() {
-    const totalEmbarked = this.craft.reduce((s,c) => s+c.embarked, 0) + this.getRescueCrewPresentCount();
+    this.craft.forEach(c => this.syncCraftEmbarked(c));
+    const totalEmbarked = this.craft.reduce((s,c) => s+c.embarked, 0); // rescue boats inclus (membres activés)
     const launched      = this.craft.filter(c => c.status==='launched').length;
     const totalCraft    = this.craft.filter(c => c.type!=='liferaft').length + this.craft.filter(c=>c.type==='liferaft').length;
     const extCrew = this.externalMeans.reduce((s,m) => s+(m.crew||0), 0);
@@ -16610,8 +16781,26 @@ const AbandonModule = {
       const crewComplete = crewExpected > 0 && crewAccounted >= crewExpected && crewMissing === 0;
       const paxComplete = paxExpected > 0 && paxAccounted >= paxExpected && paxMissing === 0;
       const cardComplete = assigned > 0 && crewComplete && (paxExpected === 0 || paxComplete);
-      // Lifeboats turn green only when crew complete + pax complete + launched
-      const lbCardComplete = isLifeboat && crewComplete && paxComplete && c.status === 'launched';
+      // Paire de lifeboats (LB01+LB03 = Assembly A, LB02+LB04 = Assembly B) : dès que l'un est à
+      // l'eau, l'autre affiche les PAX de l'assembly qu'il reste à embarquer (MISSING PAX + alerte).
+      const partner = isLifeboat ? this.craft.find(x => x.id === this.getPairPartnerId(c.id)) : null;
+      const pairInfo = partner ? this.getPairPaxRemaining(c.id) : null;
+      const partnerLaunched = !!(partner && partner.status === 'launched');
+      const selfLaunched = c.status === 'launched';
+      const pairMode = !!pairInfo && partnerLaunched;
+      const shownPaxMissing = pairMode ? pairInfo.remaining : paxMissing;
+      let pairAlertHtml = '';
+      if (pairMode && !selfLaunched) {
+        pairAlertHtml = pairInfo.remaining > 0
+          ? `<div style="margin:4px 0 6px;padding:6px 8px;border-radius:6px;background:rgba(231,76,60,0.85);color:#fff;font-weight:700;font-size:calc(11px * var(--font-scale));animation:pulse 1.6s ease-in-out infinite">⚠ Il manque ${pairInfo.remaining} PAX à embarquer<div style="font-weight:400;font-size:calc(9px * var(--font-scale))">Assembly ${pairInfo.letter} — ${partner.name} à l'eau</div></div>`
+          : `<div style="margin:4px 0 6px;padding:6px 8px;border-radius:6px;background:rgba(76,175,80,0.25);border:1px solid #4CAF50;color:#eaffea;font-weight:700;font-size:calc(11px * var(--font-scale))">✓ Tous les PAX de l'Assembly ${pairInfo.letter} sont embarqués</div>`;
+      } else if (pairMode && selfLaunched && pairInfo.remaining > 0) {
+        pairAlertHtml = `<div style="margin:4px 0 6px;padding:6px 8px;border-radius:6px;background:rgba(231,76,60,0.85);color:#fff;font-weight:700;font-size:calc(11px * var(--font-scale))">⚠ ${pairInfo.remaining} PAX de l'Assembly ${pairInfo.letter} non embarqués</div>`;
+      }
+      // Vert = à l'eau, sans crew manquant identifié, et (si les deux lifeboats de la paire sont à
+      // l'eau) tous les PAX de l'assembly embarqués. Les EXPECTED par lifeboat ne sont qu'indicatifs.
+      const identifiedCrewOk = (c.missingCrewEntries || []).length === 0;
+      const lbCardComplete = isLifeboat && selfLaunched && identifiedCrewOk && !(pairMode && pairInfo.remaining > 0);
       const rescueRoster = this.getRescueRosterForCraft(c.id);
       const lbAssemblyA  = isLifeboat && c.crewZone && c.crewZone.startsWith('A');
       const lbBaseBg     = isLifeboat ? (lbAssemblyA ? 'rgba(240,192,64,0.30)' : 'rgba(231,76,60,0.25)') : '';
@@ -16640,10 +16829,10 @@ const AbandonModule = {
              <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${rescueRoster.map(entry => {
                const active = !!c.rescueCrewStates?.[entry];
                const style = active
-                 ? 'background:#4CAF50;color:#fff;border-color:#4CAF50'
+                 ? 'background:#8BC34A;color:#1a2b08;border-color:#8BC34A;font-weight:700'
                  : 'background:rgba(255,255,255,0.04);color:var(--oe-cream);border-color:rgba(255,255,255,0.1)';
                const excusedStyle = typeof DrillExcused !== 'undefined' && DrillExcused.isExcused(entry) ? ';outline:2px solid #9C27B0;outline-offset:1px' : '';
-               return `<button class="tbtn" style="min-width:52px;font-size:calc(12px * var(--font-scale));padding:7px 8px;${style}${excusedStyle}" onclick="AbandonModule.toggleRescueCrewState('${c.id}','${entry}')">${entry}</button>`;
+               return `<button class="tbtn" style="min-width:52px;font-size:calc(12px * var(--font-scale));padding:7px 8px;${style}${excusedStyle}" title="${active ? 'Embarqué — LIFEBOAT' : 'Pas encore embarqué'}" onclick="AbandonModule.toggleRescueCrewState('${c.id}','${entry}')">${entry}</button>`;
              }).join('')}</div>`
           : `<div class="t-small u-color-oe-gold-dim_margin-bottom-6px">${this.getLiferaftStationLabel(c.id)} · 3 rafts × 20 persons</div>
              <div style="display:grid;grid-template-columns:1fr auto;gap:4px 8px;margin-bottom:8px;align-items:center">
@@ -16654,17 +16843,18 @@ const AbandonModule = {
                <span style="font-size:calc(9px * var(--font-scale));color:var(--oe-gold-dim)">TOTAL AT WATER</span>
                <span class="u-font-family-font-mono_font-size-calc-12px-font-scale_color">${c.embarked}/${c.capacity}</span>
              </div>`}
+        ${pairAlertHtml}
         ${isLifeboat ? `<div class="u-display-grid_grid-template-columns-1fr-auto_gap-4px-8px_ma">
-          <span class="u-font-size-calc-9px-font-scale_color-oe-cream-dim">EXPECTED PAX</span>
+          <span class="u-font-size-calc-9px-font-scale_color-oe-cream-dim" title="À titre indicatif : tous les PAX de l'Assembly doivent partir dans la paire de lifeboats">EXPECTED PAX <span style="font-size:8px;opacity:0.7">(indicatif)</span></span>
           <span class="u-font-family-font-mono_font-size-calc-12px-font-scale_color-2">${paxExpected}</span>
           <span class="u-font-size-calc-9px-font-scale_color-oe-cream-dim">ACCOUNTED PAX</span>
           <input class="input u-width-78px_text-align-center_font-size-calc-12px-font-scal" type="number" value="${paxAccounted}" onchange="AbandonModule.updateCraftCategoryCount('${c.id}','pax',+this.value)">
-          <span class="u-font-size-calc-9px-font-scale_color-status-danger">MISSING PAX</span>
+          <span class="u-font-size-calc-9px-font-scale_color-status-danger">${pairMode ? `MISSING PAX (ASSEMBLY ${pairInfo.letter})` : 'MISSING PAX'}</span>
           <div class="u-display-flex_flex-direction-column_align-items-flex-end_ga">
-            <span class="u-font-family-font-mono_font-size-calc-12px-font-scale_font-">${paxMissing}</span>
-            ${unidentifiedPaxMissing > 0 ? `<span class="u-font-size-calc-9px-font-scale_color-ffb300">⚠ ${unidentifiedPaxMissing} non identifié${unidentifiedPaxMissing > 1 ? 's' : ''}</span>` : ''}
+            <span class="u-font-family-font-mono_font-size-calc-12px-font-scale_font-" style="${pairMode && shownPaxMissing > 0 ? 'color:var(--status-danger);font-weight:700' : ''}">${shownPaxMissing}</span>
+            ${!pairMode && unidentifiedPaxMissing > 0 ? `<span class="u-font-size-calc-9px-font-scale_color-ffb300">⚠ ${unidentifiedPaxMissing} non identifié${unidentifiedPaxMissing > 1 ? 's' : ''}</span>` : ''}
           </div>
-          <span class="u-font-size-calc-9px-font-scale_color-oe-cream-dim">EXPECTED CREW</span>
+          <span class="u-font-size-calc-9px-font-scale_color-oe-cream-dim" title="À titre indicatif : ce qui compte est que tous les PAX de l'assembly partent dans la paire de lifeboats">EXPECTED CREW <span style="font-size:8px;opacity:0.7">(indicatif)</span></span>
           <div class="u-display-flex_align-items-center_gap-4px">
             <span class="u-font-family-font-mono_font-size-calc-12px-font-scale_color-2">${crewExpected}</span>
             <button class="tbtn u-font-size-calc-9px-font-scale_padding-2px-5px" onclick="AbandonModule.openCraftPopup('${c.id}')">📋</button>
@@ -16678,7 +16868,7 @@ const AbandonModule = {
           </div>
         </div>
         <div style="display:flex;gap:4px;margin-bottom:6px">
-          <button class="btn btn-ghost" style="flex:1;font-size:10px;padding:4px;${crewComplete ? 'background:rgba(76,175,80,0.18);border-color:#4CAF50;color:#eaffea' : ''}" onclick="AbandonModule.setCraftCategoryComplete('${c.id}','crew')">COMPLETE CREW</button>
+          <button class="btn btn-ghost" style="flex:1;font-size:10px;padding:4px;${c.completeValidated && identifiedCrewOk ? 'background:#8BC34A;border-color:#8BC34A;color:#1a2b08;font-weight:700' : ''}" onclick="AbandonModule.setCraftCategoryComplete('${c.id}','crew')">${c.completeValidated && identifiedCrewOk ? '✓ CREW COMPLETE' : 'COMPLETE CREW'}</button>
         </div>` : ''}
         ${isLifeboat ? `<div class="u-display-grid_grid-template-columns-1fr-auto_gap-4px-8px_ma">
           <span class="u-font-size-calc-9px-font-scale_color-oe-cream-dim">NON LISTED CREW</span>
@@ -16927,6 +17117,9 @@ const AbandonModule = {
     if (c.type === 'lifeboat' && status === 'not-available') {
       this.showNotAvailableRedistributionModal(id);
     }
+    if (c.type === 'lifeboat' && status === 'launched' && this.getPairPartnerId(id)) {
+      this.showLaunchPairAlert(id);
+    }
     this.renderCraft();
     CharcotSentinel.log(CharcotSentinel.state.profile.name, `${c.name}: Status → ${status.toUpperCase()}`, 'ABANDON');
     // Broadcast so Mustering tablets' craft-status bar (renderCraftStatusBar) updates immediately —
@@ -17109,8 +17302,9 @@ const AbandonModule = {
     const extCrew = this.externalMeans.reduce((s,m) => s+(m.crew||0), 0);
     const extPax  = this.externalMeans.reduce((s,m) => s+(m.pax||0),  0);
     const paxEmbarked = this.craft.reduce((sum, craft) => sum + (craft.accountedPax || 0), 0);
-    const crewEmbarkedBase = this.craft.reduce((sum, craft) => sum + (craft.accountedCrew || 0), 0);
-    const crewEmbarked = crewEmbarkedBase + rescueCrewPresent;
+    this.craft.forEach(c => this.syncCraftEmbarked(c));
+    // accountedCrew des rescue boats = membres activés : déjà inclus, ne plus les rajouter.
+    const crewEmbarked = this.craft.reduce((sum, craft) => sum + (craft.accountedCrew || 0), 0);
     const totalEmbarked = paxEmbarked + crewEmbarked;
     const effAshorePax  = this.ashore.pax  + extPax;
     const effAshoreCrew = this.ashore.crew + extCrew;
@@ -19798,8 +19992,10 @@ const ListsModule = {
             craft.assignedCrew = craft.baseAssignedCrew;
           }
           craft.assignedPax = this.normalizeCount(assignment.pax);
-          craft.accountedCrew = Math.min(craft.accountedCrew || 0, craft.assignedCrew);
-          craft.accountedPax = Math.min(craft.accountedPax || 0, craft.assignedPax);
+          // Pas de plafonnement des comptés à l'attendu : la répartition par lifeboat n'est
+          // qu'indicative (un lifeboat peut embarquer plus que prévu si l'autre de la paire en prend
+          // moins). Ce plafond, ré-appliqué à chaque ouverture de la page Abandon, faisait disparaître
+          // des PAX réellement embarqués — et remettait à 0 les comptes saisis des liferafts.
           if (typeof AbandonModule.syncCraftAccountingFromMissing === 'function') AbandonModule.syncCraftAccountingFromMissing(craft);
           else if (typeof AbandonModule.syncCraftEmbarked === 'function') AbandonModule.syncCraftEmbarked(craft);
         });
@@ -24142,6 +24338,7 @@ const NetworkModule = {
         announcements: AbandonModule.announcements,
         abandonSignalTime: AbandonModule.abandonSignalTime,
         externalMeans: AbandonModule.externalMeans,
+        crewDirectory: AbandonModule.crewDirectory,
       }) : null,
       osc: (typeof OSCModule !== 'undefined') ? this.safeClone({
         messages: OSCModule.messages,
@@ -24293,6 +24490,7 @@ const NetworkModule = {
       if (Array.isArray(snapshot.abandon.announcements)) AbandonModule.announcements = this.safeClone(snapshot.abandon.announcements);
       if (snapshot.abandon.abandonSignalTime !== undefined) AbandonModule.abandonSignalTime = snapshot.abandon.abandonSignalTime;
       if (Array.isArray(snapshot.abandon.externalMeans)) AbandonModule.externalMeans = this.safeClone(snapshot.abandon.externalMeans);
+      if (snapshot.abandon.crewDirectory && typeof snapshot.abandon.crewDirectory === 'object') AbandonModule.crewDirectory = this.safeClone(snapshot.abandon.crewDirectory);
     }
 
     if (snapshot.osc && typeof OSCModule !== 'undefined') {
