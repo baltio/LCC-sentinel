@@ -982,6 +982,31 @@ def read_app_version(folder):
         return '?'
 
 
+# Date d'installation de la version en service (affichee sur la page Home). Notee au premier demarrage
+# d'une nouvelle version, quelle que soit la facon dont elle a ete installee (installateur,
+# METTRE_A_JOUR.bat, Settings > Mise a jour) — pas la date des fichiers, que les copies conservent.
+INSTALL_INFO = {'version': None, 'installedAt': None}
+
+
+def record_install_version():
+    path = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel' / 'version_installee.json'
+    version = read_app_version(Path(__file__).parent)
+    try:
+        saved = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+    except Exception:
+        saved = {}
+    if saved.get('version') == version and saved.get('installedAt'):
+        INSTALL_INFO.update(version=version, installedAt=saved['installedAt'])
+        return
+    INSTALL_INFO.update(version=version, installedAt=datetime.now().astimezone().isoformat(timespec='seconds'))
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(INSTALL_INFO, indent=2), encoding='utf-8')
+        log.info(f"[MAJ] Version v{version} en service depuis le {INSTALL_INFO['installedAt']}")
+    except Exception as exc:
+        log.warning(f"[MAJ] Date d'installation non enregistree : {exc}")
+
+
 def _update_skip(name):
     """Jamais ecrases par une mise a jour : etat de la croisiere, certificat, listes, outils de dev."""
     low = name.lower()
@@ -1186,6 +1211,8 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
                     'port': PORT,
                     'httpPort': HTTP_PORT,
                     'https': bool(network_https),
+                    'version': INSTALL_INFO['version'],
+                    'installedAt': INSTALL_INFO['installedAt'],
                 }).encode('utf-8')
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
@@ -1380,6 +1407,7 @@ async def main():
 
     restored = load_persistent_state()
     load_pins()
+    record_install_version()
 
     # ── HTTPS : génère le cert si absent, sinon réutilise ──
     if not CERT_FILE.exists() or not KEY_FILE.exists():

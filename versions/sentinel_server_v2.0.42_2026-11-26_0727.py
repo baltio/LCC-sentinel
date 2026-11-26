@@ -1,0 +1,1565 @@
+#!/usr/bin/env python3
+"""
+=================================================================
+  CHARCOT SENTINEL — Serveur WebSocket
+  LE COMMANDANT CHARCOT — PONANT
+  Synchronisation multi-postes en temps reel
+
+  Lancer   : python sentinel_server.py
+  Prereqis : pip install websockets   (ou double-cliquer INSTALL.bat)
+
+  SERVEUR DE SECOURS — pour lancer un 2e serveur (autre PC, ou meme PC sur
+  un autre port) que les postes basculent dessus si le principal tombe :
+    python sentinel_server.py --port 8766 --role SECOURS
+  Renseigner cette IP + port 8766 comme "serveur de secours" dans les
+  Settings reseau de l'application (Sentinel 4 et Mustering).
+
+  SYNCHRONISATION ENTRE LES 2 SERVEURS — en plus de la recuperation via les
+  tablettes/PC qui se reconnectent, chaque serveur peut pousser son etat vers
+  l'autre toutes les 5 minutes, pour que le secours parte toujours d'une base
+  recente meme si personne ne s'y est encore connecte. A faire dans LES DEUX
+  SENS (chaque serveur pointe vers l'autre) :
+    Sur le principal : python sentinel_server.py --peer-host <ip_secours> --peer-port 8766 --peer-token <secret>
+    Sur le secours    : python sentinel_server.py --port 8766 --role SECOURS --peer-host <ip_principal> --peer-port 8765 --peer-token <secret>
+  (<secret> : le meme des deux cotes, 12 caracteres ou plus.) Un secours sur un AUTRE PC doit aussi
+  recevoir une copie du fichier des PIN (%LOCALAPPDATA%/LCC_Sentinel/pins.json, ou --pins-file).
+=================================================================
+"""
+
+import argparse
+import asyncio
+import hmac
+import io
+import secrets
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import zipfile
+from collections import defaultdict, deque
+import json
+import logging
+import posixpath
+import socket
+import ssl
+import sys
+import threading
+import time
+from datetime import datetime, timezone
+from http import HTTPStatus
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+from urllib.parse import unquote
+
+# stdout/stderr default to the Windows console codepage (cp1252 on a French
+# install) as soon as they're redirected to a file/pipe instead of a real
+# console — which can't encode the box-drawing/arrow characters used in the
+# startup banner below and crashes the whole server before it starts serving.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+
+try:
+    import websockets
+except ImportError:
+    print("\n[ERREUR] Le module 'websockets' n'est pas installe.")
+    print("  Executez : pip install websockets")
+    print("  Ou double-cliquez sur INSTALL.bat\n")
+    if '--no-pause' not in sys.argv:
+        input("Appuyez sur Entree pour quitter...")
+    raise SystemExit(1)
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='CHARCOT SENTINEL — Serveur WebSocket (principal ou secours)')
+    parser.add_argument('--port', type=int, default=8765, help='Port WebSocket (defaut: 8765)')
+    parser.add_argument('--http-port', type=int, default=8080, help='Port HTTP/HTTPS pour la PWA (defaut: 8080)')
+    parser.add_argument('--role', default='PRINCIPAL', help='Etiquette affichee dans la console (ex: PRINCIPAL, SECOURS)')
+    parser.add_argument('--state-file', default=None,
+                         help="Fichier d'etat persistant. Par defaut : sentinel_state.json pour le port "
+                              "8765, sentinel_state_<port>.json pour tout autre port (evite qu'un 2e "
+                              "serveur sur le meme PC n'ecrase le fichier du principal).")
+    parser.add_argument('--peer-host', default=None,
+                         help="IP de l'autre serveur (principal<->secours) vers lequel pousser l'etat "
+                              "periodiquement, en plus de la recuperation via les postes qui se reconnectent.")
+    parser.add_argument('--peer-port', type=int, default=8765, help="Port WebSocket de l'autre serveur (defaut: 8765)")
+    parser.add_argument('--peer-token', default=None,
+                         help="Secret partage entre les 2 serveurs (le meme des deux cotes, 12 caracteres ou plus) : "
+                              "obligatoire pour la synchronisation principal <-> secours.")
+    parser.add_argument('--pins-file', default=None,
+                         help="Fichier des codes PIN des postes (defaut : %%LOCALAPPDATA%%\\LCC_Sentinel\\pins.json). "
+                              "Un serveur de secours sur un autre PC doit utiliser une copie de ce fichier.")
+    parser.add_argument('--peer-interval', type=int, default=300,
+                         help="Intervalle en secondes entre deux poussees d'etat vers l'autre serveur (defaut: 300 = 5 min)")
+    parser.add_argument('--local-http-port', type=int, default=None,
+                         help="Port HTTP non chiffre, accessible UNIQUEMENT depuis ce PC (127.0.0.1), utilise par "
+                              "LANCER_LCC_SENTINEL.bat. Defaut: 8081 pour le serveur principal (port 8765), "
+                              "desactive sinon. 0 = desactive.")
+    parser.add_argument('--local-port', type=int, default=None,
+                         help="Port WebSocket non chiffre local (127.0.0.1) associe. Defaut: 8764 pour le serveur "
+                              "principal, desactive sinon. 0 = desactive.")
+    parser.add_argument('--no-pause', action='store_true',
+                         help="Ne jamais attendre 'Entree' en cas d'erreur (lancement automatique par "
+                              "lanceur/lcc.ps1 -Action Serveur, qui relance le serveur tout seul).")
+    return parser.parse_args()
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+# HOST/PORT/HTTP_PORT/STATE_FILE/ROLE sont replaces par les valeurs de la ligne de
+# commande juste avant le lancement (voir le bloc __main__ en bas) — les valeurs
+# ci-dessous ne servent que de defaut si le script est importe sans passer par la.
+HOST = '0.0.0.0'   # Ecouter sur toutes les interfaces reseau
+# IP fixe du PC serveur a bord (valeur par defaut aussi pre-remplie dans les applis : Sentinel 4,
+# OSC, Mustering). A changer ici ET dans les 3 applis si le serveur change de PC.
+SHIP_SERVER_IP = '10.115.19.23'
+PORT = 8765
+HTTP_PORT = 8080    # Serveur HTTP pour l'application PWA
+ROLE = 'PRINCIPAL'
+STATE_FILE = Path(__file__).with_name('sentinel_state.json')
+CERT_FILE  = Path(__file__).with_name('ssl_cert.pem')
+KEY_FILE   = Path(__file__).with_name('ssl_key.pem')
+AUTOSAVE_INTERVAL = 5
+
+# Postes autorises (par identifiant). Les codes PIN ne sont PLUS ecrits dans le code (il etait public
+# sur GitHub, avec des PIN 1001..7007 identiques partout) : ils sont tires au hasard (6 chiffres) au
+# premier demarrage et gardes dans PINS_FILE, propre a ce PC, hors du dossier du logiciel (jamais servi
+# sur le reseau, jamais dans Git ni dans un paquet de mise a jour). Consultables / renouvelables
+# depuis la console serveur (PC serveur uniquement).
+PROFILES = {
+    'bridge':    {'id': 'bridge',    'name': 'Bridge Officer',   'role': 'Bridge',        'initials': 'BR'},
+    'ecr':       {'id': 'ecr',       'name': 'Engine Control',   'role': 'ECR',           'initials': 'EC'},
+    'osc':       {'id': 'osc',       'name': 'On-Scene Cmdr',    'role': 'OSC',           'initials': 'OS'},
+    'backup':    {'id': 'backup',    'name': 'Back Up Station',  'role': 'Back Up',       'initials': 'BU'},
+    'meetpoint': {'id': 'meetpoint', 'name': 'Meeting Point',    'role': 'Meeting Point', 'initials': 'MP'},
+    'evac303':   {'id': 'evac303',   'name': 'Evacuation leader 303', 'role': 'Evacuation leader 303', 'initials': 'E3'},
+    # PIN commun a toutes les tablettes LCC Sentinel Mustering. Chaque tablette envoie sa propre
+    # identite (numero de securite) dans payload.profile (name/role/initials), qui remplace ces valeurs
+    # par defaut — voir le traitement AUTH plus bas.
+    'mustering': {'id': 'mustering', 'name': 'Mustering Tablet',   'role': 'Mustering',     'initials': 'MU'},
+}
+# Lien serveur <-> serveur de secours (push_state_to_peer) : pas un poste humain, masque de la liste des
+# postes. Son secret = --peer-token, identique sur les 2 serveurs ; sans --peer-token, ce lien est
+# desactive (avant, le jeton fixe '0000' permettait a n'importe qui de remplacer tout l'etat de crise).
+RELAY_PROFILE = {'id': 'relay', 'name': 'Backup Sync', 'role': 'System', 'initials': 'SY'}
+PEER_TOKEN = None
+PINS_FILE = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel' / 'pins.json'
+PINS = {}   # id du poste -> PIN
+
+# Anti force brute : au-dela de AUTH_MAX_FAILS echecs en AUTH_FAIL_WINDOW s depuis une meme IP, cette IP
+# est refusee AUTH_LOCK_S s (journalise). 6 chiffres = 1 000 000 de combinaisons, 5 essais / 5 min.
+AUTH_MAX_FAILS = 5
+AUTH_FAIL_WINDOW = 600
+AUTH_LOCK_S = 300
+auth_fails = defaultdict(list)   # ip -> horodatages (monotonic) des echecs recents
+auth_locked_until = {}           # ip -> fin du blocage (monotonic)
+
+
+def _new_pin(taken):
+    while True:
+        pin = f'{secrets.randbelow(1_000_000):06d}'
+        if pin not in taken:
+            return pin
+
+
+def load_pins():
+    """Charge PINS_FILE ; cree les PIN manquants (6 chiffres aleatoires, tous differents)."""
+    data = {}
+    try:
+        if PINS_FILE.exists():
+            raw = json.loads(PINS_FILE.read_text(encoding='utf-8'))
+            if isinstance(raw, dict):
+                data = {k: str(v) for k, v in raw.items() if k in PROFILES and str(v).isdigit() and len(str(v)) >= 6}
+    except Exception as exc:
+        log.warning(f'[PIN] Lecture de {PINS_FILE} impossible ({exc}) : nouveaux PIN generes')
+    changed = False
+    for pid in PROFILES:
+        if pid not in data or list(data.values()).count(data[pid]) > 1:
+            data[pid] = _new_pin(set(data.values()))
+            changed = True
+    PINS.clear()
+    PINS.update(data)
+    if changed:
+        save_pins()
+        log.warning(f'[PIN] Nouveaux codes PIN generes ({PINS_FILE}) — voir la console serveur')
+
+
+def save_pins():
+    PINS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PINS_FILE.write_text(json.dumps(PINS, indent=2), encoding='utf-8')
+
+
+def regenerate_pin(pid):
+    if pid not in PROFILES:
+        return None
+    PINS[pid] = _new_pin({v for k, v in PINS.items() if k != pid})
+    save_pins()
+    log.warning(f'[PIN] Nouveau PIN pour le poste {pid}')
+    return PINS[pid]
+
+
+def profile_for_token(token):
+    """Poste correspondant au PIN (comparaison a temps constant), ou None."""
+    token = str(token or '')
+    found = None
+    for pid, pin in PINS.items():
+        if hmac.compare_digest(pin.encode(), token.encode()):
+            found = PROFILES[pid]
+    if PEER_TOKEN and hmac.compare_digest(PEER_TOKEN.encode(), token.encode()):
+        found = RELAY_PROFILE
+    return found
+
+
+def pin_is_valid(token):
+    p = profile_for_token(token)
+    return bool(p) and p['id'] != 'relay'
+
+
+def auth_lock_remaining(ip):
+    return max(0.0, auth_locked_until.get(ip, 0.0) - time.monotonic())
+
+
+def note_auth_failure(ip):
+    now = time.monotonic()
+    recent = [t for t in auth_fails[ip] if now - t < AUTH_FAIL_WINDOW] + [now]
+    auth_fails[ip] = recent
+    if len(recent) >= AUTH_MAX_FAILS:
+        auth_locked_until[ip] = now + AUTH_LOCK_S
+        auth_fails[ip] = []
+        log.warning(f'[KO] {ip} bloquee {AUTH_LOCK_S // 60} min apres {AUTH_MAX_FAILS} PIN errones')
+
+# ── Etat serveur ───────────────────────────────────────────────────────────────
+clients      = {}   # websocket → {authenticated, clientId, name, role, ip, ...}
+alarms       = {}   # type → startTime | None
+log_buffer   = []   # derniers logs synchronises (max MAX_LOG)
+MAX_LOG      = 500
+shared_snapshot = {}
+shared_snapshot_meta = {'updatedBy': None, 'updatedAt': None}
+state_dirty = False
+client_counter = 0
+log = logging.getLogger('sentinel')
+
+# ── Console serveur (page console_serveur.html, PC serveur uniquement) ──────────
+# Le lanceur fait tourner le serveur dans une fenetre CACHEE : sans cette page, impossible de voir
+# depuis l'appli installee s'il tourne, avec quelle IP, ni qui est connecte. Derniers messages du
+# journal gardes en memoire + quelques reperes, lus par /api/server-status (127.0.0.1 seulement).
+RECENT_LOG = deque(maxlen=400)
+server_started_at = None
+last_save_at = {'at': None}
+
+
+class RecentLogHandler(logging.Handler):
+    def emit(self, record):
+        # Messages INFO de la librairie websockets (« connection open / closed », doublons des lignes
+        # [+] / [-] du serveur) : bruit dans la console ; ses avertissements restent affiches.
+        if record.name.startswith('websockets') and record.levelno < logging.WARNING:
+            return
+        try:
+            RECENT_LOG.append(self.format(record))
+        except Exception:
+            pass
+
+HANDSHAKE_NOISE_PATTERNS = (
+    'opening handshake failed',
+    'connection rejected (426 Upgrade Required)',
+    'did not receive a valid HTTP request',
+    'InvalidUpgrade: invalid Connection header: keep-alive',
+    'connection closed while reading HTTP request line',
+)
+handshake_noise_stats = {'total': 0, 'byPattern': defaultdict(int)}
+
+disconnect_diag = {
+    'startedAt': now_iso() if 'now_iso' in globals() else None,
+    'total': 0,
+    'auth': 0,
+    'noAuth': 0,
+    'byIp': defaultdict(lambda: {'count': 0, 'totalDuration': 0.0, 'auth': 0, 'noAuth': 0}),
+    'causes': defaultdict(int),
+}
+DIAG_REPORT_INTERVAL = 300
+
+# RESET CRUISE : pendant quelques secondes apres une remise a zero, les STATE_SYNC recus sont ignores —
+# ce sont les derniers envois periodiques (5s) de postes qui n'ont pas encore applique le reset, et ils
+# reinjecteraient l'ancienne croisiere dans l'etat qui vient d'etre vide.
+RESET_GUARD_S = 8
+reset_state = {'guard_until': 0.0}
+# Numero de croisiere = horodatage ISO du dernier RESET CRUISE (comparable en texte : plus grand = plus
+# recent). Persiste dans le fichier d'etat. Sert a ce qu'un poste eteint / hors reseau pendant le reset ne
+# reinjecte pas l'ancienne croisiere en se reconnectant : il voit un numero plus recent que le sien a
+# l'AUTH_OK et se remet a zero, et ses STATE_SYNC portant un ancien numero sont refuses ici.
+cruise = {'id': None}
+
+# ── Sync serveur-a-serveur (principal <-> secours) ──────────────────────────────
+PEER_HOST = None
+PEER_PORT = 8765
+PEER_INTERVAL = 300
+
+# ── Acces local (ce PC uniquement) ──────────────────────────────────────────────
+# Chrome refuse le service worker (mode hors-ligne) et l'installation PWA sur une origine dont le
+# certificat auto-signe a juste ete "accepte" par clic (verifie : "An unknown error occurred when
+# fetching the script" + installabilite "not-from-secure-origin"). http://localhost est en revanche
+# une origine sure par definition — d'ou ces 2 ports en clair, lies a 127.0.0.1 donc injoignables
+# depuis le reseau, utilises par LANCER_LCC_SENTINEL.bat sur le PC qui fait tourner le serveur.
+LOCAL_HOST = '127.0.0.1'
+LOCAL_HTTP_PORT = 0
+LOCAL_WS_PORT = 0
+NO_PAUSE = False
+
+# ── Utilitaires ───────────────────────────────────────────────────────────────
+def get_local_ip():
+    """Retourne l'adresse IP locale la plus probable (hors loopback).
+    L'IP du PC serveur du bord (SHIP_SERVER_IP) est prioritaire quand elle est presente sur ce PC :
+    sans cela, sur un PC a plusieurs cartes reseau (ou sans route par defaut en mer), une autre
+    adresse pouvait etre choisie et finir dans les QR codes / liens donnes aux tablettes."""
+    try:
+        local_ips = {i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
+        if SHIP_SERVER_IP in local_ips:
+            return SHIP_SERVER_IP
+    except Exception:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        pass
+    try:
+        all_ips = [i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None)
+                   if i[0] == socket.AF_INET and not i[4][0].startswith('127.')]
+        if all_ips:
+            return all_ips[0]
+    except Exception:
+        pass
+    return '127.0.0.1'
+
+def now_iso():
+    # Millisecond resolution matters: this timestamp becomes shared_snapshot_meta['updatedAt'],
+    # which clients compare against their own per-field "last touched" clocks to decide whether
+    # to keep a local edit or accept an incoming one (see LCC sentinel 4's / LCC OSC's
+    # mergeTeamArray). With whole-second resolution (the previous %S-only format), two different
+    # stations' edits landing within the same wall-clock second got IDENTICAL timestamps — found
+    # via a 5-station simultaneous-conflicting-edit stress test: a station would correctly accept
+    # one edit, then a second broadcast sharing that same one-second timestamp would immediately
+    # overwrite it again (touched > incoming uses strict "greater than", so a tie doesn't protect
+    # the value that was *just* accepted), silently reverting a live edit to stale/blank data.
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+
+if disconnect_diag.get('startedAt') is None:
+    disconnect_diag['startedAt'] = now_iso()
+
+
+class HandshakeNoiseFilter(logging.Filter):
+    """Filtre les erreurs de handshake WS non-actionnables (HTTP probe/scans sur port WS)."""
+
+    def filter(self, record):
+        msg = record.getMessage()
+        for pattern in HANDSHAKE_NOISE_PATTERNS:
+            if pattern in msg:
+                handshake_noise_stats['total'] += 1
+                handshake_noise_stats['byPattern'][pattern] += 1
+                return False
+        return True
+
+
+def classify_disconnect_cause(info: dict, close_code):
+    ctx = (info or {}).get('close_context')
+    if ctx:
+        return ctx
+    if close_code is None:
+        return 'transport_closed'
+    return f'ws_close_{close_code}'
+
+
+def register_disconnect(ip: str, duration_s: float, cause: str, is_auth: bool):
+    disconnect_diag['total'] += 1
+    if is_auth:
+        disconnect_diag['auth'] += 1
+    else:
+        disconnect_diag['noAuth'] += 1
+
+    bucket = disconnect_diag['byIp'][ip or 'unknown']
+    bucket['count'] += 1
+    bucket['totalDuration'] += max(0.0, float(duration_s or 0.0))
+    if is_auth:
+        bucket['auth'] += 1
+    else:
+        bucket['noAuth'] += 1
+
+    disconnect_diag['causes'][cause or 'unknown'] += 1
+
+
+def log_diagnostic_report():
+    total = disconnect_diag['total']
+    if total == 0:
+        log.info('[DIAG] Aucun evenement deconnexion depuis le demarrage')
+        return
+
+    by_ip = disconnect_diag['byIp']
+    ip_items = sorted(by_ip.items(), key=lambda item: item[1]['count'], reverse=True)
+    top_ips = []
+    for ip, stats in ip_items[:5]:
+        avg = (stats['totalDuration'] / stats['count']) if stats['count'] else 0.0
+        top_ips.append(f'{ip}: {stats["count"]} deconn., avg {avg:.1f}s')
+
+    causes = disconnect_diag['causes']
+    cause_items = sorted(causes.items(), key=lambda item: item[1], reverse=True)
+    top_causes = ', '.join(f'{name}={count}' for name, count in cause_items[:6]) or 'n/a'
+
+    noise_total = handshake_noise_stats['total']
+    noise_suffix = f' | handshake-noise supprime: {noise_total}' if noise_total else ''
+    log.info(
+        f'[DIAG] Deconnexions: total={total}, auth={disconnect_diag["auth"]}, '
+        f'non-auth={disconnect_diag["noAuth"]}{noise_suffix}'
+    )
+    if top_ips:
+        log.info(f'[DIAG] Top IPs: {" | ".join(top_ips)}')
+    log.info(f'[DIAG] Causes: {top_causes}')
+
+
+async def diagnostic_report_loop():
+    while True:
+        await asyncio.sleep(DIAG_REPORT_INTERVAL)
+        log_diagnostic_report()
+
+def mark_state_dirty():
+    global state_dirty
+    state_dirty = True
+
+def start_new_cruise(cruise_id, by):
+    """Vide l'etat partage, les alarmes et le journal et adopte cruise_id (RESET CRUISE)."""
+    global shared_snapshot, shared_snapshot_meta
+    alarms.clear()
+    log_buffer.clear()
+    shared_snapshot = {}
+    shared_snapshot_meta = {'updatedBy': by, 'updatedAt': now_iso()}
+    cruise['id'] = cruise_id
+    reset_state['guard_until'] = time.monotonic() + RESET_GUARD_S
+    save_persistent_state(force=True)
+
+def build_full_state_payload():
+    return {
+        'cruiseId': cruise['id'],
+        'alarms': {k: {'active': v is not None, 'startTime': v} for k, v in alarms.items()},
+        'logBuffer': log_buffer[-50:],
+        'snapshot': shared_snapshot,
+        'snapshotMeta': shared_snapshot_meta,
+    }
+
+def load_persistent_state():
+    global shared_snapshot, shared_snapshot_meta
+
+    if not STATE_FILE.exists():
+        return False
+
+    try:
+        data = json.loads(STATE_FILE.read_text(encoding='utf-8'))
+    except Exception as exc:
+        log.warning(f'[STATE] Chargement impossible: {exc}')
+        return False
+
+    if isinstance(data.get('alarms'), dict):
+        alarms.clear()
+        for alarm_type, alarm in data['alarms'].items():
+            if isinstance(alarm, dict) and alarm.get('active'):
+                alarms[alarm_type] = alarm.get('startTime') or now_iso()
+            else:
+                alarms[alarm_type] = None
+
+    if isinstance(data.get('logBuffer'), list):
+        log_buffer.clear()
+        log_buffer.extend(data['logBuffer'][-MAX_LOG:])
+
+    if isinstance(data.get('snapshot'), dict):
+        shared_snapshot = data['snapshot']
+
+    if isinstance(data.get('snapshotMeta'), dict):
+        shared_snapshot_meta = data['snapshotMeta']
+
+    if isinstance(data.get('cruiseId'), str):
+        cruise['id'] = data['cruiseId']
+
+    return True
+
+def save_persistent_state(force=False):
+    global state_dirty
+
+    if not force and not state_dirty:
+        return False
+
+    payload = build_full_state_payload()
+    try:
+        STATE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    except Exception as exc:
+        log.warning(f'[STATE] Sauvegarde impossible: {exc}')
+        return False
+
+    state_dirty = False
+    last_save_at['at'] = now_iso()
+    return True
+
+async def autosave_loop():
+    while True:
+        await asyncio.sleep(AUTOSAVE_INTERVAL)
+        save_persistent_state()
+
+def get_client_list():
+    return [
+        {
+            'clientId': info['clientId'],
+            'name':     info.get('name', 'Unknown'),
+            'role':     info.get('role', ''),
+            'initials': info.get('initials', '?'),
+            'ip':       info.get('ip', ''),
+            'profileId':info.get('profileId', ''),
+            'since':    info.get('since', ''),
+        }
+        for ws, info in list(clients.items())
+        if info.get('authenticated') and info.get('profileId') != 'relay'
+    ]
+
+async def push_state_to_peer(message=None):
+    """message : a envoyer a la place du STATE_SYNC habituel (ex: RESET_CRUISE relaye au pair).
+    Se connecte brievement a l'autre serveur (principal<->secours) comme un client normal et lui
+    pousse l'etat courant via STATE_SYNC — le meme message que les apps envoient deja, donc aucune
+    logique nouvelle cote reception. Essaie wss puis ws (l'autre serveur peut etre en HTTP simple si
+    son certificat n'a pas ete genere)."""
+    if not PEER_HOST:
+        return
+    if not PEER_TOKEN:
+        log.warning('[PEER-SYNC] --peer-token absent : synchronisation avec le serveur pair desactivee')
+        return
+    for scheme in ('wss', 'ws'):
+        url = f'{scheme}://{PEER_HOST}:{PEER_PORT}'
+        try:
+            ssl_ctx = None
+            if scheme == 'wss':
+                ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                ssl_ctx.check_hostname = False
+                ssl_ctx.verify_mode = ssl.CERT_NONE  # certificat auto-signe, propre a chaque serveur
+            async with websockets.connect(url, ssl=ssl_ctx, open_timeout=5) as peer_ws:
+                await peer_ws.send(json.dumps({'type': 'AUTH', 'payload': {'token': PEER_TOKEN, 'profile': {}}}))
+                # The peer's AUTH handler broadcasts CLIENT_LIST to every authenticated client
+                # (itself included) BEFORE replying AUTH_OK to the one that just authenticated — a
+                # single recv() here used to grab that CLIENT_LIST instead and misread it as a
+                # rejection, silently aborting the push every single time (found via a dedicated
+                # peer-sync test: the backup server never once received a pushed snapshot). Drain
+                # messages until the real AUTH_OK/AUTH_FAIL shows up, or give up after a few tries.
+                reply = {}
+                for _ in range(5):
+                    reply = json.loads(await asyncio.wait_for(peer_ws.recv(), timeout=5))
+                    if reply.get('type') in ('AUTH_OK', 'AUTH_FAIL'):
+                        break
+                if reply.get('type') != 'AUTH_OK':
+                    log.warning(f'[PEER-SYNC] Authentification refusee par {url}: {reply.get("payload")}')
+                    return
+                await peer_ws.send(json.dumps(message or {
+                    'type': 'STATE_SYNC',
+                    'payload': {'snapshot': shared_snapshot, 'cruiseId': cruise['id']},
+                }))
+                log.info(f'[PEER-SYNC] {(message or {}).get("type", "Etat")} pousse vers {url}')
+                return
+        except Exception as exc:
+            log.debug(f'[PEER-SYNC] {url} injoignable: {exc}')
+            continue
+    log.warning(f'[PEER-SYNC] Serveur pair injoignable ({PEER_HOST}:{PEER_PORT}) — nouvelle tentative dans {PEER_INTERVAL}s')
+
+async def peer_sync_loop():
+    # Premiere poussee peu apres le demarrage (le pair a peut-etre demarre juste avant/apres nous),
+    # puis toutes les PEER_INTERVAL secondes.
+    await asyncio.sleep(10)
+    while True:
+        await push_state_to_peer()
+        await asyncio.sleep(PEER_INTERVAL)
+
+async def send_to(ws, message: dict):
+    try:
+        await ws.send(json.dumps(message, ensure_ascii=False))
+    except Exception:
+        pass
+
+async def broadcast(message: dict, exclude=None):
+    """Diffuser un message a tous les clients authentifies."""
+    targets = [ws for ws, info in list(clients.items())
+               if info.get('authenticated') and ws is not exclude]
+    if not targets:
+        return
+    data = json.dumps(message, ensure_ascii=False)
+    await asyncio.gather(
+        *(ws.send(data) for ws in targets),
+        return_exceptions=True
+    )
+
+# ── Page "certificat accepte" du port WebSocket ────────────────────────────────
+# Le port WebSocket (8765) est une origine distincte du port de l'appli (8080) : son certificat
+# auto-signe doit etre accepte a part, en ouvrant https://IP:8765/ dans le navigateur. Avant, cette
+# page repondait une erreur (426) — rien n'indiquait que c'etait bon. Desormais une vraie page
+# confirme et renvoie a l'appli (parametre ?back=, meme machine uniquement). Les tablettes OSC y
+# arrivent par leur bouton RESEAU > AUTORISER LA CONNEXION.
+CERT_OK_PAGE = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LCC Sentinel - connexion autorisee</title>
+<style>body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#0b1a2b;color:#f3ead8;display:flex;
+min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center}
+.ok{font-size:44px;color:#4caf50}a{display:inline-block;margin-top:16px;padding:12px 22px;border-radius:8px;
+background:#c9a54c;color:#0b1a2b;font-weight:700;text-decoration:none}</style></head>
+<body><div><div class="ok">&#10003;</div><h2>Connexion au serveur autoris&eacute;e</h2>
+<p>Le certificat du serveur LCC Sentinel est accept&eacute; sur cet appareil.<br>
+Vous pouvez revenir &agrave; l'application : elle se connecte toute seule.</p>
+<a id="back" href="#" style="display:none">RETOUR &Agrave; L'APPLICATION</a></div>
+<script>
+(function(){
+  try {
+    var back = new URLSearchParams(location.search).get('back');
+    if (!back) return;
+    var u = new URL(back);
+    // Uniquement vers l'appli servie par ce meme PC (pas de redirection vers un autre site).
+    if (!/^https?:$/.test(u.protocol) || u.hostname !== location.hostname) return;
+    var a = document.getElementById('back');
+    a.href = u.href; a.style.display = 'inline-block';
+    setTimeout(function(){ location.replace(u.href); }, 1500);
+  } catch (e) {}
+})();
+</script></body></html>""".encode('utf-8')
+
+
+def ws_process_request(*args):
+    """Requete HTTP ordinaire (navigateur) sur le port WebSocket -> page CERT_OK_PAGE ; une vraie
+    demande WebSocket (en-tete Upgrade) continue normalement. Compatible avec la nouvelle API de
+    websockets (>= 13 : (connection, request) -> Response) et l'ancienne ((path, headers) -> tuple)."""
+    if len(args) == 2 and hasattr(args[0], 'respond'):
+        _connection, request = args
+        if request.headers.get('Upgrade', '').lower() == 'websocket':
+            return None
+        from websockets.datastructures import Headers
+        from websockets.http11 import Response
+        return Response(200, 'OK', Headers([
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Content-Length', str(len(CERT_OK_PAGE))),
+            ('Cache-Control', 'no-store'),
+        ]), CERT_OK_PAGE)
+    _path, headers = args
+    if headers.get('Upgrade', '').lower() == 'websocket':
+        return None
+    return (HTTPStatus.OK, [('Content-Type', 'text/html; charset=utf-8'), ('Cache-Control', 'no-store')], CERT_OK_PAGE)
+
+
+# ── Gestionnaire de connexion ──────────────────────────────────────────────────
+async def handler(ws, path='/'):
+    global client_counter, shared_snapshot, shared_snapshot_meta
+    client_counter += 1
+    cid = f'C{client_counter:03d}'
+    connected_at = datetime.now(timezone.utc)
+    peer = getattr(ws, 'remote_address', None)
+    ip   = peer[0] if peer else 'unknown'
+
+    clients[ws] = {'authenticated': False, 'clientId': cid, 'ip': ip}
+    log.info(f'[+] Connexion {cid} depuis {ip}')
+
+    try:
+        async for raw in ws:
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            mtype = msg.get('type', '')
+            info  = clients.get(ws, {})
+
+            # ── Authentification ─────────────────────────────────────────────
+            if mtype == 'AUTH':
+                token        = str((msg.get('payload') or {}).get('token', '') or '').strip()
+                profile_data = (msg.get('payload') or {}).get('profile', {}) or {}
+
+                # IP bloquee apres trop de PIN errones (anti force brute).
+                locked = auth_lock_remaining(ip)
+                if locked:
+                    clients[ws]['close_context'] = 'auth_fail_locked'
+                    await send_to(ws, {
+                        'type': 'AUTH_FAIL',
+                        'payload': {'reason': f'Trop de codes PIN errones : reessayer dans {int(locked // 60) + 1} min.', 'locked': True},
+                        'ts': now_iso(),
+                    })
+                    log.warning(f'[KO] AUTH REFUSE (IP bloquee): {cid} ({ip})')
+                    await ws.close(code=4003, reason='auth-locked')
+                    return
+
+                prof = profile_for_token(token)
+                # Le PIN doit etre celui du poste choisi dans l'appli (sinon : PIN d'un autre poste).
+                asked = profile_data.get('id') if isinstance(profile_data, dict) else None
+                if prof and asked in PROFILES and asked != prof['id']:
+                    prof = None
+
+                if prof:
+                    # ── Anti-doublon de poste ──────────────────────────────────────
+                    # Un seul user par profil a la fois (un seul Bridge, un seul OSC, ...).
+                    # Exemptions : lien serveur<->serveur (pas un poste humain) et Mustering
+                    # (plusieurs tablettes partagent volontairement le meme PIN).
+                    if prof['id'] not in ('relay', 'mustering'):
+                        dup_ws, dup_info = None, None
+                        for other_ws, other_info in clients.items():
+                            if other_ws is ws:
+                                continue
+                            if other_info.get('authenticated') and other_info.get('profileId') == prof['id']:
+                                dup_ws, dup_info = other_ws, other_info
+                                break
+                        if dup_info:
+                            reason = (f"Poste deja connecte : {dup_info.get('name', prof['name'])} "
+                                      f"({dup_info.get('ip', '?')}) utilise deja ce profil.")
+                            clients[ws]['close_context'] = 'auth_fail_duplicate'
+                            await send_to(ws, {
+                                'type': 'AUTH_FAIL',
+                                'payload': {'reason': reason, 'duplicate': True},
+                                'ts': now_iso(),
+                            })
+                            log.warning(f"[KO] AUTH DUPLICATE: {cid} ({ip}) profil '{prof['id']}' deja utilise par "
+                                        f"{dup_info.get('clientId')} ({dup_info.get('ip')})")
+                            await ws.close(code=4002, reason='auth-duplicate')
+                            return
+
+                    auth_fails.pop(ip, None)
+                    display_name = profile_data.get('name') or prof['name']
+                    role         = profile_data.get('role') or prof['role']
+                    initials     = profile_data.get('initials') or prof['initials']
+
+                    clients[ws] = {
+                        'authenticated': True,
+                        'clientId':  cid,
+                        'ip':        ip,
+                        'name':      display_name,
+                        'role':      role,
+                        'initials':  initials,
+                        'profileId': prof['id'],
+                        'since':     now_iso(),
+                    }
+
+                    client_list = get_client_list()
+                    # Notifier tous les autres de la mise a jour de la liste
+                    await broadcast({'type': 'CLIENT_LIST', 'payload': client_list, 'ts': now_iso()})
+                    # Repondre AUTH_OK au nouveau client
+                    await send_to(ws, {
+                        'type': 'AUTH_OK',
+                        'payload': {'clientId': cid, 'clients': client_list, 'cruiseId': cruise['id']},
+                        'ts': now_iso(),
+                    })
+                    log.info(f'[OK] AUTH: {display_name} / {role} ({cid}) - {ip}')
+
+                else:
+                    clients[ws]['close_context'] = 'auth_fail_empty_token' if not token else 'auth_fail_invalid_token'
+                    note_auth_failure(ip)
+                    await send_to(ws, {
+                        'type': 'AUTH_FAIL',
+                        'payload': {'reason': 'Code PIN invalide pour ce poste.', 'invalidPin': True},
+                        'ts': now_iso(),
+                    })
+                    # Jamais le PIN saisi dans le journal.
+                    log.warning(f"[KO] AUTH FAIL: {cid} ({ip}) PIN invalide (poste demande : {asked or '?'})")
+                    await ws.close(code=4001, reason='auth-fail')
+                    return
+
+            elif not info.get('authenticated'):
+                await send_to(ws, {'type': 'ERROR', 'payload': {'reason': 'Non authentifie'}})
+
+            # ── Messages authentifies ─────────────────────────────────────────
+            elif mtype == 'REQUEST_SYNC':
+                await send_to(ws, {
+                    'type': 'FULL_STATE',
+                    'payload': build_full_state_payload(),
+                    'ts': now_iso(),
+                })
+                log.debug(f'[SYNC] -> {cid}')
+
+            elif mtype == 'RESET_CRUISE':
+                # Nouvelle croisiere, declenchee depuis Settings > RESET CRUISE d'un poste Sentinel :
+                # vide l'etat partage, les alarmes et le journal du serveur, puis relaie l'ordre a tous
+                # les postes (Sentinel / OSC / Mustering se remettent a zero en gardant les listes) et
+                # au serveur pair — sinon sa synchro periodique ramenerait l'ancien etat.
+                reset_payload = msg.get('payload') or {}
+                new_id = str(reset_payload.get('cruiseId') or now_iso())
+                if cruise['id'] and new_id <= cruise['id']:
+                    # Deja applique (ex: relais du serveur pair) ou plus ancien que la croisiere en cours.
+                    log.info(f'[RESET] Ordre RESET CRUISE {new_id} deja applique / perime — ignore')
+                    continue
+                start_new_cruise(new_id, cid)
+                msg['payload'] = {**reset_payload, 'cruiseId': new_id}
+                msg.setdefault('ts', now_iso())
+                await broadcast(msg, exclude=ws)
+                if PEER_HOST and info.get('profileId') != 'relay':
+                    asyncio.create_task(push_state_to_peer(msg))
+                log.warning(f'[RESET] RESET CRUISE par {info.get("name")} ({cid}) — etat, alarmes et journal vides')
+
+            elif mtype == 'STATE_SYNC':
+                if time.monotonic() < reset_state['guard_until']:
+                    continue
+                payload = (msg.get('payload') or {})
+                # Les versions recentes des applis joignent leur numero de croisiere (les anciennes non :
+                # acceptees comme avant). Plus ancien que celui du serveur = poste reste sur l'ancienne
+                # croisiere -> refuse. Plus recent = ce serveur a manque un RESET CRUISE (ex: serveur de
+                # secours injoignable a ce moment-la) -> il l'adopte et le relaie a ses postes.
+                if 'cruiseId' in payload and payload.get('cruiseId') != cruise['id']:
+                    incoming_id = payload.get('cruiseId')
+                    if incoming_id and (not cruise['id'] or str(incoming_id) > cruise['id']):
+                        start_new_cruise(str(incoming_id), cid)
+                        reset_state['guard_until'] = 0.0  # accepter l'etat de ce poste, deja dans la nouvelle croisiere
+                        await broadcast({'type': 'RESET_CRUISE', 'ts': now_iso(),
+                                         'payload': {'cruiseId': str(incoming_id), 'by': 'synchronisation (nouvelle croisiere)'}},
+                                        exclude=ws)
+                        log.warning(f'[RESET] Croisiere {incoming_id} adoptee depuis {info.get("name")} ({cid})')
+                    else:
+                        log.info(f'[RESET] STATE_SYNC refuse : {info.get("name")} ({cid}) encore sur la croisiere {incoming_id}')
+                        continue
+                snapshot = payload.get('snapshot')
+                if isinstance(snapshot, dict):
+                    shared_snapshot = snapshot
+                    shared_snapshot_meta = {'updatedBy': cid, 'updatedAt': now_iso()}
+                    mark_state_dirty()
+                    # NOT an immediate save_persistent_state() here: STATE_SYNC arrives from every
+                    # connected client roughly every 5s, and a synchronous disk write
+                    # (STATE_FILE.write_text) blocks this single asyncio event loop for every other
+                    # client's message processing (including their HEARTBEAT_ACK) while it runs. With
+                    # several stations syncing at once that adds up to frequent stalls felt by
+                    # everyone. mark_state_dirty() + the periodic autosave_loop (every
+                    # AUTOSAVE_INTERVAL=5s, one write regardless of client count) already guarantees
+                    # the same worst-case data-loss window on an ungraceful shutdown.
+                    await broadcast({
+                        'type': 'FULL_STATE',
+                        'payload': build_full_state_payload(),
+                        'ts': now_iso(),
+                    }, exclude=ws)
+
+            elif mtype == 'HEARTBEAT':
+                await send_to(ws, {'type': 'HEARTBEAT_ACK', 'ts': now_iso()})
+
+            elif mtype == 'ALARM_ACTIVATE':
+                alarm_type = (msg.get('payload') or {}).get('alarmType')
+                start_time = (msg.get('payload') or {}).get('startTime') or now_iso()
+                if alarm_type:
+                    alarms[alarm_type] = start_time
+                    mark_state_dirty()
+                    msg.setdefault('ts', now_iso())
+                    await broadcast(msg, exclude=ws)
+                    log.info(f'[ALARM] {alarm_type.upper()} ACTIVE — {info.get("name")}')
+
+            elif mtype == 'ALARM_DEACTIVATE':
+                alarm_type = (msg.get('payload') or {}).get('alarmType')
+                if alarm_type:
+                    alarms[alarm_type] = None
+                    mark_state_dirty()
+                    msg.setdefault('ts', now_iso())
+                    await broadcast(msg, exclude=ws)
+                    log.info(f'[ALARM] {alarm_type.upper()} END   — {info.get("name")}')
+
+            elif mtype == 'LOG_ENTRY':
+                entry = msg.get('payload')
+                if entry:
+                    log_buffer.append(entry)
+                    if len(log_buffer) > MAX_LOG:
+                        log_buffer.pop(0)
+                    mark_state_dirty()
+                await broadcast(msg, exclude=ws)
+
+            elif mtype in ('MUSTER_UPDATE', 'ABANDON_UPDATE', 'OSC_TEAM_UPDATE',
+                           'OSC_MESSAGE', 'FIRE_TEAM_UPDATE', 'CHAT_MESSAGE',
+                           'POLAR_UPDATE', 'VILLAGE_UPDATE'):
+                await broadcast(msg, exclude=ws)
+                if mtype == 'CHAT_MESSAGE':
+                    text = (msg.get('payload') or {}).get('text', '')
+                    log.info(f'[CHAT] {info.get("name")}: {text[:80]}')
+
+            else:
+                # Transfert generique pour messages futurs
+                await broadcast(msg, exclude=ws)
+
+    except websockets.exceptions.ConnectionClosedOK:
+        pass
+    except websockets.exceptions.ConnectionClosedError:
+        pass
+    except Exception as e:
+        if ws in clients and not clients[ws].get('close_context'):
+            clients[ws]['close_context'] = 'server_exception'
+        log.error(f'[ERR] {cid}: {e}')
+    finally:
+        info = clients.pop(ws, None) or {}
+        client_list = get_client_list()
+        await broadcast({'type': 'CLIENT_LIST', 'payload': client_list, 'ts': now_iso()})
+        close_code = getattr(ws, 'close_code', None)
+        close_reason = getattr(ws, 'close_reason', None) or ''
+        duration_s = (datetime.now(timezone.utc) - connected_at).total_seconds()
+        auth_flag = 'auth' if info.get('authenticated') else 'no-auth'
+        cause = classify_disconnect_cause(info, close_code)
+        register_disconnect(ip=info.get('ip') or ip, duration_s=duration_s, cause=cause, is_auth=bool(info.get('authenticated')))
+        reason_suffix = f" reason={close_reason!r}" if close_reason else ''
+        log.info(f'[-] Deconnexion {cid} ({auth_flag}, code={close_code}, cause={cause}, duree={duration_s:.1f}s){reason_suffix}')
+
+# ── Certificat SSL auto-signé ────────────────────────────────────────────────
+
+def cert_ip_addresses():
+    """IP couvertes par le certificat existant (vide si illisible / module absent)."""
+    try:
+        from cryptography import x509
+        cert = x509.load_pem_x509_certificate(CERT_FILE.read_bytes())
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        return {str(ip) for ip in san.get_values_for_type(x509.IPAddress)}
+    except Exception:
+        return set()
+
+
+def generate_self_signed_cert(local_ip, extra_ips=()):
+    """Génère un certificat SSL auto-signé pour HTTPS local. Retourne True si OK.
+    extra_ips : autres IP a couvrir (celles de l'ancien certificat + SHIP_SERVER_IP), pour qu'un
+    certificat partage par OneDrive entre plusieurs PC finisse par les couvrir tous au lieu d'etre
+    regenere a chaque demarrage sur l'un puis l'autre."""
+    try:
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        import datetime as dt
+        import ipaddress
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, local_ip),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, 'PONANT LCC'),
+        ])
+        san_list = [x509.DNSName('localhost'),
+                    x509.IPAddress(ipaddress.IPv4Address('127.0.0.1'))]
+        for ip in sorted({local_ip, SHIP_SERVER_IP, *extra_ips} - {'127.0.0.1'}):
+            try:
+                san_list.append(x509.IPAddress(ipaddress.IPv4Address(ip)))
+            except Exception:
+                pass
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(issuer)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(dt.datetime.now(dt.UTC))
+            .not_valid_after(dt.datetime.now(dt.UTC) + dt.timedelta(days=3650))
+            .add_extension(x509.SubjectAlternativeName(san_list), critical=False)
+            .sign(key, hashes.SHA256())
+        )
+        CERT_FILE.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+        KEY_FILE.write_bytes(key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ))
+        log.info('[HTTPS] Certificat SSL généré : %s', CERT_FILE.name)
+        return True
+    except ImportError:
+        log.warning('[HTTPS] Module "cryptography" absent — serveur en HTTP (pip install cryptography)')
+        return False
+    except Exception as exc:
+        log.warning('[HTTPS] Erreur génération certificat : %s', exc)
+        return False
+
+
+# ── Serveur HTTP statique ─────────────────────────────────────────────────────
+
+LISTS_FOLDER = Path(__file__).parent / 'lists_data'
+
+
+# ── Mise a jour depuis l'appli (Settings > Mise a jour du logiciel) ─────────────
+# Le PC serveur choisit le ZIP de PREPARER_MAJ.bat (LCC_SENTINEL_4_MAJ_vX.Y.Z.zip) : 1) /api/update/check
+# le verifie et le deballe dans un dossier temporaire, 2) /api/update/apply sauvegarde l'ancienne version
+# (meme dossier que METTRE_A_JOUR.bat), copie la nouvelle sans rien supprimer, puis ce serveur s'arrete :
+# la surveillance du lanceur le relance avec le nouveau code. Mise a jour = execution de code -> reserve
+# au PC serveur lui-meme (127.0.0.1, page servie par le port local) ; une page web quelconque ouverte sur
+# ce PC ne peut pas l'appeler (en-tete X-LCC-Update + Origin verifies, pas d'autorisation CORS).
+UPDATE_MAX_BYTES = 150 * 1024 * 1024
+UPDATE_MAIN_FILES = ('LCC sentinel 4.html', 'sentinel_server.py')
+VERSION_RE = re.compile(r'CHARCOT SENTINEL v(\d+\.\d+\.\d+)-charcot')
+update_stage = {'dir': None, 'version': None, 'files': 0}
+MAIN_LOOP = None
+
+
+def read_app_version(folder):
+    try:
+        m = VERSION_RE.search((Path(folder) / 'LCC sentinel 4.html').read_text(encoding='utf-8', errors='replace'))
+        return m.group(1) if m else '?'
+    except Exception:
+        return '?'
+
+
+# Date d'installation de la version en service (affichee sur la page Home). Notee au premier demarrage
+# d'une nouvelle version, quelle que soit la facon dont elle a ete installee (installateur,
+# METTRE_A_JOUR.bat, Settings > Mise a jour) — pas la date des fichiers, que les copies conservent.
+INSTALL_INFO = {'version': None, 'installedAt': None}
+
+
+def record_install_version():
+    path = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel' / 'version_installee.json'
+    version = read_app_version(Path(__file__).parent)
+    try:
+        saved = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+    except Exception:
+        saved = {}
+    if saved.get('version') == version and saved.get('installedAt'):
+        INSTALL_INFO.update(version=version, installedAt=saved['installedAt'])
+        return
+    INSTALL_INFO.update(version=version, installedAt=datetime.now().astimezone().isoformat(timespec='seconds'))
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(INSTALL_INFO, indent=2), encoding='utf-8')
+        log.info(f"[MAJ] Version v{version} en service depuis le {INSTALL_INFO['installedAt']}")
+    except Exception as exc:
+        log.warning(f"[MAJ] Date d'installation non enregistree : {exc}")
+
+
+def _update_skip(name):
+    """Jamais ecrases par une mise a jour : etat de la croisiere, certificat, listes, outils de dev."""
+    low = name.lower()
+    base = low.rsplit('/', 1)[-1]
+    return (base.startswith('sentinel_state') or base == 'pins.json' or (base.startswith('ssl_') and base.endswith('.pem'))
+            or low.startswith(('lists_data/', 'installation/', 'versions/', '.git/', '__pycache__/', '.venv/')))
+
+
+def stage_update(data):
+    """Verifie le ZIP et le deballe. Retourne (infos, None) ou (None, message d'erreur)."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return None, "Ce fichier n'est pas un ZIP valide."
+    # Compress-Archive (PowerShell 5.1, PREPARER_MAJ) ecrit des chemins avec '\'.
+    entries = []
+    for info in zf.infolist():
+        name = info.filename.replace('\\', '/')
+        if info.is_dir() or name.endswith('/'):
+            continue
+        entries.append((name, info))
+    names = [n for n, _ in entries]
+    # ZIP d'un dossier (un seul dossier racine contenant l'appli) : retirer ce niveau.
+    prefix = ''
+    if 'LCC sentinel 4.html' not in names:
+        tops = {n.split('/', 1)[0] for n in names if '/' in n}
+        if len(tops) == 1 and f'{next(iter(tops))}/LCC sentinel 4.html' in names:
+            prefix = next(iter(tops)) + '/'
+    missing = [f for f in UPDATE_MAIN_FILES if prefix + f not in names]
+    if missing:
+        return None, ("Ce n'est pas un paquet de mise a jour LCC SENTINEL 4 (manque : " + ', '.join(missing) +
+                      '). Utiliser le fichier LCC_SENTINEL_4_MAJ_vX.Y.Z.zip cree par PREPARER_MAJ.bat.')
+    if update_stage['dir']:
+        shutil.rmtree(update_stage['dir'], ignore_errors=True)
+    stage = Path(tempfile.mkdtemp(prefix='lcc_maj_'))
+    count = 0
+    for name, info in entries:
+        if not name.startswith(prefix):
+            continue
+        rel = name[len(prefix):]
+        parts = rel.split('/')
+        if (not rel or rel.startswith('/') or ':' in parts[0] or any(p in ('', '.', '..') for p in parts)
+                or _update_skip(rel)):
+            continue
+        target = stage.joinpath(*parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(info) as src, open(target, 'wb') as dst:
+            shutil.copyfileobj(src, dst)
+        count += 1
+    root = Path(__file__).parent
+    update_stage.update({'dir': stage, 'version': read_app_version(stage), 'files': count})
+    return {'version': update_stage['version'], 'currentVersion': read_app_version(root), 'files': count}, None
+
+
+def apply_staged_update():
+    """Sauvegarde l'ancienne version puis copie la nouvelle. Retourne (infos, None) ou (None, erreur)."""
+    stage = update_stage['dir']
+    if not stage or not Path(stage).exists():
+        return None, 'Aucun paquet verifie : choisir a nouveau le fichier.'
+    root = Path(__file__).parent
+    old_version = read_app_version(root)
+    data_dir = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel'
+    backup = data_dir / 'sauvegardes' / f"v{old_version}_{datetime.now().strftime('%Y-%m-%d_%H%M')}"
+    try:
+        backup.mkdir(parents=True, exist_ok=True)
+        for f in root.iterdir():
+            if f.is_file() and f.suffix.lower() in ('.html', '.json', '.js', '.py', '.bat', '.txt') and not _update_skip(f.name):
+                shutil.copy2(f, backup / f.name)
+        if (root / 'lanceur').is_dir():
+            shutil.copytree(root / 'lanceur', backup / 'lanceur', dirs_exist_ok=True)
+    except Exception as exc:
+        return None, f"Sauvegarde de l'ancienne version impossible ({exc}) : rien n'a ete modifie."
+    try:
+        for f in Path(stage).rglob('*'):
+            if f.is_file():
+                target = root / f.relative_to(stage)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, target)
+    except Exception as exc:
+        return None, f'Erreur pendant la copie ({exc}). Ancienne version sauvegardee dans : {backup}'
+    shutil.rmtree(stage, ignore_errors=True)
+    update_stage.update({'dir': None, 'version': None, 'files': 0})
+    log.warning(f'[MAJ] Logiciel mis a jour v{old_version} -> v{read_app_version(root)} (sauvegarde : {backup})')
+    # Etapes propres au lanceur (ex: raccourci « LCC SERVEUR - Console ») : action du NOUVEAU lcc.ps1.
+    launcher = root / 'lanceur' / 'lcc.ps1'
+    if os.name == 'nt' and launcher.exists():
+        try:
+            subprocess.Popen(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+                              '-File', str(launcher), '-Action', 'ApresMAJ'],
+                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        except Exception as exc:
+            log.warning(f'[MAJ] Etapes du lanceur non executees : {exc}')
+    # Relance : seulement sous la surveillance du lanceur (--no-pause), qui redemarre le serveur des qu'il
+    # s'arrete. Lance a la main (START_SERVER.bat), il faut le relancer soi-meme.
+    restarting = NO_PAUSE and MAIN_LOOP is not None
+    if restarting:
+        def _stop():
+            save_persistent_state(force=True)
+            log.warning('[MAJ] Redemarrage du serveur pour charger la nouvelle version')
+            os._exit(3)
+        MAIN_LOOP.call_soon_threadsafe(lambda: MAIN_LOOP.call_later(1.5, _stop))
+    return {'version': read_app_version(root), 'previousVersion': old_version, 'backup': str(backup),
+            'restarting': restarting}, None
+
+
+def build_server_status(network_https):
+    """Donnees de la console serveur (console_serveur.html). Lu depuis le thread HTTP : copies
+    (list(...)) des structures tenues par la boucle asyncio, pour ne jamais iterer pendant qu'elle
+    les modifie."""
+    ip = get_local_ip()
+    infos = list(clients.values())
+    connected = [c for c in get_client_list()]
+    return {
+        'role': ROLE,
+        'ip': ip,
+        'wsPort': PORT,
+        'httpPort': HTTP_PORT,
+        'https': bool(network_https),
+        'localHttpPort': LOCAL_HTTP_PORT,
+        'appUrl': f"{'https' if network_https else 'http'}://{ip}:{HTTP_PORT}/",
+        'oscUrl': f"{'https' if network_https else 'http'}://{ip}:{HTTP_PORT}/LCC%20OSC.html",
+        'startedAt': server_started_at,
+        'now': now_iso(),
+        'clients': connected,
+        'pendingConnections': sum(1 for c in infos if not c.get('authenticated')),
+        'cruiseId': cruise['id'],
+        'snapshotMeta': dict(shared_snapshot_meta or {}),
+        'stateFile': STATE_FILE.name,
+        'lastSaveAt': last_save_at['at'],
+        'activeAlarms': [k for k, v in list(alarms.items()) if v is not None],
+        'peer': f'{PEER_HOST}:{PEER_PORT}' if PEER_HOST else None,
+        'disconnects': {'total': disconnect_diag['total'], 'auth': disconnect_diag['auth'],
+                        'causes': dict(disconnect_diag['causes'])},
+        'log': list(RECENT_LOG)[-250:],
+        'pins': [{'profile': pid, 'role': PROFILES[pid]['role'], 'pin': PINS.get(pid, '')} for pid in PROFILES],
+        'pinsFile': str(PINS_FILE),
+        'lockedIps': [ip for ip in list(auth_locked_until) if auth_lock_remaining(ip) > 0],
+    }
+
+def start_http_server(use_https=False, host=None, port=None, network_https=None):
+    """Sert les fichiers statiques (HTML, assets) sur HTTP_PORT dans un thread.
+    network_https : si les ports RESEAU sont en HTTPS (differe de use_https pour l'acces local)."""
+    host = HOST if host is None else host
+    port = HTTP_PORT if port is None else port
+    network_https = use_https if network_https is None else network_https
+    www_root = Path(__file__).parent
+
+    class SilentHandler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(www_root), **kwargs)
+
+        def log_message(self, fmt, *args):
+            pass  # Supprimer les logs HTTP verbeux
+
+        def end_headers(self):
+            # Headers pour autoriser le service worker PWA
+            self.send_header('Service-Worker-Allowed', '/')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            super().end_headers()
+
+        def do_OPTIONS(self):
+            self.send_response(204)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+
+        def do_GET(self):
+            # Le dossier servi est celui du logiciel : sans ce filtre, n'importe quel appareil du
+            # Wi-Fi pouvait telecharger la cle privee du certificat (ssl_key.pem — permet d'usurper
+            # le serveur), l'etat d'urgence complet, le code serveur ou les journaux d'installation.
+            # Normalise comme le fait translate_path() (decodage %xx, \ -> /, ./ et ../) pour qu'un
+            # chemin encode (ex: /ssl_key%2Epem, /./lanceur/) ne contourne pas le filtre.
+            chemin = posixpath.normpath(unquote(self.path.split('?', 1)[0].split('#', 1)[0]).replace('\\', '/')).lower()
+            nom = chemin.rsplit('/', 1)[-1]
+            if (nom.endswith(('.pem', '.py', '.pyc', '.bat', '.ps1', '.log'))
+                    or nom.startswith('sentinel_state') or nom == 'pins.json'
+                    or chemin.startswith(('/lanceur', '/installation', '/.git', '/lists_data', '/__pycache__', '/versions'))):
+                self.send_response(404)
+                self.end_headers()
+                return
+            # Coordonnees reseau du serveur, pour qu'une appli ouverte via http://localhost (lanceur)
+            # genere quand meme des liens/QR utilisables par les tablettes (IP LAN + ports reseau),
+            # pas des liens "localhost" qui ne menent nulle part depuis une tablette.
+            # Etat complet pour la console serveur : uniquement depuis CE PC (journal, IP des postes).
+            if self.path.split('?', 1)[0] == '/api/server-status':
+                if self.client_address[0] not in ('127.0.0.1', '::1'):
+                    self.send_response(403)
+                    self.end_headers()
+                    return
+                body = json.dumps(build_server_status(network_https), ensure_ascii=False).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if self.path == '/api/server-info':
+                body = json.dumps({
+                    'ip': get_local_ip(),
+                    'port': PORT,
+                    'httpPort': HTTP_PORT,
+                    'https': bool(network_https),
+                    'version': INSTALL_INFO['version'],
+                    'installedAt': INSTALL_INFO['installedAt'],
+                }).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            # Liste les fichiers JSON disponibles
+            # Listes equipage / passagers (donnees nominatives) : PIN d'un poste exige, sauf sur le PC
+            # serveur lui-meme. Avant, n'importe quel appareil du Wi-Fi pouvait les lire sans PIN.
+            if self.path.startswith(('/api/lists-files', '/api/load-lists/')) and not self._lists_allowed():
+                self._json_reply(403, {'ok': False, 'error': 'Code PIN requis.'})
+                return
+            if self.path == '/api/lists-files':
+                LISTS_FOLDER.mkdir(exist_ok=True)
+                files = sorted(
+                    [f.name for f in LISTS_FOLDER.glob('*.json')],
+                    reverse=True
+                )
+                body = json.dumps({'files': files}).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            # Charge un fichier JSON spécifique
+            if self.path.startswith('/api/load-lists/'):
+                filename = self.path[len('/api/load-lists/'):]
+                # Sécurité : interdire les chemins relatifs
+                if '..' in filename or '/' in filename or '\\' in filename:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+                target = LISTS_FOLDER / filename
+                if not target.exists() or target.suffix != '.json':
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                body = target.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            super().do_GET()
+
+        def _json_reply(self, code, obj):
+            body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+            self.send_response(code)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _lists_allowed(self):
+            return (self.client_address[0] in ('127.0.0.1', '::1')
+                    or pin_is_valid(self.headers.get('X-LCC-Token', '')))
+
+        def _update_allowed(self):
+            # Uniquement le PC serveur, depuis l'appli servie par son port local (voir UPDATE_MAX_BYTES).
+            origin = self.headers.get('Origin') or ''
+            local_origins = {f'http://localhost:{LOCAL_HTTP_PORT}', f'http://127.0.0.1:{LOCAL_HTTP_PORT}'}
+            return (self.client_address[0] in ('127.0.0.1', '::1')
+                    and self.headers.get('X-LCC-Update') == '1'
+                    and (not origin or origin in local_origins))
+
+        def do_POST(self):
+            if self.path in ('/api/update/check', '/api/update/apply'):
+                if not self._update_allowed():
+                    self._json_reply(403, {'ok': False, 'error': 'Mise a jour possible uniquement depuis le PC serveur.'})
+                    return
+                length = int(self.headers.get('Content-Length', 0) or 0)
+                if length > UPDATE_MAX_BYTES:
+                    self._json_reply(413, {'ok': False, 'error': 'Fichier trop gros pour un paquet de mise a jour.'})
+                    return
+                data = self.rfile.read(length) if length else b''
+                try:
+                    if self.path == '/api/update/check':
+                        info, err = stage_update(data)
+                    else:
+                        info, err = apply_staged_update()
+                except Exception as exc:
+                    info, err = None, f'Erreur inattendue : {exc}'
+                if err:
+                    log.warning(f'[MAJ] {err}')
+                    self._json_reply(400, {'ok': False, 'error': err})
+                else:
+                    self._json_reply(200, {'ok': True, **info})
+                return
+            if self.path == '/api/pins/regenerate':
+                # Console serveur : nouveau PIN pour un poste (PC serveur uniquement, comme la mise a jour).
+                if not self._update_allowed():
+                    self._json_reply(403, {'ok': False, 'error': 'Possible uniquement depuis le PC serveur.'})
+                    return
+                try:
+                    length = int(self.headers.get('Content-Length', 0) or 0)
+                    pid = json.loads(self.rfile.read(length).decode('utf-8') or '{}').get('profile')
+                except Exception:
+                    pid = None
+                pin = regenerate_pin(pid)
+                self._json_reply(200 if pin else 400, {'ok': bool(pin), 'profile': pid, 'pin': pin})
+                return
+            if self.path == '/api/save-lists' and not self._lists_allowed():
+                self._json_reply(403, {'ok': False, 'error': 'Code PIN requis.'})
+                return
+            if self.path == '/api/save-lists':
+                try:
+                    length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(length)
+                    data = json.loads(body.decode('utf-8'))
+                    LISTS_FOLDER.mkdir(exist_ok=True)
+                    # Nom de fichier basé sur la date
+                    from datetime import datetime as dt
+                    date_str = dt.now().strftime('%Y-%m-%d_%H%M')
+                    filename = f'LCC_lists_{date_str}.json'
+                    target = LISTS_FOLDER / filename
+                    target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+                    resp = json.dumps({'ok': True, 'file': filename}).encode('utf-8')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(resp)))
+                    self.end_headers()
+                    self.wfile.write(resp)
+                    log.info(f'[LISTS] Sauvegarde: {filename}')
+                except Exception as exc:
+                    log.warning(f'[LISTS] Erreur sauvegarde: {exc}')
+                    self.send_response(500)
+                    self.end_headers()
+                return
+            self.send_response(404)
+            self.end_headers()
+
+    # ThreadingHTTPServer (not the plain HTTPServer) — several tablets can hit the app shell /
+    # crew+spaces data files / plan images at once (e.g. right after a reboot, or several crew
+    # opening the PWA around the same moment), and the plain single-threaded HTTPServer serves
+    # one request at a time: every OTHER tablet's request just queues behind whichever transfer
+    # is already in flight, which reads as a random, unexplained hang/timeout to that user.
+    server = ThreadingHTTPServer((host, port), SilentHandler)
+    if use_https:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server
+
+
+def _quiet_asyncio_exception_handler(loop, context):
+    """Windows' ProactorEventLoop logs a full traceback from its own internal socket-teardown
+    callback (_call_connection_lost -> sock.shutdown()) whenever a client's TCP connection is
+    already gone by the time the loop gets around to closing it — completely normal when several
+    tablets drop at once (Wi-Fi AP reboot, power blip, everyone logging off together at shift end;
+    reproduced with a 12-client simultaneous-disconnect load test). It's not a crash and every
+    other client stays fully served, but the scary traceback is easy to mistake for the server
+    dying if someone is watching the console. Downgrade this one known-benign case to a one-line
+    debug log; anything else still goes through asyncio's normal (louder) default handling.
+    """
+    exc = context.get('exception')
+    if isinstance(exc, ConnectionResetError):
+        log.debug(f'[NET] Connexion deja fermee cote client (nettoyage normal): {exc}')
+        return
+    loop.default_exception_handler(context)
+
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+async def main():
+    asyncio.get_running_loop().set_exception_handler(_quiet_asyncio_exception_handler)
+    local_ip = get_local_ip()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s  %(message)s',
+        datefmt='%H:%M:%S',
+    )
+    handshake_filter = HandshakeNoiseFilter()
+    root_logger = logging.getLogger()
+    recent_handler = RecentLogHandler()
+    recent_handler.setFormatter(logging.Formatter('%(asctime)s  %(message)s', datefmt='%H:%M:%S'))
+    root_logger.addHandler(recent_handler)
+    for handler_obj in root_logger.handlers:
+        handler_obj.addFilter(handshake_filter)
+    global server_started_at, MAIN_LOOP
+    server_started_at = now_iso()
+    MAIN_LOOP = asyncio.get_running_loop()
+
+    # Plusieurs erreurs de handshake sont du bruit normal (probe HTTP sur port WS).
+    # On garde quand meme les logs sentinel utiles via notre logger applicatif.
+    logging.getLogger('websockets.server').setLevel(logging.INFO)
+    logging.getLogger('websockets.asyncio.server').setLevel(logging.INFO)
+
+    restored = load_persistent_state()
+    load_pins()
+    record_install_version()
+
+    # ── HTTPS : génère le cert si absent, sinon réutilise ──
+    if not CERT_FILE.exists() or not KEY_FILE.exists():
+        use_https = generate_self_signed_cert(local_ip)
+    elif ((known_ips := cert_ip_addresses()) and local_ip not in known_ips
+          and not local_ip.startswith(('127.', '169.254.'))):
+        # (Jamais sur une adresse de secours : PC demarre avant que le reseau soit pret -> 127.x ou
+        # adresse automatique 169.254.x — regenerer forcerait toutes les tablettes a re-accepter.)
+        # Certificat cree sur un autre PC (dossier copie / synchronise) : il ne couvre pas l'IP de
+        # celui-ci. Regenere en gardant ses anciennes IP. Les tablettes devront re-accepter
+        # l'avertissement de securite une fois.
+        log.info("[HTTPS] Certificat sans l'IP %s (couvre: %s) — regeneration", local_ip, ', '.join(sorted(known_ips)))
+        use_https = generate_self_signed_cert(local_ip, known_ips) or True
+    else:
+        use_https = True
+        log.info('[HTTPS] Certificat existant utilisé : %s', CERT_FILE.name)
+
+    http_scheme = 'https' if use_https else 'http'
+    ws_scheme   = 'wss'   if use_https else 'ws'
+
+    http_server = start_http_server(use_https=use_https)
+
+    # Un echec ici (port deja pris) ne doit jamais empecher le serveur principal de tourner :
+    # les tablettes passent par les ports reseau ci-dessus, pas par ceux-ci.
+    local_http_server = None
+    if LOCAL_HTTP_PORT:
+        try:
+            local_http_server = start_http_server(use_https=False, host=LOCAL_HOST, port=LOCAL_HTTP_PORT,
+                                                  network_https=use_https)
+        except OSError as exc:
+            log.warning(f'[LOCAL] Port HTTP local {LOCAL_HTTP_PORT} indisponible: {exc}')
+
+    sep = '=' * 62
+    print(f'\n{sep}')
+    print(f'  CHARCOT SENTINEL - Serveur WebSocket + {http_scheme.upper()}  [{ROLE}]')
+    print(f'  LE COMMANDANT CHARCOT - PONANT')
+    print(sep)
+    print(f'  Etat persistant: {STATE_FILE.name}')
+    if PEER_HOST:
+        print(f'  Sync vers pair : {PEER_HOST}:{PEER_PORT} toutes les {PEER_INTERVAL}s')
+    print(f'  IP du serveur  : {local_ip}')
+    print(f'  WebSocket      : {ws_scheme}://{local_ip}:{PORT}')
+    print(f'  Application    : {http_scheme}://{local_ip}:{HTTP_PORT}/LCC%20sentinel%204.html')
+    if use_https:
+        print(f'  [HTTPS] Certificat auto-signé — 2 ports distincts, 2 avertissements à accepter')
+        print(f'          (voir "CERTIFICAT HTTPS" ci-dessous, a faire 1 fois par appareil/navigateur)')
+    print(sep)
+    if use_https:
+        print(f'  CERTIFICAT HTTPS — A FAIRE UNE FOIS PAR APPAREIL / NAVIGATEUR :')
+        print(f'  {"-" * 55}')
+        print(f'  Le port {HTTP_PORT} (appli) et le port {PORT} (WebSocket) sont deux')
+        print(f'  origines distinctes pour Chrome : accepter le certificat sur l\'un')
+        print(f'  ne couvre PAS l\'autre. Sans l\'etape 2, la connexion reseau de')
+        print(f'  l\'appli reste bloquee (timeout silencieux, sans message clair).')
+        print(f'    1. Ouvrir : https://{local_ip}:{HTTP_PORT}/')
+        print(f'       -> "Non securise" -> Avance -> Continuer')
+        print(f'    2. Ouvrir un NOUVEL onglet : https://{local_ip}:{PORT}/')
+        print(f'       -> meme avertissement -> Avance -> Continuer')
+        print(f'       (la page qui suit peut rester blanche/en erreur : normal,')
+        print(f'        ce port ne sert pas de pages, seulement le WebSocket)')
+        print(f'    3. Relancer/recharger l\'application : la connexion doit passer')
+        print(f'  {"-" * 55}')
+        print(sep)
+    # Les PIN ne sont jamais affiches ici : cette sortie finit dans les journaux (serveur_*.log).
+    print(f'  CODES PIN DES POSTES : console serveur (http://localhost:{LOCAL_HTTP_PORT or 8081}/console_serveur.html)')
+    print(f'                         fichier {PINS_FILE}')
+    print()
+    print(f'  Dans les Settings de l\'application :')
+    print(f'    IP du serveur  : {local_ip}')
+    print(f'    Port WS        : {PORT}')
+    print(f'    Etat persistant: {STATE_FILE.name} ({"restaure" if restored else "nouveau"})')
+    print()
+    print(f'  OUVRIR L\'APP DANS CHROME :')
+    print(f'    {http_scheme}://{local_ip}:{HTTP_PORT}/LCC%20sentinel%204.html')
+    if use_https:
+        print(f'    → Voir "CERTIFICAT HTTPS" ci-dessus (2 etapes) avant de vous connecter')
+        print(f'    → Puis menu Chrome (⋮) → Installer l\'application (PWA)')
+    print(f'    (ou {http_scheme}://localhost:{HTTP_PORT}/LCC%20sentinel%204.html en local)')
+    if local_http_server:
+        print(f'  SUR CE PC (sans avertissement de certificat, hors-ligne OK) :')
+        print(f'    http://localhost:{LOCAL_HTTP_PORT}/LCC%20sentinel%204.html  (WebSocket local : {LOCAL_WS_PORT})')
+    print()
+    print(f'  CTRL+C pour arreter le serveur')
+    print(sep)
+
+    ws_ssl = None
+    if use_https:
+        ws_ssl = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ws_ssl.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
+
+    async with websockets.serve(handler, HOST, PORT, ssl=ws_ssl, process_request=ws_process_request):
+        local_ws_server = None
+        if LOCAL_WS_PORT:
+            try:
+                local_ws_server = await websockets.serve(handler, LOCAL_HOST, LOCAL_WS_PORT)
+            except OSError as exc:
+                log.warning(f'[LOCAL] Port WebSocket local {LOCAL_WS_PORT} indisponible: {exc}')
+        autosave_task = asyncio.create_task(autosave_loop())
+        peer_task = asyncio.create_task(peer_sync_loop()) if PEER_HOST else None
+        diag_task = asyncio.create_task(diagnostic_report_loop())
+        if PEER_HOST:
+            log.info(f'[PEER-SYNC] Actif vers {PEER_HOST}:{PEER_PORT} toutes les {PEER_INTERVAL}s')
+        print(f'\n  Serveur actif - en attente de connexions...\n')
+        try:
+            await asyncio.Future()   # boucle infinie
+        finally:
+            autosave_task.cancel()
+            if peer_task:
+                peer_task.cancel()
+            diag_task.cancel()
+            log_diagnostic_report()
+            save_persistent_state(force=True)
+            http_server.shutdown()
+            if local_http_server:
+                local_http_server.shutdown()
+            if local_ws_server:
+                local_ws_server.close()
+
+if __name__ == '__main__':
+    args = parse_args()
+    PORT = args.port
+    HTTP_PORT = args.http_port
+    ROLE = args.role.strip().upper() or 'PRINCIPAL'
+    if args.state_file:
+        STATE_FILE = Path(args.state_file)
+    elif PORT != 8765:
+        # Port non standard (ex: le secours sur --port 8766) -> fichier distinct par defaut, pour ne
+        # jamais ecraser le sentinel_state.json d'une instance principale tournant sur le meme PC.
+        STATE_FILE = Path(__file__).with_name(f'sentinel_state_{PORT}.json')
+    PEER_HOST = (args.peer_host or '').strip() or None
+    PEER_PORT = args.peer_port
+    PEER_INTERVAL = max(30, args.peer_interval)  # 30s plancher, pour eviter un abus de --peer-interval 1
+    # Ports locaux actifs par defaut uniquement sur le principal (port 8765) : un secours lance sur le
+    # meme PC (--port 8766) entrerait sinon en conflit sur 8081/8764.
+    is_default_port = PORT == 8765
+    LOCAL_HTTP_PORT = args.local_http_port if args.local_http_port is not None else (8081 if is_default_port else 0)
+    LOCAL_WS_PORT = args.local_port if args.local_port is not None else (8764 if is_default_port else 0)
+    NO_PAUSE = args.no_pause
+    PEER_TOKEN = (args.peer_token or '').strip() or None
+    if PEER_TOKEN and len(PEER_TOKEN) < 12:
+        print('[ERREUR] --peer-token trop court (12 caracteres minimum).')
+        raise SystemExit(2)
+    if args.pins_file:
+        PINS_FILE = Path(args.pins_file)
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print('\n  Serveur arrete proprement.\n')
+    except OSError as e:
+        print(f'\n[ERREUR] Impossible de demarrer : {e}')
+        print(f'  Le port {PORT} est peut-etre deja utilise.')
+        if not NO_PAUSE:
+            input('Appuyez sur Entree pour quitter...')
+        raise SystemExit(1)
