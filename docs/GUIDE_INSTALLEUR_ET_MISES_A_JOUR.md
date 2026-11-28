@@ -33,7 +33,7 @@ Racine : `C:\Users\safety\OneDrive\Visual Studio Project\Logiciel LCC 2.0\LCC se
 | `sentinel_server.py` | Serveur Python. Options ajoutées : `--local-http-port` / `--local-port` (accès local en clair lié à `127.0.0.1`), `--no-pause`, filtre des fichiers sensibles dans `do_GET`, `/api/server-info` |
 | `LISEZ-MOI_INSTALLATION.txt` | Notice courte copiée dans le dossier d'installation (installation, usage, tablettes, mise à jour, dépannage) |
 | `SAVE_VERSION.ps1` | Incrémente la version **et le `CACHE_NAME` de chaque service worker** (sinon les PWA installées ne se mettent jamais à jour) |
-| `docs\architecture.md` | Sections « Lanceur du PC serveur », « IP du serveur du bord », « RESET CRUISE » |
+| `docs\architecture.md` | Sections « Lanceur du PC serveur », « IP du serveur du bord », « RESET (nouvelle croisière) » |
 
 ---
 

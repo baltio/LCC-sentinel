@@ -771,7 +771,7 @@ async def handler(ws, path='/'):
             elif mtype == 'RESET_CRUISE':
                 # Nouvelle croisiere, declenchee depuis Settings > RESET CRUISE d'un poste Sentinel :
                 # vide l'etat partage, les alarmes et le journal du serveur, puis relaie l'ordre a tous
-                # les postes (Sentinel / OSC / Mustering se remettent a zero en gardant les listes) et
+                # les postes (Sentinel / OSC / Mustering se remettent a zero, listes comprises cote Sentinel) et
                 # au serveur pair — sinon sa synchro periodique ramenerait l'ancien etat.
                 reset_payload = msg.get('payload') or {}
                 new_id = str(reset_payload.get('cruiseId') or now_iso())

@@ -1752,6 +1752,17 @@ function importFromSentinel3(snapshot) {
   }
   function fillFromCabins(listId, cabins) {
     const list = LISTS[listId];
+    // Sentinel 4 calcule l'assembly de chaque passager (musterZone : cabines A connues, toutes les
+    // autres en B, préfixe « S » compris) : on s'y fie. La liste de cabines ne sert qu'aux anciennes
+    // données sans musterZone — elle laissait de côté les cabines absentes des deux listes.
+    const zone = listId === 'paxA' ? 'A' : 'B';
+    if (pax.some(p => p.musterZone)) {
+      list.persons = pax.filter(p => String(p.musterZone || '').toUpperCase() === zone)
+        .slice().sort((a, b) => String(a.cabin || '').localeCompare(String(b.cabin || ''), undefined, { numeric: true }))
+        .map(toPaxPerson);
+      list.persons.forEach((p, i) => { p.id = listId + '_' + (p.sn || (p.cabin + '_' + i)); });
+      return;
+    }
     list.persons = (cabins || []).flatMap(cab => paxByCabin[cab] || []).map(toPaxPerson);
     list.persons.forEach((p, i) => { p.id = listId + '_' + (p.sn || (p.cabin + '_' + i)); });
   }

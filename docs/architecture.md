@@ -59,10 +59,23 @@ configurés dans `LCC sentinel 4.html` (`NetworkModule.config`), `LCC OSC.html` 
 Au démarrage, le serveur régénère `ssl_cert.pem` si le certificat ne couvre pas l'IP du PC courant
 (en conservant les IP qu'il couvrait déjà).
 
-### RESET CRUISE (nouvelle croisière)
+### Page CONFIG (SYSTEM SETTINGS) et ses onglets
 
-Settings > RESET CRUISE (`ResetCruise` dans `LCC sentinel 4.html`) : remet tout à zéro sauf les listes
-(`oe_sentinel_lists_state`, `oe_sentinel_lists_pax_backup`) et les réglages (`ResetCruise.PRESERVE_KEYS`).
+Depuis v2.0.44, l'item CONFIG de la barre latérale regroupe : les panneaux de réglages
+(`#settings-tab-panel-<id>` : drill & reset, affichage, navire, réseau, profil, sauvegarde,
+archives, mise à jour) et les pages LISTES, LOG, RAPPORT, OSC et B.BOX, retirées de la barre latérale.
+Ces 5 pages restent des `.page` autonomes (`#page-list`, `#page-log`, … — modules, CSS et `navigateTo()`
+inchangés) ; `SettingsTabs` (`PANEL_TABS` / `PAGE_TABS`) déplace l'unique barre `#config-tabs-bar`
+en tête de la page affichée et garde l'item CONFIG actif.
+
+### RESET (nouvelle croisière)
+
+Settings > DRILL & RESET > RESET (`ResetCruise` dans `LCC sentinel 4.html`, ex-« RESET CRUISE » ; le
+bouton « RESET AFTER DRILL » a été supprimé) : remet tout à zéro, **listes équipage / passagers
+comprises**, sauf les réglages (`ResetCruise.PRESERVE_KEYS`). Le poste qui lance le reset pose
+`oe_after_reset_prompt_lists` : après le rechargement, `ResetCruise.promptLoadLists()` propose de
+charger les listes CREW et PAX (fichiers ou listes sauvegardées sur le serveur), qui repartent
+ensuite vers le serveur et les autres postes par la synchro d'état habituelle.
 Connecté, il envoie `RESET_CRUISE` : le serveur vide état / alarmes / journal, adopte un **n° de
 croisière** (horodatage ISO, persisté dans `sentinel_state.json`) et relaie l'ordre aux postes et au
 serveur pair. Chaque appli garde ce n° (`oe_cruise_id`, `lcc_osc_cruise_id`, `lcc_mustering_cruise_id`) :

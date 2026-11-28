@@ -1514,6 +1514,20 @@ const NetOSC = {
       case 'FIRE_SIT_UPDATE':
         this.applyFireSitPayload(msg.payload);
         break;
+      case 'PLAN_TACTICAL_UPDATE': {
+        // Envoyé par LCC Sentinel 4 à chaque icône posée / déplacée / effacée et à chaque état de zone.
+        // N'était pas traité : l'OSC ne voyait l'icône qu'au prochain état complet (quelques secondes),
+        // et entre-temps son propre STATE_SYNC — sans cette icône — pouvait l'effacer chez tout le monde.
+        const p = msg.payload || {};
+        if (p.zoneStates && typeof p.zoneStates === 'object') STATE.plans.zoneStates = p.zoneStates;
+        if (Array.isArray(p.markers)) STATE.plans.markers = p.markers;
+        if (p.markersLocked !== undefined) STATE.plans.markersLocked = !!p.markersLocked;
+        if (lastKnownFullSnapshot) {
+          lastKnownFullSnapshot.plans = { ...(lastKnownFullSnapshot.plans || {}), zoneStates: STATE.plans.zoneStates, markers: STATE.plans.markers, markersLocked: STATE.plans.markersLocked };
+        }
+        Pages.renderActive();
+        break;
+      }
       default: break;
     }
   },
@@ -1646,7 +1660,10 @@ const Pages = {
   /* ── Meeting Point ── */
   render_meeting(){
     const page = document.getElementById('page-meeting');
-    const sorted = [...STATE.meetingTeams].sort((a,b) => a.name.localeCompare(b.name));
+    // ADA Team / Admin Team arrivent par la synchro (roster FireModule.teams de Sentinel 4) mais sont
+    // des équipes de la page MUSTER, pas du Meeting Point : mêmes exclusions que la page FIRE.
+    const MUSTER_ONLY = ['ADA_TEAM', 'ADMIN_TEAM'];
+    const sorted = STATE.meetingTeams.filter(t => !MUSTER_ONLY.includes(t.id)).sort((a,b) => a.name.localeCompare(b.name));
     page.innerHTML = `
       <div class="page-title-row"><span class="page-title-ico">👥</span><div><div class="page-title">Meeting Point</div><div class="page-sub">Roster complet des équipes — présence</div></div></div>
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -2828,6 +2845,11 @@ const PlansOSC = {
   },
 
   _upsertMarker(iconId, x, y, sx, sy){
+    // x/y d'un marqueur = coordonnées du PLAN (pixels de l'image source), comme dans LCC Sentinel 4
+    // (PlansModule.tacticalMarkers). Avant, x/y étaient les pixels de l'écran de la tablette : un
+    // marqueur posé ici apparaissait au coin du plan sur Sentinel 4. sx/sy gardés (= x/y) pour
+    // les versions précédentes.
+    x = sx; y = sy;
     const deck = this._normalizeDeck(STATE.plans.currentDeck);
     if (this._isSinglePlacementIcon(iconId)) {
       const existing = STATE.plans.markers.findIndex(m => this._normalizeDeck(m.deck) === deck && m.iconId === iconId);
@@ -2931,12 +2953,11 @@ const PlansOSC = {
     const markers = STATE.plans.markers.filter(m => this._normalizeDeck(m.deck) === this._normalizeDeck(STATE.plans.currentDeck));
     markers.forEach(m => {
       const icon = this.ICONS.find(i => i.id === m.iconId);
-      let drawX = Number(m.x), drawY = Number(m.y);
-      if (Number.isFinite(Number(m.sx)) && Number.isFinite(Number(m.sy))) {
-        const pt = this._sourceToCanvas(Number(m.sx), Number(m.sy));
-        if (pt) { drawX = pt.x; drawY = pt.y; }
-      }
-      this._drawTacticalMarker(ctx, icon, drawX, drawY);
+      // Position sur le plan : sx/sy (ancien format OSC) sinon x/y (format Sentinel 4 et actuel).
+      const hasS = m.sx != null && m.sy != null && Number.isFinite(Number(m.sx)) && Number.isFinite(Number(m.sy));
+      const pt = this._sourceToCanvas(Number(hasS ? m.sx : m.x), Number(hasS ? m.sy : m.y));
+      if (!pt) return;
+      this._drawTacticalMarker(ctx, icon, pt.x, pt.y);
     });
   },
   bindEvents(canvas){
@@ -3447,9 +3468,11 @@ const LocationOSC = {
       : null;
     const drawMarker = draft || marker;
     if (drawMarker) {
+      // draft : x/y = pixels de ce canvas ; marqueur enregistré : x/y = coordonnées du plan (sx/sy si ancien format).
       let mx = Number(drawMarker.x), my = Number(drawMarker.y);
-      if (Number.isFinite(Number(drawMarker.sx)) && Number.isFinite(Number(drawMarker.sy))) {
-        const p = this._sourceToCanvas(Number(drawMarker.sx), Number(drawMarker.sy));
+      const hasS = drawMarker.sx != null && drawMarker.sy != null && Number.isFinite(Number(drawMarker.sx)) && Number.isFinite(Number(drawMarker.sy));
+      if (hasS || drawMarker === marker) {
+        const p = this._sourceToCanvas(Number(hasS ? drawMarker.sx : drawMarker.x), Number(hasS ? drawMarker.sy : drawMarker.y));
         if (p) { mx = p.x; my = p.y; }
       }
       ctx.font = '26px sans-serif';
@@ -3477,13 +3500,20 @@ const LocationOSC = {
       return;
     }
     // Single-placement policy — move this team's marker rather than stacking duplicates.
+    // Hors de l'image (sx/sy nuls) : pas de position sur le plan, on ne pose pas de marqueur.
+    if (draft.sx == null || draft.sy == null) {
+      if (this._callback) this._callback(draft.value);
+      this._draftSelection = null;
+      ModalOSC.close();
+      return;
+    }
     STATE.plans.markers = STATE.plans.markers.filter(m => m.iconId !== this._iconId);
     STATE.plans.markers.push({
       id:'m'+Date.now(),
       iconId:this._iconId,
       deck:draft.deck,
-      x:draft.x,
-      y:draft.y,
+      x:draft.sx,   // coordonnées du plan, comme Sentinel 4
+      y:draft.sy,
       sx:draft.sx,
       sy:draft.sy,
     });
