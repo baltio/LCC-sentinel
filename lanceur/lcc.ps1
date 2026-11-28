@@ -483,7 +483,7 @@ function Invoke-PreparerMAJ {
     $taille = (Get-Item -LiteralPath $zip).Length / 1MB
     Write-Host ("  Paquet cree ({0:N1} Mo) : {1}" -f $taille, $zip) -ForegroundColor Green
     Write-Host ''
-    Write-Host '  Sur le PC serveur : LCC SENTINEL 4 > Settings > Onglet 2 > MISE A JOUR DU LOGICIEL,'
+    Write-Host '  Sur le PC serveur : LCC SENTINEL 4 > CONFIG > onglet MISE A JOUR,'
     Write-Host '  puis choisir ce fichier ZIP (sans l''extraire).'
     Write-Host '  (Ou : clic droit sur le ZIP > Extraire tout, puis METTRE_A_JOUR.bat dans le dossier extrait.)'
 }
