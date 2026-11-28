@@ -57,7 +57,7 @@ $FichiersAppli = @('index.html', 'LCC sentinel 4.html', 'LCC sentinel 3.html', '
                    'manifest.json', 'manifest-osc.json', 'manifest-mustering.json',
                    'sw.js', 'sw-osc.js', 'sw-mustering.js', 'sentinel_server.py',
                    'INSTALLER_LCC_SENTINEL.bat', 'LANCER_LCC_SENTINEL.bat', 'ARRETER_SERVEUR.bat', 'METTRE_A_JOUR.bat',
-                   'CONSOLE_SERVEUR.bat',
+                   'CONSOLE_SERVEUR.bat', 'DIAGNOSTIC_SERVEUR.bat',
                    'LISEZ-MOI_INSTALLATION.txt')
 
 $WsPort         = 8765
@@ -396,6 +396,13 @@ function Invoke-MettreAJour {
     Write-Host "  Logiciel installe : $cible  (version $vAvant)"
     Write-Host "  Nouvelle version  : $source  (version $vApres)"
     Write-Host ''
+    # Paquet plus ANCIEN que l'installation (ancien ZIP reste sur la cle USB...) : demander confirmation.
+    try { $plusAncien = ([version]$vApres) -lt ([version]$vAvant) } catch { $plusAncien = $false }
+    if ($plusAncien) {
+        Write-Host "  ATTENTION : ce dossier contient une version PLUS ANCIENNE ($vApres) que celle installee ($vAvant)." -ForegroundColor Red
+        $rep = Read-Host '  Revenir quand meme a cette ancienne version ? (O/N)'
+        if ($rep -notmatch '^[oOyY]') { Write-Host '  Mise a jour annulee.' -ForegroundColor Yellow; return }
+    }
 
     # 2. Arret du serveur (et de sa relance automatique)
     Write-Host '  [1/5] Arret du serveur...'

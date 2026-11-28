@@ -44,3 +44,4 @@
 [2026-11-28 09:36] v2.0.43 -> v2.0.44  (patch)  -- Onglets CONFIG (LOG, RAPPORT, OSC, B.BOX, sous-onglets), RESET unique avec rechargement des listes  [modules: manifest.json, sw.js, sentinel_server.py, LCC Sentinel Mustering.html, manifest-mustering.json, sw-mustering.js]
 [2026-11-28 19:31] v2.0.44 -> v2.0.45  (patch)  -- Fichier PIN dans le dossier du logiciel  [modules: manifest.json, sw.js, sentinel_server.py, LCC Sentinel Mustering.html, manifest-mustering.json, sw-mustering.js]
 [2026-11-28 19:41] v2.0.45 -> v2.0.46  (patch)  -- PIN OSC par defaut, codes PIN visibles BRIDGE  [modules: manifest.json, sw.js, sentinel_server.py, LCC Sentinel Mustering.html, manifest-mustering.json, sw-mustering.js]
+[2026-11-28 20:18] v2.0.46 -> v2.0.47  (patch)  -- Garde-fou version, reprise PIN OSC, diagnostic  [modules: manifest.json, sw.js, sentinel_server.py, LCC Sentinel Mustering.html, manifest-mustering.json, sw-mustering.js]

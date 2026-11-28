@@ -188,6 +188,13 @@ def load_pins():
     except Exception as exc:
         log.warning(f'[PIN] Lecture de {PINS_FILE} impossible ({exc}) : nouveaux PIN generes')
     changed = False
+    if source == LEGACY_PINS_FILE:
+        # Ancien fichier (v2.0.42-v2.0.45, avant les codes par defaut) : on applique aussi les codes par
+        # defaut (OSC 300003), comme pour une installation neuve.
+        for pid, pin in DEFAULT_PINS.items():
+            if pid in PROFILES and data.get(pid) != pin and pin not in {v for k, v in data.items() if k != pid}:
+                data[pid] = pin
+                changed = True
     for pid, pin in FIXED_PINS.items():
         if data.get(pid) != pin:
             data[pid] = pin
@@ -1102,8 +1109,23 @@ def stage_update(data):
             shutil.copyfileobj(src, dst)
         count += 1
     root = Path(__file__).parent
-    update_stage.update({'dir': stage, 'version': read_app_version(stage), 'files': count})
-    return {'version': update_stage['version'], 'currentVersion': read_app_version(root), 'files': count}, None
+    new_version, current = read_app_version(stage), read_app_version(root)
+    # Un ZIP plus ANCIEN que la version installee est refuse : choisi par erreur (ex. ancien paquet
+    # resté sur la clé USB), il ramenait le PC serveur en arriere — c'est arrive a bord (v2.0.44 ->
+    # v2.0.39, anciens PIN 1001.. de retour). Retour arriere volontaire : RESTORE_VERSION.bat.
+    if _version_tuple(new_version) and _version_tuple(current) and _version_tuple(new_version) < _version_tuple(current):
+        shutil.rmtree(stage, ignore_errors=True)
+        return None, (f'Ce ZIP contient une version PLUS ANCIENNE (v{new_version}) que celle installee (v{current}). '
+                      'Mise a jour refusee : choisissez le paquet le plus recent.')
+    update_stage.update({'dir': stage, 'version': new_version, 'files': count})
+    return {'version': new_version, 'currentVersion': current, 'files': count}, None
+
+
+def _version_tuple(v):
+    try:
+        return tuple(int(x) for x in str(v).split('.'))
+    except ValueError:
+        return None
 
 
 def apply_staged_update():

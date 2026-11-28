@@ -4,6 +4,18 @@ Historique des sessions et des changements réalisés. Le détail des bumps de v
 applicative reste dans `versions/CHANGELOG.txt` (source exhaustive) — ce journal résume le
 contexte et les décisions de chaque session, ce que le changelog ne capture pas.
 
+## 2026-11-28 — v2.0.47
+
+- Incident à bord (PC DESKTOP-T4UB014) : après la mise à jour v2.0.44, un ancien ZIP v2.0.39 a été
+  choisi dans CONFIG > MISE À JOUR → retour en v2.0.39 (anciens PIN 1001…, l'app envoyant 100001 était
+  refusée). Garde-fous : la mise à jour depuis l'appli refuse un ZIP plus ancien que la version
+  installée ; METTRE_A_JOUR.bat demande confirmation (O/N) dans ce cas.
+- Reprise de l'ancien `%LOCALAPPDATA%\LCC_Sentinel\pins.json` : les codes par défaut (OSC 300003)
+  sont appliqués s'ils ne sont pas déjà pris par un autre poste.
+- Nouvel outil `DIAGNOSTIC_SERVEUR.bat` (+ `lanceur/diagnostic.ps1`) : rapport texte sur le Bureau
+  (dossier, version, Python et modules, ports, processus, journaux, essai de démarrage sur ports de
+  test), sans les codes PIN.
+
 ## 2026-11-28 — v2.0.46
 
 - PIN de la tablette OSC : 300003 par défaut (`DEFAULT_PINS`), donné à la création du code (s'il
