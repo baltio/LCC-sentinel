@@ -13,6 +13,7 @@ A. INSTALLATION (une seule fois)
       affiches UNIQUEMENT dans la console du serveur (icone "LCC SERVEUR - Console").
       Fichier : %LOCALAPPDATA%\LCC_Sentinel\pins.json (a garder confidentiel ; "Nouveau" dans la
       console pour changer le code d'un poste). 5 codes faux = appareil bloque 5 minutes.
+      Exception : le poste BRIDGE a toujours le PIN 100001 (fixe, non modifiable depuis la console).
 
 B. UTILISATION
    - Ouvrir le logiciel : icone "LCC SENTINEL 4" du Bureau.

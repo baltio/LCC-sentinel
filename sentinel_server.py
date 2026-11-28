@@ -143,6 +143,9 @@ RELAY_PROFILE = {'id': 'relay', 'name': 'Backup Sync', 'role': 'System', 'initia
 PEER_TOKEN = None
 PINS_FILE = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel' / 'pins.json'
 PINS = {}   # id du poste -> PIN
+# PIN imposes (decision du bord) : toujours ce code, meme si pins.json en contient un autre ; non
+# renouvelables depuis la console. Les autres postes gardent un PIN aleatoire propre au navire.
+FIXED_PINS = {'bridge': '100001'}
 
 # Anti force brute : au-dela de AUTH_MAX_FAILS echecs en AUTH_FAIL_WINDOW s depuis une meme IP, cette IP
 # est refusee AUTH_LOCK_S s (journalise). 6 chiffres = 1 000 000 de combinaisons, 5 essais / 5 min.
@@ -171,7 +174,13 @@ def load_pins():
     except Exception as exc:
         log.warning(f'[PIN] Lecture de {PINS_FILE} impossible ({exc}) : nouveaux PIN generes')
     changed = False
+    for pid, pin in FIXED_PINS.items():
+        if data.get(pid) != pin:
+            data[pid] = pin
+            changed = True
     for pid in PROFILES:
+        if pid in FIXED_PINS:
+            continue
         if pid not in data or list(data.values()).count(data[pid]) > 1:
             data[pid] = _new_pin(set(data.values()))
             changed = True
@@ -190,6 +199,8 @@ def save_pins():
 def regenerate_pin(pid):
     if pid not in PROFILES:
         return None
+    if pid in FIXED_PINS:
+        return FIXED_PINS[pid]   # PIN impose : jamais renouvele
     PINS[pid] = _new_pin({v for k, v in PINS.items() if k != pid})
     save_pins()
     log.warning(f'[PIN] Nouveau PIN pour le poste {pid}')
@@ -1141,7 +1152,7 @@ def build_server_status(network_https):
         'disconnects': {'total': disconnect_diag['total'], 'auth': disconnect_diag['auth'],
                         'causes': dict(disconnect_diag['causes'])},
         'log': list(RECENT_LOG)[-250:],
-        'pins': [{'profile': pid, 'role': PROFILES[pid]['role'], 'pin': PINS.get(pid, '')} for pid in PROFILES],
+        'pins': [{'profile': pid, 'role': PROFILES[pid]['role'], 'pin': PINS.get(pid, ''), 'fixed': pid in FIXED_PINS} for pid in PROFILES],
         'pinsFile': str(PINS_FILE),
         'lockedIps': [ip for ip in list(auth_locked_until) if auth_lock_remaining(ip) > 0],
     }

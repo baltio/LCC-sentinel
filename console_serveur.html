@@ -178,7 +178,9 @@ td.mono { font-family: var(--mono); }
     var pins = s.pins || [];
     var pinsHtml = '<table><tbody>' + pins.map(function (p) {
       return '<tr><td>' + esc(p.role) + '</td><td class="mono" style="font-size:16px;color:var(--gold)">' + esc(p.pin) +
-             '</td><td style="text-align:right"><button class="btn" data-regen="' + esc(p.profile) + '">Nouveau</button></td></tr>';
+             '</td><td style="text-align:right">' + (p.fixed
+               ? '<span style="font-size:11px;opacity:.7">PIN fixe</span>'
+               : '<button class="btn" data-regen="' + esc(p.profile) + '">Nouveau</button>') + '</td></tr>';
     }).join('') + '</tbody></table>';
     if ($('pins').getAttribute('data-html') !== pinsHtml) { $('pins').innerHTML = pinsHtml; $('pins').setAttribute('data-html', pinsHtml); }
     $('pinsfile').textContent = s.pinsFile || '';

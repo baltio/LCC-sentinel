@@ -41,6 +41,9 @@ contexte et les décisions de chaque session, ce que le changelog ne capture pas
 - Page MUSTER : retour de ADA TEAM (132 306 307 629 630 920 921 922) et ADMIN TEAM (303 310),
   avec COMPLETE / MISSING / présence par personne, synchronisées et reliées aux listes teamADA /
   teamAdmin de l'app Mustering. Elles n'apparaissent ni sur la page FIRE ni au Meeting Point de l'OSC.
+- PIN : le poste BRIDGE a toujours le PIN 100001 (`FIXED_PINS` dans sentinel_server.py), réimposé
+  au démarrage même si pins.json en contient un autre, non renouvelable depuis la console (« PIN
+  fixe »). Les autres postes gardent leur PIN aléatoire ; un poste qui avait 100001 en reçoit un nouveau.
 
 ## 2026-07-27
 
