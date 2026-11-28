@@ -412,7 +412,7 @@ function Invoke-MettreAJour {
     # 4. Copie. Le dossier prepare ne contient NI sentinel_state.json (etat / croisiere en cours), NI
     #    ssl_*.pem (certificat deja accepte par les tablettes), NI lists_data/ : ils restent intacts.
     #    Pas de /MIR : rien n'est supprime dans l'installation.
-    & robocopy $source $cible /E /XF sentinel_state*.json ssl_*.pem /XD lists_data /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy $source $cible /E /XF sentinel_state*.json ssl_*.pem CODES_PIN_POSTES_LCC_SENTINEL.json pins.json /XD lists_data /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         Write-Host "  [3/5] ERREUR de copie (code robocopy $LASTEXITCODE). Ancienne version dans : $sauvegarde" -ForegroundColor Red
         return

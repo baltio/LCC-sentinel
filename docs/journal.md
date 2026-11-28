@@ -4,6 +4,26 @@ Historique des sessions et des changements réalisés. Le détail des bumps de v
 applicative reste dans `versions/CHANGELOG.txt` (source exhaustive) — ce journal résume le
 contexte et les décisions de chaque session, ce que le changelog ne capture pas.
 
+## 2026-11-28 — v2.0.46
+
+- PIN de la tablette OSC : 300003 par défaut (`DEFAULT_PINS`), donné à la création du code (s'il
+  n'est pas déjà pris), renouvelable ensuite depuis la console.
+- CONFIG > PROFIL du poste BRIDGE : bloc « CODES PIN DES POSTES » (bouton AFFICHER, re-masqué au
+  bout de 60 s). Nouvelle route `/api/pins` : répond uniquement au PIN BRIDGE (ou au PC serveur) ;
+  un PIN faux compte dans le blocage anti force brute.
+- Service workers Sentinel 4 / Mustering : `/api/…` n'est plus mis en cache (les codes PIN seraient
+  restés dans le cache du navigateur ; la liste des fichiers de listes pouvait être périmée).
+  Réponses JSON du serveur en `Cache-Control: no-store`.
+
+## 2026-11-28 — v2.0.45
+
+- Fichier des PIN déplacé dans le dossier du logiciel : `CODES_PIN_POSTES_LCC_SENTINEL.json`
+  (ligne d'explication + nom des postes, lisible au Bloc-notes). Repris automatiquement de l'ancien
+  `%LOCALAPPDATA%\LCC_Sentinel\pins.json` au premier démarrage (mêmes codes). Jamais servi sur le
+  réseau, exclu des mises à jour (ZIP et METTRE_A_JOUR) et de Git ; repli sur l'ancien emplacement
+  si le dossier n'est pas modifiable. Filtre web renforcé : les variantes Windows d'un nom
+  (point / espace final, `::$DATA`) ne contournent plus le blocage (PIN, clé du certificat, état).
+
 ## 2026-11-28 — v2.0.44
 
 - Réorganisation de la page CONFIG (SYSTEM SETTINGS) : les sous-sections de l'ancien « ONGLET 2 »

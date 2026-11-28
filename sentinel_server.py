@@ -22,7 +22,7 @@
     Sur le principal : python sentinel_server.py --peer-host <ip_secours> --peer-port 8766 --peer-token <secret>
     Sur le secours    : python sentinel_server.py --port 8766 --role SECOURS --peer-host <ip_principal> --peer-port 8765 --peer-token <secret>
   (<secret> : le meme des deux cotes, 12 caracteres ou plus.) Un secours sur un AUTRE PC doit aussi
-  recevoir une copie du fichier des PIN (%LOCALAPPDATA%/LCC_Sentinel/pins.json, ou --pins-file).
+  recevoir une copie du fichier des PIN (CODES_PIN_POSTES_LCC_SENTINEL.json, ou --pins-file).
 =================================================================
 """
 
@@ -87,7 +87,7 @@ def parse_args():
                          help="Secret partage entre les 2 serveurs (le meme des deux cotes, 12 caracteres ou plus) : "
                               "obligatoire pour la synchronisation principal <-> secours.")
     parser.add_argument('--pins-file', default=None,
-                         help="Fichier des codes PIN des postes (defaut : %%LOCALAPPDATA%%\\LCC_Sentinel\\pins.json). "
+                         help="Fichier des codes PIN des postes (defaut : CODES_PIN_POSTES_LCC_SENTINEL.json dans le dossier du logiciel). "
                               "Un serveur de secours sur un autre PC doit utiliser une copie de ce fichier.")
     parser.add_argument('--peer-interval', type=int, default=300,
                          help="Intervalle en secondes entre deux poussees d'etat vers l'autre serveur (defaut: 300 = 5 min)")
@@ -121,8 +121,8 @@ AUTOSAVE_INTERVAL = 5
 
 # Postes autorises (par identifiant). Les codes PIN ne sont PLUS ecrits dans le code (il etait public
 # sur GitHub, avec des PIN 1001..7007 identiques partout) : ils sont tires au hasard (6 chiffres) au
-# premier demarrage et gardes dans PINS_FILE, propre a ce PC, hors du dossier du logiciel (jamais servi
-# sur le reseau, jamais dans Git ni dans un paquet de mise a jour). Consultables / renouvelables
+# premier demarrage et gardes dans PINS_FILE, propre a ce PC (jamais servi sur le reseau, jamais
+# dans Git ni dans un paquet de mise a jour). Consultables / renouvelables
 # depuis la console serveur (PC serveur uniquement).
 PROFILES = {
     'bridge':    {'id': 'bridge',    'name': 'Bridge Officer',   'role': 'Bridge',        'initials': 'BR'},
@@ -141,11 +141,21 @@ PROFILES = {
 # desactive (avant, le jeton fixe '0000' permettait a n'importe qui de remplacer tout l'etat de crise).
 RELAY_PROFILE = {'id': 'relay', 'name': 'Backup Sync', 'role': 'System', 'initials': 'SY'}
 PEER_TOKEN = None
-PINS_FILE = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel' / 'pins.json'
+# Fichier des PIN : dans le dossier du logiciel, nom explicite pour le retrouver facilement. Il n'est
+# JAMAIS servi sur le reseau (filtre do_GET : PINS_FILENAMES), jamais ecrase par une mise a jour
+# (_update_skip, robocopy /XF), jamais dans Git (.gitignore) ni dans un paquet de mise a jour.
+PINS_FILE = Path(__file__).with_name('CODES_PIN_POSTES_LCC_SENTINEL.json')
+# Ancien emplacement (v2.0.42 / v2.0.43) : repris une fois au premier demarrage si le nouveau fichier
+# n'existe pas encore, pour garder les codes deja donnes aux postes et tablettes.
+LEGACY_PINS_FILE = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'LCC_Sentinel' / 'pins.json'
+PINS_FILENAMES = ('codes_pin_postes_lcc_sentinel.json', 'pins.json')   # noms bloques (minuscules)
 PINS = {}   # id du poste -> PIN
 # PIN imposes (decision du bord) : toujours ce code, meme si pins.json en contient un autre ; non
 # renouvelables depuis la console. Les autres postes gardent un PIN aleatoire propre au navire.
 FIXED_PINS = {'bridge': '100001'}
+# PIN donnes a la creation du code d'un poste (au lieu d'un tirage au hasard), mais renouvelables
+# ensuite depuis la console (« Nouveau »).
+DEFAULT_PINS = {'osc': '300003'}
 
 # Anti force brute : au-dela de AUTH_MAX_FAILS echecs en AUTH_FAIL_WINDOW s depuis une meme IP, cette IP
 # est refusee AUTH_LOCK_S s (journalise). 6 chiffres = 1 000 000 de combinaisons, 5 essais / 5 min.
@@ -166,9 +176,13 @@ def _new_pin(taken):
 def load_pins():
     """Charge PINS_FILE ; cree les PIN manquants (6 chiffres aleatoires, tous differents)."""
     data = {}
+    source = PINS_FILE
+    if not PINS_FILE.exists() and LEGACY_PINS_FILE.exists():
+        source = LEGACY_PINS_FILE
+        log.warning(f'[PIN] Codes repris de l\'ancien fichier {LEGACY_PINS_FILE} -> {PINS_FILE}')
     try:
-        if PINS_FILE.exists():
-            raw = json.loads(PINS_FILE.read_text(encoding='utf-8'))
+        if source.exists():
+            raw = json.loads(source.read_text(encoding='utf-8'))
             if isinstance(raw, dict):
                 data = {k: str(v) for k, v in raw.items() if k in PROFILES and str(v).isdigit() and len(str(v)) >= 6}
     except Exception as exc:
@@ -182,18 +196,38 @@ def load_pins():
         if pid in FIXED_PINS:
             continue
         if pid not in data or list(data.values()).count(data[pid]) > 1:
-            data[pid] = _new_pin(set(data.values()))
+            default = DEFAULT_PINS.get(pid)
+            taken = {v for k, v in data.items() if k != pid}
+            data[pid] = default if default and default not in taken else _new_pin(taken)
             changed = True
     PINS.clear()
     PINS.update(data)
-    if changed:
+    if changed or source != PINS_FILE:
         save_pins()
         log.warning(f'[PIN] Nouveaux codes PIN generes ({PINS_FILE}) — voir la console serveur')
 
 
 def save_pins():
-    PINS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PINS_FILE.write_text(json.dumps(PINS, indent=2), encoding='utf-8')
+    # Lisible tel quel : une ligne d'explication, puis « poste : PIN ». Les cles commencant par « _ »
+    # sont ignorees a la lecture (load_pins ne garde que les postes connus).
+    contenu = {
+        '_A_LIRE': 'Codes PIN des postes LCC SENTINEL 4 - CONFIDENTIEL, ne pas diffuser. '
+                   'Le poste BRIDGE a toujours 100001 ; OSC a 300003 par defaut. Pour changer un code : '
+                   'console serveur, bouton Nouveau. Le poste BRIDGE voit ces codes dans CONFIG > PROFIL.',
+        '_POSTES': {pid: PROFILES[pid]['role'] for pid in PROFILES},
+        **PINS,
+    }
+    global PINS_FILE
+    texte = json.dumps(contenu, indent=2, ensure_ascii=False)
+    try:
+        PINS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PINS_FILE.write_text(texte, encoding='utf-8')
+    except OSError as exc:
+        # Dossier du logiciel non modifiable (ex. installe sous Program Files) : ancien emplacement.
+        log.warning(f'[PIN] Ecriture impossible dans {PINS_FILE} ({exc}) : codes enregistres dans {LEGACY_PINS_FILE}')
+        PINS_FILE = LEGACY_PINS_FILE
+        PINS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PINS_FILE.write_text(texte, encoding='utf-8')
 
 
 def regenerate_pin(pid):
@@ -1022,7 +1056,7 @@ def _update_skip(name):
     """Jamais ecrases par une mise a jour : etat de la croisiere, certificat, listes, outils de dev."""
     low = name.lower()
     base = low.rsplit('/', 1)[-1]
-    return (base.startswith('sentinel_state') or base == 'pins.json' or (base.startswith('ssl_') and base.endswith('.pem'))
+    return (base.startswith('sentinel_state') or base in PINS_FILENAMES or (base.startswith('ssl_') and base.endswith('.pem'))
             or low.startswith(('lists_data/', 'installation/', 'versions/', '.git/', '__pycache__/', '.venv/')))
 
 
@@ -1193,9 +1227,12 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
             # Normalise comme le fait translate_path() (decodage %xx, \ -> /, ./ et ../) pour qu'un
             # chemin encode (ex: /ssl_key%2Epem, /./lanceur/) ne contourne pas le filtre.
             chemin = posixpath.normpath(unquote(self.path.split('?', 1)[0].split('#', 1)[0]).replace('\\', '/')).lower()
+            # Windows ouvre le meme fichier pour « x.pem. », « x.pem  » ou « x.pem::$DATA » : comparer
+            # le nom sans flux NTFS (:...) ni points / espaces finaux, sinon ces variantes passaient.
+            chemin = '/'.join(part.split(':', 1)[0].rstrip('. ') for part in chemin.split('/'))
             nom = chemin.rsplit('/', 1)[-1]
             if (nom.endswith(('.pem', '.py', '.pyc', '.bat', '.ps1', '.log'))
-                    or nom.startswith('sentinel_state') or nom == 'pins.json'
+                    or nom.startswith('sentinel_state') or nom in PINS_FILENAMES
                     or chemin.startswith(('/lanceur', '/installation', '/.git', '/lists_data', '/__pycache__', '/versions'))):
                 self.send_response(404)
                 self.end_headers()
@@ -1230,6 +1267,23 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
                 self.send_header('Content-Length', str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+                return
+            # Codes PIN de tous les postes, pour CONFIG > PROFIL du poste BRIDGE : uniquement avec le PIN
+            # BRIDGE (ou depuis le PC serveur). Un PIN faux compte comme un essai rate (blocage de l'IP).
+            if self.path.split('?', 1)[0] == '/api/pins':
+                ip = self.client_address[0]
+                if auth_lock_remaining(ip) > 0:
+                    self._json_reply(429, {'ok': False, 'error': 'Trop d\'essais : patienter quelques minutes.'})
+                    return
+                prof = profile_for_token(self.headers.get('X-LCC-Token', ''))
+                if not (prof and prof['id'] == 'bridge') and ip not in ('127.0.0.1', '::1'):
+                    if not prof:
+                        note_auth_failure(ip)
+                    self._json_reply(403, {'ok': False, 'error': 'Réservé au poste BRIDGE.'})
+                    return
+                self._json_reply(200, {'ok': True, 'pins': [
+                    {'profile': pid, 'role': PROFILES[pid]['role'], 'pin': PINS.get(pid, ''), 'fixed': pid in FIXED_PINS}
+                    for pid in PROFILES]})
                 return
             # Liste les fichiers JSON disponibles
             # Listes equipage / passagers (donnees nominatives) : PIN d'un poste exige, sauf sur le PC
@@ -1277,6 +1331,7 @@ def start_http_server(use_https=False, host=None, port=None, network_https=None)
             self.send_response(code)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')   # codes PIN, listes : jamais en cache navigateur
             self.end_headers()
             self.wfile.write(body)
 

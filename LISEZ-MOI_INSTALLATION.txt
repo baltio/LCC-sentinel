@@ -11,9 +11,13 @@ A. INSTALLATION (une seule fois)
    4. Dans l'application : choisir le poste (ex. BRIDGE) et saisir son code PIN (6 chiffres).
       Les codes PIN sont propres a ce navire : ils sont crees au premier demarrage du serveur et
       affiches UNIQUEMENT dans la console du serveur (icone "LCC SERVEUR - Console").
-      Fichier : %LOCALAPPDATA%\LCC_Sentinel\pins.json (a garder confidentiel ; "Nouveau" dans la
-      console pour changer le code d'un poste). 5 codes faux = appareil bloque 5 minutes.
+      Fichier : CODES_PIN_POSTES_LCC_SENTINEL.json, dans le dossier du logiciel (ex. C:\LCC_SENTINEL_4),
+      a ouvrir avec le Bloc-notes. A garder confidentiel ; jamais envoye sur le reseau ni ecrase par
+      une mise a jour. "Nouveau" dans la console pour changer le code d'un poste.
+      5 codes faux = appareil bloque 5 minutes.
       Exception : le poste BRIDGE a toujours le PIN 100001 (fixe, non modifiable depuis la console).
+      La tablette OSC recoit 300003 par defaut (modifiable ensuite avec "Nouveau").
+      Le poste BRIDGE voit les codes de tous les postes dans CONFIG > PROFIL > AFFICHER LES CODES PIN.
 
 B. UTILISATION
    - Ouvrir le logiciel : icone "LCC SENTINEL 4" du Bureau.

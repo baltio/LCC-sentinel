@@ -27,3 +27,6 @@ Source/crewbynumber.*
 Source/paxbycabin*
 Source/*manifest*
 Source/*Manifest*
+
+# Codes PIN des postes (cree par le serveur dans le dossier du logiciel)
+CODES_PIN_POSTES_LCC_SENTINEL.json

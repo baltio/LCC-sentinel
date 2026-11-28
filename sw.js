@@ -7,7 +7,7 @@
 // bytes actually change each release — that byte diff is what makes the browser notice there's a
 // new service worker at all and go fetch it; a same-content sw.js is otherwise invisible to it,
 // and the app would stay on old cached code until the site's storage is cleared by hand.
-const CACHE_NAME = 'charcot-sentinel-v2.0.44';
+const CACHE_NAME = 'charcot-sentinel-v2.0.46';
 
 // The main HTML is the one file offline access cannot work without — everything else
 // (icons, manifest) degrades gracefully if missing, this one doesn't.
@@ -88,6 +88,8 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  // API du serveur (codes PIN, listes, version...) : toujours en direct, jamais en cache.
+  if (url.pathname.startsWith('/api/')) return;
 
   const isNavigation = event.request.mode === 'navigate' || event.request.destination === 'document';
 

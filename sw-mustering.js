@@ -8,7 +8,7 @@
 
 // Bumped by SAVE_VERSION.ps1 on every release, in step with Sentinel 4's own sw.js — see its
 // comment for why this byte-diff is what makes an update visible to the browser at all.
-const CACHE_NAME = 'lcc-mustering-v2.0.44';
+const CACHE_NAME = 'lcc-mustering-v2.0.46';
 
 const APP_SHELL_URL = './LCC Sentinel Mustering.html';
 
@@ -70,6 +70,8 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  // API du serveur (codes PIN, listes, version...) : toujours en direct, jamais en cache.
+  if (url.pathname.startsWith('/api/')) return;
 
   const isNavigation = event.request.mode === 'navigate' || event.request.destination === 'document';
 
